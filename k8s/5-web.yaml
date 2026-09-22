@@ -1,0 +1,55 @@
+# ── nginx frontend — Deployment + Service ─────────────────────────────────────
+# Image is built from the root Dockerfile.
+# Build & push before applying:
+#   docker build -t ghcr.io/raghavendra-bhaskar/hcl-learning-hub-web:latest .
+#   docker push  ghcr.io/raghavendra-bhaskar/hcl-learning-hub-web:latest
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: hcl-learning-hub
+  labels:
+    app: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/raghavendra-bhaskar/hcl-learning-hub-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: hcl-learning-hub
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80

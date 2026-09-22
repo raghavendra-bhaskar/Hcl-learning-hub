@@ -1,0 +1,47 @@
+# ── Ingress — routes external traffic to web (frontend) ───────────────────────
+# Requires an Ingress controller installed in the cluster:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+# OR for bare-metal / k3s (Traefik is bundled):
+#   k3s ships with Traefik by default — this manifest works without changes.
+#
+# Replace hcl-learning-hub.hcl-software.com with your actual hostname or IP.
+# For IP-only access (no DNS), use an IngressClass with hostPort or NodePort Service instead.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hcl-learning-hub
+  namespace: hcl-learning-hub
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx        # change to "traefik" if using k3s default Traefik
+  rules:
+    - host: hcl-learning-hub.hcl-software.com   # ← replace with your hostname
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+
+---
+# ── NodePort fallback — access the app by IP:PORT without DNS or Ingress ──────
+# Useful for quick testing on a single VM. Delete this if using Ingress above.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-nodeport
+  namespace: hcl-learning-hub
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080   # access at http://NODE-IP:30080

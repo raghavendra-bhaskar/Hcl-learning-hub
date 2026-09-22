@@ -1,0 +1,38 @@
+{
+  "name": "ai-quest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/generate-certs.js && node scripts/kill-ports.js",
+    "dev": "concurrently --kill-others-on-fail --names \"API,UI\" --prefix-colors \"cyan,magenta\" \"npm run dev:api\" \"npm run dev:ui\"",
+    "dev:ui": "vite",
+    "dev:api": "node --import tsx --watch server/src/index.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "migrate": "npm run prisma:migrate --prefix server",
+    "studio": "npm run prisma:studio --prefix server",
+    "seed:admin": "node --env-file=server/.env server/scripts/seed-admin.mjs",
+    "certs": "node scripts/generate-certs.js",
+    "certs:regen": "node -e \"import('fs').then(f=>f.default.rmSync('certs',{recursive:true,force:true}))\" && node scripts/generate-certs.js"
+  },
+  "dependencies": {
+    "@okta/okta-auth-js": "^8.0.1",
+    "canvas-confetti": "^1.9.2",
+    "framer-motion": "^11.0.6",
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.17",
+    "concurrently": "^10.0.5",
+    "postcss": "^8.4.35",
+    "selfsigned": "^5.5.0",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.13",
+    "vite": "^5.1.4"
+  }
+}

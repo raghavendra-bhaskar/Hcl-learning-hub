@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hcl-learning-hub-config
+  namespace: hcl-learning-hub
+data:
+  POSTGRES_DB:        "hcl_learning_hub"
+  POSTGRES_USER:      "hcl_hub"
+  NODE_ENV:           "production"
+  PORT:               "4000"
+  ENABLE_LOCAL_ADMIN: "true"
+  ADMIN_USERNAME:     "admin"

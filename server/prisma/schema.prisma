@@ -1,0 +1,214 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  USER
+}
+
+model User {
+  id             String          @id @default(cuid())
+  oktaSub        String?         @unique
+  email          String          @unique
+  name           String
+  role           Role            @default(USER)
+  managerId      String?
+  manager        User?           @relation("ManagerToSubordinates", fields: [managerId], references: [id])
+  subordinates   User[]          @relation("ManagerToSubordinates")
+  passwordHash   String?
+  isLocalUser    Boolean         @default(false)
+  hasAvatar      Boolean         @default(false)
+  avatarData     Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  assignedManagers UserManager[]   @relation("LearnerManagers")
+  managedLearners  UserManager[]   @relation("ManagedLearners")
+  progress         Progress[]
+  badges           Badge[]
+  certifications   Certification[]
+
+  @@index([managerId])
+}
+
+model UserManager {
+  userId     String
+  managerId  String
+  user       User     @relation("LearnerManagers", fields: [userId],    references: [id], onDelete: Cascade)
+  manager    User     @relation("ManagedLearners", fields: [managerId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@id([userId, managerId])
+  @@index([managerId])
+}
+
+model Progress {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module         String   // 'ai-quest' | 'devops-loop'
+  questId        String
+  score          Int
+  totalQuestions Int
+  xpEarned       Int
+  completedAt    DateTime @default(now())
+
+  @@unique([userId, module, questId])
+  @@index([userId])
+}
+
+model Badge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module    String
+  badgeName String
+  earnedAt  DateTime @default(now())
+
+  @@unique([userId, badgeName])
+}
+
+model Course {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  title           String
+  tagline         String?
+  description     String?
+  emoji           String        @default("📚")
+  accentColor     String        @default("#06b6d4")
+  status          String        @default("live")  // live | coming-soon
+  order           Int           @default(0)
+  instructorName  String?
+  instructorEmail String?
+  helpSpaceUrl    String?
+  helpSpaceName   String?
+  helpSpaceHint   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  weeks           CourseWeek[]
+  quests          CourseQuest[]
+}
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model CourseQuest {
+  id             String        @id @default(cuid())
+  courseId       String
+  course         Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  moduleId       String?
+  module         CourseModule? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  order          Int           @default(0)
+  title          String
+  scenario       String
+  optionA        String
+  optionB        String
+  optionC        String
+  optionD        String
+  correct        String        // 'A'|'B'|'C'|'D'
+  explanation    String
+  xp             Int           @default(10)
+  learnTopics    Json?         // [{content: string, order: number}]
+  learnResources Json?         // [{type: string, label: string, url: string}]
+  createdAt      DateTime      @default(now())
+  @@index([courseId])
+  @@index([moduleId])
+}
+
+model CourseWeek {
+  id         String         @id @default(cuid())
+  courseId   String
+  course     Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  weekNumber Int
+  title      String
+  modules    CourseModule[]
+  @@index([courseId])
+  @@unique([courseId, weekNumber])
+}
+
+model CourseModule {
+  id        String           @id @default(cuid())
+  weekId    String
+  week      CourseWeek       @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  order     Int              @default(0)
+  number    Int              @default(1)
+  title     String
+  icon      String           @default("📖")
+  color     String           @default("#06b6d4")
+  topics    CourseTopic[]
+  resources CourseResource[]
+  quests    CourseQuest[]
+  @@index([weekId])
+}
+
+model CourseTopic {
+  id       String       @id @default(cuid())
+  moduleId String
+  module   CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  order    Int          @default(0)
+  content  String
+  @@index([moduleId])
+}
+
+model CourseResource {
+  id       String       @id @default(cuid())
+  moduleId String
+  module   CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  order    Int          @default(0)
+  label    String
+  type     String       @default("link")
+  url      String       @default("")
+  @@index([moduleId])
+}
+
+model LearningPath {
+  id          String             @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  visibility  String             @default("private")  // private | public
+  certificate String?
+  items       LearningPathItem[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  @@index([userId])
+}
+
+model LearningPathItem {
+  id              String       @id @default(cuid())
+  pathId          String
+  path            LearningPath @relation(fields: [pathId], references: [id], onDelete: Cascade)
+  type            String       // 'section' | 'course' | 'module'
+  refId           String?      // courseId or moduleId
+  title           String
+  subtitle        String?
+  emoji           String?
+  accentColor     String?
+  durationMinutes Int?
+  order           Int          @default(0)
+  createdAt       DateTime     @default(now())
+  @@index([pathId])
+}
+
+model Certification {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  certId     String    // 'devops-loop' | 'ai-quest'
+  level      String    // Foundation | Practitioner | Expert
+  status     String    // assigned | in-progress | achieved
+  achievedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, certId, level])
+}

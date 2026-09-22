@@ -1,0 +1,77 @@
+# HCL Software Learning Hub — Local Development Compose
+# Repo: https://github.com/raghavendra-bhaskar/Hcl-learning-hub
+#
+# NOTE: Production deployments use Kubernetes (see k8s/ directory and hcl-learning-hub-setup.sh).
+#       This file is for local development only.
+#
+# Usage:
+#   cp .env.docker .env          # fill in real values
+#   docker compose up -d --build
+
+version: '3.8'
+
+services:
+
+  # ── PostgreSQL database ─────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       hcl_learning_hub
+      POSTGRES_USER:     hcl_hub
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hcl_hub -d hcl_learning_hub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Express / Prisma API backend ────────────────────────────────────────────
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:           "postgresql://hcl_hub:${DB_PASSWORD}@postgres:5432/hcl_learning_hub"
+      NODE_ENV:               production
+      PORT:                   4000
+      # The browser-visible origin of the frontend (used for CORS).
+      # Set to the public hostname/IP where nginx is reachable.
+      FRONTEND_ORIGIN:        ${FRONTEND_ORIGIN}
+      ENABLE_LOCAL_ADMIN:     "true"
+      LOCAL_ADMIN_USERNAME:   ${ADMIN_USERNAME:-admin}
+      LOCAL_ADMIN_PASSWORD:   ${ADMIN_PASSWORD}
+      LOCAL_ADMIN_JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      # Persist admin-configured OIDC / Okta settings across restarts
+      - api_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Not exposed to host — nginx proxies /api/* to this container
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── nginx: serves React SPA + proxies /api → backend ───────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:   # database files — persists across restarts & upgrades
+  api_data:        # oidc-config.json and other server runtime data

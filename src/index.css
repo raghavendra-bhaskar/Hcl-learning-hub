@@ -1,0 +1,635 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --star-color: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #030712;
+  color: #e2e8f0;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0f1e;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e3a5f;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #00d4ff44;
+}
+
+/* Star field background */
+.star-field {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.star {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  animation: twinkle var(--duration, 4s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.2; transform: scale(0.8); }
+}
+
+/* Neon glow effects */
+.neon-blue {
+  box-shadow: 0 0 10px #00d4ff44, 0 0 20px #00d4ff22, inset 0 0 10px #00d4ff11;
+}
+
+.neon-purple {
+  box-shadow: 0 0 10px #8b5cf644, 0 0 20px #8b5cf622, inset 0 0 10px #8b5cf611;
+}
+
+.neon-green {
+  box-shadow: 0 0 10px #10b98144, 0 0 20px #10b98122, inset 0 0 10px #10b98111;
+}
+
+.neon-gold {
+  box-shadow: 0 0 10px #fbbf2444, 0 0 20px #fbbf2422, inset 0 0 10px #fbbf2411;
+}
+
+/* Card hover effects */
+.quest-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.quest-card:hover {
+  transform: translateY(-4px) scale(1.01);
+}
+
+/* Shimmer loading effect */
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Progress bar glow */
+.progress-glow {
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* Option buttons */
+.option-btn {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.option-btn:hover:not(:disabled) {
+  transform: translateX(4px);
+}
+
+/* Badge pulse */
+.badge-earned {
+  animation: badgePulse 0.5s ease-out;
+}
+
+@keyframes badgePulse {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Timer bar */
+.timer-bar {
+  transition: width 1s linear;
+}
+
+/* Glassmorphism cards */
+.glass-card {
+  background: rgba(13, 22, 48, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.glass-card-hover:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(13, 22, 48, 0.9);
+}
+
+/* Orbit animation for hero */
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(60px) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(60px) rotate(-360deg); }
+}
+
+.orbit-1 { animation: orbit 8s linear infinite; }
+.orbit-2 { animation: orbit 12s linear infinite reverse; }
+.orbit-3 { animation: orbit 16s linear infinite; }
+
+/* XP flash */
+@keyframes xpFlash {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-30px); opacity: 0; }
+}
+
+.xp-flash {
+  animation: xpFlash 1s ease-out forwards;
+}
+
+/* Level up animation */
+@keyframes levelUp {
+  0% { transform: scale(1); }
+  25% { transform: scale(1.1); }
+  50% { transform: scale(0.95); }
+  75% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+.level-up {
+  animation: levelUp 0.6s ease-in-out;
+}
+
+/* Scan line effect */
+.scan-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 212, 255, 0.015) 2px,
+    rgba(0, 212, 255, 0.015) 4px
+  );
+  pointer-events: none;
+}
+
+/* Native quest launch sequence */
+.quest-launch {
+  --launch-accent: #22d3ee;
+  --launch-accent-strong: #0891b2;
+  --launch-warm: #fbbf24;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  color: #f8fafc;
+  background:
+    linear-gradient(180deg, #07131e 0%, #0a2230 54%, #071017 54%, #03070b 100%);
+  isolation: isolate;
+}
+
+.quest-launch-orange {
+  --launch-accent: #fb923c;
+  --launch-accent-strong: #ea580c;
+  --launch-warm: #34d399;
+}
+
+.quest-launch-grid {
+  position: absolute;
+  inset: 54% -20% -35%;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 54px 34px;
+  transform: perspective(360px) rotateX(58deg);
+  transform-origin: top;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+}
+
+.quest-launch-scan {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.035) 50%, transparent 51%);
+  background-size: 100% 7px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.quest-launch-topbar {
+  position: relative;
+  z-index: 4;
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(2, 8, 13, 0.58);
+  backdrop-filter: blur(14px);
+}
+
+.quest-launch-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #cbd5e1;
+  font: 700 12px 'Orbitron', sans-serif;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.quest-launch-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--launch-accent) 65%, transparent);
+  color: var(--launch-accent);
+  background: color-mix(in srgb, var(--launch-accent) 10%, transparent);
+  font-size: 10px;
+}
+
+.quest-launch-skip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 0;
+  color: #94a3b8;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.quest-launch-skip:hover { color: #fff; }
+
+.quest-launch-stage {
+  position: relative;
+  z-index: 2;
+  width: min(1120px, calc(100% - 40px));
+  height: calc(100vh - 64px);
+  min-height: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 34px;
+}
+
+.quest-launch-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--launch-accent);
+  font: 700 11px 'Orbitron', sans-serif;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  animation: launchFadeUp 420ms ease both;
+}
+
+.quest-launch-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--launch-accent);
+  box-shadow: 0 0 14px var(--launch-accent);
+  animation: launchPulse 1s ease-in-out infinite;
+}
+
+.quest-launch-title-block {
+  margin-top: 12px;
+  text-align: center;
+  animation: launchFadeUp 520ms 100ms ease both;
+}
+
+.quest-launch-title-block p {
+  color: #94a3b8;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.quest-launch-title-block h1 {
+  max-width: 780px;
+  margin-top: 5px;
+  color: #fff;
+  font: 800 30px 'Orbitron', sans-serif;
+  letter-spacing: 0;
+}
+
+.quest-launch-horizon {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  margin-top: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--launch-accent) 35%, transparent);
+  overflow: hidden;
+}
+
+.quest-launch-skyline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 125px;
+  opacity: 0.7;
+  clip-path: polygon(0 100%,0 62%,5% 62%,5% 30%,9% 30%,9% 70%,14% 70%,14% 42%,19% 42%,19% 74%,25% 74%,25% 18%,29% 18%,29% 64%,35% 64%,35% 36%,42% 36%,42% 78%,48% 78%,48% 48%,55% 48%,55% 70%,62% 70%,62% 24%,68% 24%,68% 62%,74% 62%,74% 40%,80% 40%,80% 72%,86% 72%,86% 28%,91% 28%,91% 58%,96% 58%,96% 44%,100% 44%,100% 100%);
+}
+
+.quest-launch-skyline-back {
+  background: #102a38;
+  transform: translateY(20px) scaleX(1.04);
+}
+
+.quest-launch-skyline-front {
+  height: 95px;
+  background: #08141c;
+  opacity: 0.92;
+}
+
+.quest-launch-path {
+  position: absolute;
+  left: 8%;
+  right: 18%;
+  bottom: 19px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--launch-accent), var(--launch-warm), transparent);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--launch-accent) 60%, transparent);
+  transform: skewX(-18deg);
+}
+
+.quest-launch-commander {
+  position: absolute;
+  left: 10%;
+  bottom: 25px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 58px;
+  filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.25));
+  animation: launchWalk 3.2s cubic-bezier(.3,.1,.2,1) forwards;
+}
+
+.quest-launch-commander > span {
+  animation: launchStep 360ms ease-in-out 8 alternate;
+  transform-origin: bottom center;
+}
+
+.quest-launch-shadow {
+  width: 42px;
+  height: 8px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.65);
+  filter: blur(3px);
+}
+
+.quest-launch-beacon {
+  position: absolute;
+  right: 17%;
+  bottom: 33px;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+}
+
+.quest-launch-guide {
+  position: relative;
+  z-index: 2;
+  font-size: 42px;
+  filter: drop-shadow(0 0 16px var(--launch-warm));
+  animation: launchFloat 1.6s ease-in-out infinite;
+}
+
+.quest-launch-beacon-ring {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid var(--launch-warm);
+  border-radius: 50%;
+  animation: launchBeacon 1.5s ease-out infinite;
+}
+
+.quest-launch-console {
+  width: min(650px, 90%);
+  margin-top: 16px;
+}
+
+.quest-launch-progress-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #94a3b8;
+  font: 700 10px 'Orbitron', sans-serif;
+  text-transform: uppercase;
+}
+
+.quest-launch-progress-row strong { color: var(--launch-accent); }
+
+.quest-launch-progress {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 5px;
+  height: 14px;
+}
+
+.quest-launch-progress span {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(148, 163, 184, 0.07);
+  transform: skewX(-18deg);
+  animation: launchSegment 180ms ease forwards;
+  animation-delay: calc(320ms + var(--segment) * 155ms);
+}
+
+.quest-launch-assignment {
+  width: min(760px, 94%);
+  min-height: 74px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 48px 1fr auto 28px;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-left: 3px solid var(--launch-accent);
+  background: rgba(2, 8, 13, 0.82);
+  box-shadow: 0 18px 55px rgba(0,0,0,0.3);
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 420ms ease, transform 420ms ease;
+}
+
+.quest-launch-assignment.is-ready {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quest-launch-assignment-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--launch-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--launch-accent) 10%, #061019);
+  font-size: 25px;
+}
+
+.quest-launch-assignment-copy { min-width: 0; }
+.quest-launch-assignment-copy span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--launch-accent);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.quest-launch-assignment-copy strong {
+  display: block;
+  overflow: hidden;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.quest-launch-reward {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--launch-warm);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quest-launch-check {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #031016;
+  background: var(--launch-accent);
+}
+
+.quest-launch-enter {
+  min-width: 190px;
+  height: 44px;
+  margin-top: 14px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  color: #64748b;
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: not-allowed;
+}
+
+.quest-launch-enter.is-ready {
+  border-color: color-mix(in srgb, var(--launch-accent) 70%, transparent);
+  color: #fff;
+  background: var(--launch-accent-strong);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--launch-accent) 30%, transparent);
+  cursor: pointer;
+  animation: launchButtonIn 320ms ease both;
+}
+
+@keyframes launchFadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes launchPulse {
+  50% { opacity: 0.45; transform: scale(0.75); }
+}
+
+@keyframes launchWalk {
+  0% { left: 8%; }
+  72%, 100% { left: 66%; }
+}
+
+@keyframes launchStep {
+  from { transform: translateY(0) rotate(-2deg); }
+  to { transform: translateY(-7px) rotate(2deg); }
+}
+
+@keyframes launchFloat {
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes launchBeacon {
+  0% { opacity: 0.9; transform: scale(0.65); }
+  100% { opacity: 0; transform: scale(1.55); }
+}
+
+@keyframes launchSegment {
+  to {
+    border-color: var(--launch-accent);
+    background: var(--launch-accent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--launch-accent) 50%, transparent);
+  }
+}
+
+@keyframes launchButtonIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 700px) {
+  .quest-launch-topbar { height: 56px; padding: 0 16px; }
+  .quest-launch-stage { height: calc(100vh - 56px); min-height: 520px; padding-top: 24px; }
+  .quest-launch-title-block h1 { font-size: 21px; }
+  .quest-launch-horizon { height: 190px; }
+  .quest-launch-commander { font-size: 48px; }
+  .quest-launch-assignment {
+    grid-template-columns: 42px 1fr 26px;
+    padding: 10px;
+  }
+  .quest-launch-assignment-icon { width: 42px; height: 42px; }
+  .quest-launch-reward { display: none; }
+  .quest-launch-assignment-copy strong { white-space: normal; font-size: 11px; }
+}
+
+@media (max-height: 680px) {
+  .quest-launch-stage { padding-top: 16px; }
+  .quest-launch-horizon { height: 175px; }
+  .quest-launch-console { margin-top: 10px; }
+  .quest-launch-assignment { margin-top: 12px; }
+  .quest-launch-enter { margin-top: 9px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-launch *, .quest-launch *::before, .quest-launch *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}

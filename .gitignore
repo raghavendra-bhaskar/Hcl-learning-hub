@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env.local
+.env.*.local
+
+# TLS certificates — never commit private keys or passphrases
+certs/
+
+# Server runtime data — contains oidc-config.json (Okta secrets), uploaded avatars, etc.
+server/data/
+
+# Environment files — contain DB credentials and JWT secrets (templates are OK to commit)
+server/.env
+.env
+
+# Large binary / media files — do not bloat the repository
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.pdf
+*.zip
+*.tar.gz
+
+# OS
+.DS_Store
+Thumbs.db
