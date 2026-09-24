@@ -9,9 +9,9 @@ import Results from './pages/Results.jsx';
 import Leaderboard from './pages/Leaderboard.jsx';
 import AvatarEditor from './pages/AvatarEditor.jsx';
 import SolutionCenter from './pages/SolutionCenter.jsx';
-import LearningPath from './pages/LearningPath.jsx';
+import AIQuestCoursePathPage from './pages/AIQuestCoursePathPage.jsx';
 import DevOpsHome from './pages/DevOpsHome.jsx';
-import DevOpsLearningPath from './pages/DevOpsLearningPath.jsx';
+import DevOpsCoursePathPage from './pages/DevOpsCoursePathPage.jsx';
 import DevOpsPaths from './pages/DevOpsPaths.jsx';
 import DevOpsQuestDetail from './pages/DevOpsQuestDetail.jsx';
 import DevOpsQuiz from './pages/DevOpsQuiz.jsx';
@@ -91,7 +91,7 @@ export default function App() {
               <Route path="/leaderboard"    element={<AuthGuard><Leaderboard /></AuthGuard>} />
               <Route path="/avatar"         element={<AuthGuard><AvatarEditor /></AuthGuard>} />
               <Route path="/solution/:questId" element={<AuthGuard><SolutionCenter /></AuthGuard>} />
-              <Route path="/learning-path"  element={<AuthGuard><LearningPath /></AuthGuard>} />
+              <Route path="/learning-path"  element={<AuthGuard><AIQuestCoursePathPage /></AuthGuard>} />
 
               {/* ── Dynamic DB courses ──────────────────── */}
               <Route path="/c/:slug"                    element={<AuthGuard><CoursePage /></AuthGuard>} />
@@ -107,7 +107,7 @@ export default function App() {
 
               {/* ── DevOps Loop module ────────────────────── */}
               <Route path="/devops-loop"                          element={<AuthGuard><DevOpsHome /></AuthGuard>} />
-              <Route path="/devops-loop/learning-path"            element={<AuthGuard><DevOpsLearningPath /></AuthGuard>} />
+              <Route path="/devops-loop/learning-path"            element={<AuthGuard><DevOpsCoursePathPage /></AuthGuard>} />
               <Route path="/devops-loop/paths"                    element={<AuthGuard><DevOpsPaths /></AuthGuard>} />
               <Route path="/devops-loop/quest/:questId"           element={<AuthGuard><DevOpsQuestDetail /></AuthGuard>} />
               <Route path="/devops-loop/quiz/:questId"            element={<AuthGuard><DevOpsQuiz /></AuthGuard>} />

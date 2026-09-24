@@ -1,24 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Map, ChevronRight, Star, UserCircle, ArrowLeft, Zap } from 'lucide-react';
-import { useAppStore } from '../App.jsx';
-import { DEVOPS_QUESTS } from '../data/devopsIndex.js';
-import AvatarDisplay from '../components/AvatarDisplay.jsx';
+import { Trophy, Map, ChevronRight, Star, ArrowLeft } from 'lucide-react';
+import { buildHandoffUrl } from '../components/ExternalHandoff.jsx';
+
+const DEVOPS_CERTIFICATION_URL = 'https://cnapp.prod.hclpnp.com/lms/course/index.php?categoryid=20';
 
 export default function DevOpsHome() {
   const navigate = useNavigate();
-  const { playerName, avatar, devopsCompletedQuests, devopsTotalXP = 0 } = useAppStore();
-  const isSetup = !!playerName;
-
-  const completedCount = Object.keys(devopsCompletedQuests || {}).length;
-  const badgesEarned = Object.values(devopsCompletedQuests || {}).filter(v => v?.badge).length;
-  const progressPct = Math.round((completedCount / DEVOPS_QUESTS.length) * 100);
-
-  const stats = [
-    { label: 'Quests Completed', value: `${completedCount} / ${DEVOPS_QUESTS.length}`, icon: '🔄' },
-    { label: 'Total XP Earned',  value: devopsTotalXP.toLocaleString(),                 icon: '⚡' },
-    { label: 'Badges Earned',    value: badgesEarned,                                   icon: '🏅' },
-    { label: 'Completion',       value: `${progressPct}%`,                              icon: '🎯' },
-  ];
 
   const arsenalItems = [
     {
@@ -32,9 +19,9 @@ export default function DevOpsHome() {
       action: () => navigate('/devops-loop/paths'),
     },
     {
-      icon: '🏆', title: 'Progress Tracker',
-      desc: 'Track your DevOps Loop journey — see which quests you\'ve conquered, XP earned, and badges collected across all 6 paths.',
-      action: () => navigate('/devops-loop/paths'),
+      icon: '🏆', title: 'Team Leaderboard',
+      desc: 'Compete with your team, track everyone\'s progress, and celebrate who earns the most XP this week.',
+      action: () => navigate('/leaderboard'),
     },
     {
       icon: '🎨', title: 'Avatar & Commander',
@@ -54,19 +41,19 @@ export default function DevOpsHome() {
       desc: 'Every question is framed as a real DevOps workplace scenario — installation issues, build failures, state transitions. Learn what to actually do.',
     },
     {
-          icon: '🎓',
-          title: 'Get DevOps Loop Certified',
-          desc: 'Enroll for the assignment · take the examination · earn your official DevOps Loop certificate in CNAPP LMS.',
-          action: () => window.open(
-            buildHandoffUrl(AI_CERTIFICATION_URL, { handoffType: 'certification-catalog', certificationId: 'devops-loop' }),
-            '_blank',
-            'noopener,noreferrer',
-          ),
-          highlight: true,
-          accent: 'violet',
-          external: true,
-          cta: 'Enroll · Assignment · Certify',
-        },
+      icon: '🎓',
+      title: 'Get DevOps Loop Certified',
+      desc: 'Enroll for the assignment · take the examination · earn your official DevOps Loop certificate in CNAPP LMS.',
+      action: () => window.open(
+        buildHandoffUrl(DEVOPS_CERTIFICATION_URL, { handoffType: 'certification-catalog', certificationId: 'devops-loop' }),
+        '_blank',
+        'noopener,noreferrer',
+      ),
+      highlight: true,
+      accent: 'violet',
+      external: true,
+      cta: 'Enroll · Assignment · Certify',
+    },
   ];
 
   return (
@@ -91,105 +78,44 @@ export default function DevOpsHome() {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-orange-900/20 via-transparent to-red-900/20 pointer-events-none" />
         <div className="max-w-6xl mx-auto px-4 pt-16 pb-20 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-400 text-sm font-medium mb-6 animate-fade-in">
-            <Star size={14} className="animate-pulse-slow" />
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-orange-500/30 bg-orange-500/10 text-orange-400 text-[12px] font-medium mb-6 animate-fade-in">
+            <Star size={12} className="animate-pulse-slow" />
             Gamified DevOps Learning for Teams
           </div>
 
-          <h1 className="font-orbitron text-5xl md:text-7xl font-black mb-6 animate-slide-up">
+          <h1 className="font-orbitron text-4xl md:text-6xl font-black mb-6 animate-slide-up">
             <span className="bg-gradient-to-r from-orange-400 via-red-400 to-rose-400 bg-clip-text text-transparent">
               DEVOPS LOOP
             </span>
           </h1>
 
-          <p className="text-xl md:text-2xl text-slate-300 mb-4 max-w-3xl mx-auto animate-slide-up">
+          <p className="text-base md:text-xl text-slate-300 mb-4 max-w-3xl mx-auto animate-slide-up">
             Conquer <span className="text-orange-400 font-semibold">21 DevOps Loop quests</span> through real-world IBM scenarios.
             Earn XP, unlock badges, and master the full CI/CD lifecycle.
           </p>
-          <p className="text-slate-500 mb-10 animate-fade-in">
+          <p className="text-slate-500 text-[12px] mb-10 animate-fade-in">
             DevOps Plan • DevOps Control • DevOps Build • DevOps Deploy • DevOps Test • DevOps Measure • CNAPP Installation • Value Streams
           </p>
-
-          {!isSetup ? (
-            <div className="flex flex-col items-center gap-4 animate-scale-in">
-              <p className="text-slate-400 text-sm">Create your commander to begin the mission</p>
-              <button
-                onClick={() => navigate('/avatar')}
-                className="group flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg"
-                style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)', boxShadow: '0 8px 32px rgba(249,115,22,0.3)' }}
-              >
-                <UserCircle size={22} />
-                Create Your Commander
-                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
-              <button
-                onClick={() => navigate('/devops-loop/paths')}
-                className="group flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg"
-                style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)', boxShadow: '0 8px 32px rgba(249,115,22,0.3)' }}
-              >
-                <Map size={20} />
-                {completedCount > 0 ? 'Continue Mission' : 'Start Mission'}
-                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-              <button
-                onClick={() => navigate('/devops-loop/paths')}
-                className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-orange-500/30 transition-all"
-              >
-                <Trophy size={20} className="text-orange-400" />
-                {completedCount}/{DEVOPS_QUESTS.length} Quests
-              </button>
-            </div>
-          )}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
+            <button
+              onClick={() => navigate('/devops-loop/paths')}
+              className="group flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg"
+              style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)', boxShadow: '0 8px 32px rgba(249,115,22,0.3)' }}
+            >
+              <Map size={20} />
+              Continue Mission
+              <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              onClick={() => navigate('/leaderboard')}
+              className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-orange-500/30 transition-all"
+            >
+              <Trophy size={20} className="text-orange-400" />
+              Leaderboard
+            </button>
+          </div>
         </div>
       </section>
-
-      {/* ── Stats ──────────────────────────────────────────────────────────── */}
-      {isSetup && (
-        <section className="max-w-6xl mx-auto px-4 pb-12">
-          <div
-            className="glass-card rounded-2xl p-6 mb-8"
-            style={{ borderColor: 'rgba(249,115,22,0.25)', boxShadow: '0 0 32px rgba(249,115,22,0.08)' }}
-          >
-            <div className="flex items-center gap-4 mb-4">
-              {avatar && <AvatarDisplay avatar={avatar} size="lg" />}
-              <div className="flex-1">
-                <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Commander</p>
-                <h2 className="font-orbitron font-bold text-xl text-white">{playerName}</h2>
-                <p className="text-sm text-orange-400">🔄 DevOps Loop Practitioner</p>
-              </div>
-              <button
-                onClick={() => navigate('/avatar')}
-                className="text-xs text-slate-500 hover:text-orange-400 transition-colors border border-white/10 rounded-lg px-3 py-1.5 hover:border-orange-500/30"
-              >
-                Edit Avatar
-              </button>
-            </div>
-            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${progressPct}%`, background: 'linear-gradient(90deg, #f97316, #ef4444)' }}
-              />
-            </div>
-            <div className="flex justify-between mt-1.5">
-              <span className="text-xs text-slate-600">{completedCount}/{DEVOPS_QUESTS.length} quests</span>
-              <span className="text-xs font-bold" style={{ color: '#fb923c' }}>{progressPct}% complete</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-            {stats.map(stat => (
-              <div key={stat.label} className="glass-card rounded-xl p-5 text-center">
-                <div className="text-3xl mb-2">{stat.icon}</div>
-                <div className="text-2xl font-bold text-white mb-1">{stat.value}</div>
-                <div className="text-xs text-slate-500">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* ── Arsenal ────────────────────────────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
@@ -250,28 +176,6 @@ export default function DevOpsHome() {
         </div>
       </section>
 
-      {/* ── CTA (no commander) ─────────────────────────────────────────────── */}
-      {!isSetup && (
-        <section className="max-w-6xl mx-auto px-4 pb-20 text-center">
-          <div className="glass-card rounded-3xl p-12" style={{ borderColor: 'rgba(249,115,22,0.15)' }}>
-            <div className="text-5xl mb-4">�</div>
-            <h2 className="font-orbitron text-3xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-red-400 bg-clip-text text-transparent">
-              Ready to Launch?
-            </h2>
-            <p className="text-slate-400 mb-8 max-w-xl mx-auto">
-              Join your team and master IBM DevOps Loop through real-world scenarios. Each quest takes 8–12 minutes and teaches skills you can apply immediately.
-            </p>
-            <button
-              onClick={() => navigate('/avatar')}
-              className="flex items-center gap-2 mx-auto px-8 py-4 rounded-2xl font-bold text-white hover:opacity-90 transition-all"
-              style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)' }}
-            >
-              <UserCircle size={20} />
-              Create Your Commander
-            </button>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

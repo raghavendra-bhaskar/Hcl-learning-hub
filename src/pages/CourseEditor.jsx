@@ -5,10 +5,12 @@ import {
   Save, ExternalLink, GripVertical, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { validateEmbeddableVideoResource } from '../lib/learningResourceEmbeds.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const RESOURCE_TYPES = [
   { id: 'youtube',  label: 'YouTube',     icon: '▶',  color: '#ef4444' },
+  { id: 'playlist', label: 'Playlist',    icon: '▶',  color: '#ef4444' },
   { id: 'video',    label: 'Video (MP4)', icon: '🎬', color: '#ef4444' },
   { id: 'udemy',    label: 'Udemy',       icon: '🎓', color: '#a78bfa' },
   { id: 'oreilly',  label: "O'Reilly",    icon: '📕', color: '#d97706' },
@@ -101,6 +103,8 @@ function ResourceRow({ res, onUpdate, onDelete }) {
 
   const save = async () => {
     if (!label.trim()) return;
+    const validation = validateEmbeddableVideoResource({ type, url });
+    if (!validation.valid) { alert(validation.message); return; }
     setSaving(true);
     try { const r = await api.put(`/courses-api/resources/${res.id}`, { label: label.trim(), type, url: url.trim() }); onUpdate(r); setEditing(false); }
     catch (e) { alert(e?.message || 'Save failed'); }
@@ -181,6 +185,8 @@ function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
 
   const saveNewResource = async (label, type, url) => {
     try {
+      const validation = validateEmbeddableVideoResource({ type, url });
+      if (!validation.valid) throw new Error(validation.message);
       const r = await api.post(`/courses-api/modules/${mod.id}/resources`, { label, type, url, order: resources.length });
       setResources(p => [...p, r]);
       setAddingRes(false);
@@ -430,7 +436,7 @@ function CourseInfoPanel({ course, onUpdate }) {
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Description</label>
             <textarea value={draft.description || ''} onChange={e => setDraft(p => ({ ...p, description: e.target.value }))}
-              placeholder="Full course description shown in the welcome note"
+              placeholder="Short overview shown on the course page and learning-path hero"
               rows={2} className="w-full rounded-xl px-4 py-2 text-sm focus:outline-none resize-none" style={inputStyle} />
           </div>
           <div>
@@ -659,6 +665,7 @@ export default function CourseEditor() {
 const CORRECT_OPTIONS = ['A', 'B', 'C', 'D'];
 const QUEST_RESOURCE_TYPES = [
   { id:'youtube', label:'YouTube', icon:'▶' },
+  { id:'playlist', label:'Playlist', icon:'▶' },
   { id:'video',   label:'Video (MP4)', icon:'🎬' },
   { id:'udemy',   label:'Udemy', icon:'🎓' },
   { id:'oreilly', label:"O'Reilly", icon:'📕' },
@@ -703,13 +710,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
 
   // Auto-find YouTube videos for a given title query
   const autoFindVideos = (query) => {
-    const searches = [
-      { label: `${query} tutorial`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' tutorial')}` },
-      { label: `${query} explained`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' explained')}` },
-    ];
-    searches.forEach(s => {
-      setQ(p => ({ ...p, learnResources: [...p.learnResources, { _id: uid(), type: 'youtube', label: s.label, url: s.url }] }));
-    });
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query + ' tutorial')}`;
+    window.open(searchUrl, '_blank', 'noopener,noreferrer');
   };
 
   // ── Save ─────────────────────────────────────────────────────────────────
@@ -719,6 +721,12 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
     }
     setSaving(true);
     try {
+      for (const resource of q.learnResources) {
+        const validation = validateEmbeddableVideoResource(resource);
+        if (!validation.valid) {
+          throw new Error(`${resource.label || 'A video resource'}: ${validation.message}`);
+        }
+      }
       // Prepend solution request as a special first learnTopic
       const srEntry = q.solutionRequest?.trim()
         ? [{ content: q.solutionRequest.trim(), order: -1, isSolutionRequest: true }]
@@ -806,13 +814,13 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
             <div className="flex items-center justify-between mb-2">
               <div>
                 <p className="text-xs font-bold text-white">Resources</p>
-                <p className="text-[10px] text-slate-600">YouTube & videos embed inline. Other types open in a new tab.</p>
+                <p className="text-[10px] text-slate-600">Only direct playable YouTube, playlist, Google Drive file, or MP4/WebM video URLs are accepted for inline embeds.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => autoFindVideos(q.title || 'this topic')}
                   className="flex items-center gap-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/30 px-3 py-1.5 rounded-lg hover:bg-amber-500/10 transition-all"
-                  title="Auto-add YouTube search links for this quest topic">
-                  🔍 Auto YouTube
+                  title="Search YouTube in a new tab and paste a direct playable video URL here">
+                  🔍 Search YouTube
                 </button>
                 <button onClick={addResource}
                   className="flex items-center gap-1.5 text-[11px] font-bold text-cyan-400 border border-cyan-500/30 px-3 py-1.5 rounded-lg hover:bg-cyan-500/10 transition-all">

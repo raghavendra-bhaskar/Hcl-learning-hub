@@ -1,0 +1,532 @@
+export type SeedResource = { type: string; label: string; url?: string };
+export type SeedModule = {
+  number: number;
+  title: string;
+  icon: string;
+  color: string;
+  topics: string[];
+  resources: SeedResource[];
+};
+export type SeedWeek = {
+  weekNumber: number;
+  title: string;
+  modules: SeedModule[];
+};
+
+export const PLATFORM_LEARNING_PATHS: Record<string, SeedWeek[]> = {
+  'ai-quest': [
+    {
+      weekNumber: 1,
+      title: 'Foundation',
+      modules: [
+        {
+          number: 1,
+          title: 'AI Foundations & Generative AI',
+          icon: '🧠',
+          color: '#06b6d4',
+          topics: [
+            'What is AI? Moving beyond the hype — Machine Learning vs. Deep Learning',
+            'The Generative Shift: How Generative AI differs from traditional predictive AI',
+            'The AI Ecosystem: Major players (OpenAI, Google, Anthropic, Meta) and their flagship models',
+            'Neural Networks Simplified: How computers learn patterns from data',
+          ],
+          resources: [
+            { type: 'playlist', label: 'What is AI? — Part of AI Transformation: HCL Software Support playlist', url: 'https://www.youtube.com/results?search_query=what+is+AI+machine+learning+deep+learning+explained+beginners' },
+            { type: 'playlist', label: 'Generative AI Foundations for Absolute Beginners — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=generative+AI+foundations+absolute+beginners+course' },
+            { type: 'udemy', label: 'The Next Frontier: Generative AI for Absolute Beginners — Udemy', url: 'https://www.udemy.com/courses/search/?q=generative+ai+absolute+beginners' },
+            { type: 'oreilly', label: "O'Reilly: Generative AI, ML & Deep Learning — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Generative+AI+Machine+Learning+Deep+Learning' },
+          ],
+        },
+        {
+          number: 2,
+          title: 'Conversation AI & Prompt Engineering',
+          icon: '💬',
+          color: '#8b5cf6',
+          topics: [
+            'NLP (Natural Language Processing): How machines understand human speech and text',
+            'The Art of the Prompt: Moving from simple questions to Persona-Based and Chain-of-Thought prompting',
+            'Zero-Shot vs. Few-Shot Learning: Training the AI with examples within the chat window',
+          ],
+          resources: [
+            { type: 'video', label: 'NLP Basics', url: 'https://www.youtube.com/watch?v=fLvJ8VdHLA0' },
+            { type: 'playlist', label: 'Prompt Engineering / Zero-Shot / Few-Shot Deep Dive — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=prompt+engineering+deep+dive+zero+shot+few+shot+chain+of+thought' },
+            { type: 'udemy', label: 'Prompt Engineering for Work — Udemy', url: 'https://www.udemy.com/courses/search/?q=prompt+engineering+for+work' },
+            { type: 'oreilly', label: "O'Reilly: Prompt Engineering & NLP — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Prompt+Engineering+NLP+LLM' },
+            { type: 'workshop', label: 'Workshop 1: Live Session — Build an AI App Using Prompts & AI Tools (join Google Space for schedule)', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 2,
+      title: 'LLMs & Dev Tools',
+      modules: [
+        {
+          number: 3,
+          title: 'Deep Dive into LLMs (Large Language Models)',
+          icon: '🔍',
+          color: '#06b6d4',
+          topics: [
+            'Tokens & Context Windows: Understanding the memory and cost of AI models',
+            'Hallucinations: Why AI makes things up and how to verify outputs',
+            'Temperature & Top-P: Controlling creativity vs. randomness of responses',
+            'Multi-Modal AI: Interacting with images, audio, and video alongside text',
+          ],
+          resources: [
+            { type: 'playlist', label: 'Tokens & Context Windows / Hallucinations — Generative AI Foundations (HCL playlist)', url: 'https://www.youtube.com/results?search_query=LLM+tokens+context+window+hallucinations+temperature+explained' },
+            { type: 'video', label: 'Multi-Modal AI Basics', url: 'https://www.youtube.com/watch?v=J51oZYcNvP8' },
+            { type: 'read', label: 'What is Multi-Modal AI? — IBM Think', url: 'https://www.ibm.com/think/topics/multimodal-ai' },
+            { type: 'udemy', label: 'LLM Concepts Deep Dive: Conceptual Mastery for Developers — Udemy', url: 'https://www.udemy.com/courses/search/?q=LLM+concepts+deep+dive+developers' },
+            { type: 'oreilly', label: "O'Reilly: Natural Language Processing with Transformers — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Natural+Language+Processing+Transformers+LLM' },
+          ],
+        },
+        {
+          number: 4,
+          title: 'Vibe Coding & The Future of Development',
+          icon: '⚡',
+          color: '#8b5cf6',
+          topics: [
+            'What is Vibe Coding? Transitioning from line-by-line code to describing the vibe (intent & logic)',
+            'AI-Native IDEs: Hands-on with tools like GitHub Copilot and Windsurf',
+            'Natural Language Programming: Building functional web apps by describing features, not boilerplate',
+          ],
+          resources: [
+            { type: 'playlist', label: "Vibe Coding Made Simple — A Beginner's Guide (HCL playlist)", url: 'https://www.youtube.com/results?search_query=vibe+coding+beginners+AI+IDE+copilot' },
+            { type: 'udemy', label: 'Optional: Vibe Coding Bootcamp — Udemy', url: 'https://www.udemy.com/courses/search/?q=vibe+coding+bootcamp' },
+            { type: 'read', label: 'Vibe Coding Explained: Tools and Guides — Google Cloud', url: 'https://cloud.google.com/discover/what-is-vibe-coding' },
+            { type: 'read', label: 'What is Vibe Coding? — IBM Think', url: 'https://www.ibm.com/think/topics/vibe-coding' },
+            { type: 'udemy', label: 'Vibe Coding: AI-Driven Software Development and Testing — Udemy', url: 'https://www.udemy.com/courses/search/?q=vibe+coding+AI+software+development+testing' },
+            { type: 'oreilly', label: "O'Reilly: AI-Assisted Development & GitHub Copilot — browse courses & books", url: 'https://learning.oreilly.com/search/?q=AI+assisted+development+GitHub+Copilot' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 3,
+      title: 'Ethics & Agents',
+      modules: [
+        {
+          number: 5,
+          title: 'Using AI Responsibly (Ethics & Compliance)',
+          icon: '⚖️',
+          color: '#f59e0b',
+          topics: [
+            'Data Privacy: Why you must never paste PII (Personally Identifiable Information) into public LLMs',
+            'Bias & Fairness: Identifying and mitigating societal biases in AI training data',
+            'Intellectual Property: Navigating the legalities of AI-generated code and content',
+          ],
+          resources: [
+            { type: 'playlist', label: 'Using AI Responsibly — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=using+AI+responsibly+ethics+compliance+privacy' },
+            { type: 'read', label: 'What is Responsible AI? — IBM Think', url: 'https://www.ibm.com/think/topics/responsible-ai' },
+            { type: 'udemy', label: 'AI Ethics / Responsible Use — Udemy', url: 'https://www.udemy.com/courses/search/?q=AI+ethics+responsible+use' },
+            { type: 'oreilly', label: "O'Reilly: Responsible AI, Ethics & Fairness — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Responsible+AI+Ethics+Fairness+Bias' },
+          ],
+        },
+        {
+          number: 6,
+          title: 'Automating with AI (Agents & Orchestration)',
+          icon: '🤖',
+          color: '#10b981',
+          topics: [
+            'From Chatbots to Agents: Building AI that can browse the web, run Python scripts, or edit a Google Sheet',
+            'RAG (Retrieval-Augmented Generation): Connecting AI to your own data without retraining the model',
+            'Orchestration Frameworks: Introduction to LangChain and AutoGen for multi-step tasks',
+          ],
+          resources: [
+            { type: 'oreilly', label: 'Generative AI with Python — Chapters 7 & 8: RAG (Retrieval-Augmented Generation)', url: 'https://learning.oreilly.com/search/?q=Generative+AI+with+Python' },
+            { type: 'oreilly', label: 'Generative AI with Python — Chapters 9–14: Agentic Systems & Orchestration', url: 'https://learning.oreilly.com/search/?q=Generative+AI+with+Python' },
+            { type: 'oreilly', label: 'Optional: Modern Automated AI Agents — Chapters 1–3', url: 'https://learning.oreilly.com/search/?q=Modern+Automated+AI+Agents' },
+            { type: 'oreilly', label: 'Optional: Agentic Coding — Level 1 (Level 2 & 3 preferred if possible)', url: 'https://learning.oreilly.com/search/?q=Agentic+Coding' },
+            { type: 'udemy', label: 'The AI Engineer Course 2026: Complete AI Engineer Bootcamp — Udemy', url: 'https://www.udemy.com/courses/search/?q=AI+engineer+2026+complete+bootcamp' },
+            { type: 'playlist', label: 'AI Builder: Create Agents, Voice Agents & Automations in n8n', url: 'https://www.youtube.com/results?search_query=n8n+AI+agents+automation+workflow+google+sheets' },
+            { type: 'udemy', label: 'LangChain & AutoGen: Build Autonomous AI Systems in 4 Weeks — Udemy', url: 'https://www.udemy.com/courses/search/?q=langchain+autogen+autonomous+AI+systems+agentic' },
+            { type: 'udemy', label: 'The Complete No-Code AI Agents Masterclass — Udemy', url: 'https://www.udemy.com/courses/search/?q=no+code+AI+agents+masterclass+beginners' },
+            { type: 'workshop', label: 'Workshop 2: Live Session — Build an AI Agent from Scratch (join Google Space for schedule)', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 4,
+      title: 'Programming & Git',
+      modules: [
+        {
+          number: 7,
+          title: 'Python for AI Automation',
+          icon: '🐍',
+          color: '#f59e0b',
+          topics: [
+            'The Scripting Mindset: Why Python is the industry standard for AI (simplicity, readability, ecosystem)',
+            'Core Concepts: Variables, data structures (lists & dictionaries), control flow (if/else, for loops)',
+          ],
+          resources: [
+            { type: 'read', label: 'Python Official Tutorial — docs.python.org/3/tutorial/', url: 'https://docs.python.org/3/tutorial/' },
+            { type: 'read', label: 'Python for Everybody — freeCodeCamp', url: 'https://www.freecodecamp.org/learn/python-for-everybody/' },
+            { type: 'playlist', label: 'Python Fundamentals — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=python+fundamentals+beginners+tutorial+AI+automation' },
+            { type: 'udemy', label: 'The AI Engineer Course 2026 — look for Python & NLP modules', url: 'https://www.udemy.com/courses/search/?q=AI+engineer+python+NLP' },
+            { type: 'oreilly', label: "O'Reilly: Learning Python — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Learning+Python+programming+beginners' },
+          ],
+        },
+        {
+          number: 8,
+          title: 'Version Control with Git & GitHub',
+          icon: '🌿',
+          color: '#10b981',
+          topics: [
+            'The Safety Net: How Git tracks every change, allowing you to undo mistakes',
+            'Collaborative Development: Using Branches, Commits, and Pull Requests to build tools as a team',
+            'Remote Repositories: Syncing local work with GitHub for backup and team visibility',
+          ],
+          resources: [
+            { type: 'playlist', label: 'Git and GitHub Crash Course — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=git+github+crash+course+beginners+version+control' },
+            { type: 'udemy', label: 'Git & GitHub for Beginners: The Complete Hands On Course — Udemy', url: 'https://www.udemy.com/courses/search/?q=git+github+beginners+complete+hands+on' },
+            { type: 'oreilly', label: "O'Reilly: Version Control with Git — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Version+Control+Git+GitHub' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 5,
+      title: 'APIs & Data',
+      modules: [
+        {
+          number: 9,
+          title: 'Working with APIs (The Digital Handshake)',
+          icon: '🔌',
+          color: '#06b6d4',
+          topics: [
+            'Understanding REST: HTTP methods — GET for fetching data, POST for sending/creating data',
+            'The Request/Response Cycle: Headers, status codes (200 OK vs. 404 Not Found), and payloads',
+            'Python requests Library: The industry-standard tool for making API calls to any web service',
+          ],
+          resources: [
+            { type: 'read', label: 'Automate the Boring Stuff with Python — automatetheboringstuff.com', url: 'https://automatetheboringstuff.com/' },
+            { type: 'playlist', label: 'Understanding APIs and RESTful APIs Crash Course — HCL Support playlist', url: 'https://www.youtube.com/results?search_query=APIs+RESTful+crash+course+python+requests' },
+            { type: 'oreilly', label: 'Python for DevOps — Chapter 9: API Automation & Scripting', url: 'https://learning.oreilly.com/search/?q=Python+for+DevOps' },
+            { type: 'udemy', label: 'Understanding APIs and RESTful APIs Crash Course — Udemy', url: 'https://www.udemy.com/courses/search/?q=APIs+RESTful+crash+course' },
+          ],
+        },
+        {
+          number: 10,
+          title: 'JSON Parsing & Data Transformation',
+          icon: '📦',
+          color: '#8b5cf6',
+          topics: [
+            'JSON (JavaScript Object Notation): The universal language of APIs',
+            'Navigating nested dictionaries and lists to extract specific data',
+            'Example: Pulling a case status out of a complex API response',
+          ],
+          resources: [
+            { type: 'playlist', label: 'JSON for Beginners — A Quick Course (HCL Support playlist)', url: 'https://www.youtube.com/results?search_query=JSON+beginners+quick+course+javascript+parsing' },
+            { type: 'udemy', label: 'Beginners Course: Jq Command Tutorials to Parse JSON Data — Udemy', url: 'https://www.udemy.com/courses/search/?q=jq+command+JSON+parse+beginners' },
+            { type: 'oreilly', label: "O'Reilly: Python Data Transformation & JSON — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Python+JSON+data+transformation+API' },
+          ],
+        },
+        {
+          number: 11,
+          title: 'API Authentication & Security',
+          icon: '🔐',
+          color: '#f59e0b',
+          topics: [
+            'API Keys vs. OAuth2: Key-based access vs. the more secure OAuth2 flow for Google Workspace APIs',
+            'Authorized JavaScript Origins: Managing security for client-side apps to restrict trusted domains',
+            'Credential Safety: Implementing .env files to keep secrets out of source code',
+          ],
+          resources: [
+            { type: 'read', label: 'Using Gemini API Keys — generateContent API | Google AI for Developers', url: 'https://ai.google.dev/gemini-api/docs/api-key' },
+            { type: 'read', label: 'Authentication with OAuth Quickstart | Gemini API | Google AI for Developers', url: 'https://ai.google.dev/gemini-api/docs/oauth' },
+            { type: 'oreilly', label: "O'Reilly: API Security, OAuth 2.0 & Credential Management — browse courses & books", url: 'https://learning.oreilly.com/search/?q=OAuth+API+Security+credentials' },
+          ],
+        },
+        {
+          number: 12,
+          title: 'Scripting Automation Tasks',
+          icon: '⚙️',
+          color: '#10b981',
+          topics: [
+            'Batch Processing: Automating repetitive tasks in bulk across datasets',
+            'Webhooks: Making your script listen for events (e.g., run when a customer submits a feedback form)',
+          ],
+          resources: [
+            { type: 'read', label: 'What is a Webhook? — article', url: 'https://www.ibm.com/think/topics/webhooks' },
+            { type: 'read', label: 'About Webhooks — GitHub Docs', url: 'https://docs.github.com/en/webhooks/about-webhooks' },
+            { type: 'oreilly', label: "O'Reilly: Python Automation & Scripting — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Python+automation+scripting+webhooks' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 6,
+      title: 'Advanced & Deploy',
+      modules: [
+        {
+          number: 13,
+          title: 'Enterprise Scripting (Node.js & Java)',
+          icon: '🏢',
+          color: '#06b6d4',
+          topics: [
+            'Server-Side Logic: Node.js handles async tasks; Java manages large-scale enterprise data',
+            'Google API Client Libraries: Official Google Cloud libraries for Node.js and Java to manage Workspace data',
+            'Integration Patterns: Bridging Python-based AI logic with existing Java-based environments',
+          ],
+          resources: [
+            { type: 'read', label: 'API Client Libraries | Google for Developers', url: 'https://developers.google.com/api-client-library' },
+            { type: 'oreilly', label: "O'Reilly: Node.js & Enterprise API Integration — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Node.js+Enterprise+Java+API+Integration' },
+          ],
+        },
+        {
+          number: 14,
+          title: 'Docker & Containerization (Portable Workflows)',
+          icon: '🐳',
+          color: '#0ea5e9',
+          topics: [
+            'It Works on My Machine — No More: Docker packages code, libraries, and dependencies into a portable container',
+            'Container Lifecycle: Building, running, and managing containers locally and in production',
+            'Microservices in Support: Deploy small, specialized AI tools independently without affecting the rest of the infrastructure',
+          ],
+          resources: [
+            { type: 'playlist', label: 'Docker for the Absolute Beginner — Hands-On (HCL Support playlist)', url: 'https://www.youtube.com/results?search_query=docker+absolute+beginner+hands+on+devops+containers' },
+            { type: 'udemy', label: 'Docker for the Absolute Beginner — Hands On — DevOps — Udemy', url: 'https://www.udemy.com/courses/search/?q=docker+absolute+beginner+hands+on+devops' },
+            { type: 'oreilly', label: "O'Reilly: Docker Up & Running / Containerization — browse courses & books", url: 'https://learning.oreilly.com/search/?q=Docker+containerization+Up+Running' },
+          ],
+        },
+      ],
+    },
+  ],
+  'devops-loop': [
+    {
+      weekNumber: 1,
+      title: 'Loop Foundations',
+      modules: [
+        {
+          number: 1,
+          title: 'Introduction to IBM DevOps Loop',
+          icon: '🔄',
+          color: '#06b6d4',
+          topics: [
+            'What is IBM DevOps Loop? — Unified CI/CD platform integrating Plan, Control, Build, Deploy, Test, Measure',
+            'Installing DevOps Loop — Prerequisites and installation reference',
+            'TeamSpace concept — Secure, dedicated environment per team within a shared Loop installation',
+            'Creating a Loop — Automatic provisioning of all integrated tools, webhooks, plugins, and repositories',
+            'What happens at Loop creation: Planning tool, source control, testing, deployment, and metrics all provisioned and linked',
+            'Software Development Life Cycle (SDLC) in Loop context',
+            'DevOps Loop Dashboard — Unified view linking all solutions from a single interface',
+          ],
+          resources: [
+            { type: 'read', label: 'IBM DevOps Loop — Installation Reference', url: 'https://www.ibm.com/docs/en/devops-loop' },
+            { type: 'read', label: 'IBM Intermediate Tutorials — JPetStore App Setup', url: 'https://www.ibm.com/docs/en/devops-deploy/8.2.0?topic=tutorials-intermediate' },
+            { type: 'oreilly', label: "O'Reilly: DevOps Fundamentals & CI/CD Pipelines", url: 'https://learning.oreilly.com/search/?q=DevOps+CI+CD+pipeline+fundamentals' },
+            { type: 'playlist', label: 'IBM DevOps Loop Introduction — Overview playlist', url: 'https://www.youtube.com/results?search_query=IBM+DevOps+Loop+overview+introduction' },
+          ],
+        },
+        {
+          number: 2,
+          title: 'DevOps Loop Architecture & Value Stream',
+          icon: '🗺️',
+          color: '#8b5cf6',
+          topics: [
+            'Complete overview of the DevOps Loop Dashboard — accessing each solution',
+            'Value Stream Map (VSM) — visualizing the end-to-end flow of work items',
+            'VSM Stages: Submitted → Backlog → In Progress → In Review → Completed → Build → DEV → QA → PROD',
+            'Dots in the Value Stream — graphical representation of builds, PRs, issues, commits',
+            'Automated Integrations: Plan, Control, Build, Deploy, Test Hub — how data flows between tools',
+            'Sync frequency — default 5-minute background sync, manual refresh via Disable/Enable toggle',
+            'Understanding the Loop lifecycle — from workitem to deployment in one continuous flow',
+          ],
+          resources: [
+            { type: 'read', label: 'DevOps Velocity Overview — IBM Docs', url: 'https://www.ibm.com/docs/en/SSCKX6_5.2.x/user/topics/c_overview_se.html' },
+            { type: 'oreilly', label: "O'Reilly: Value Stream Mapping for Software Delivery", url: 'https://learning.oreilly.com/search/?q=value+stream+mapping+DevOps+software+delivery' },
+            { type: 'playlist', label: 'Value Stream Management & DevOps Metrics — YouTube', url: 'https://www.youtube.com/results?search_query=value+stream+management+DevOps+metrics+velocity' },
+            { type: 'workshop', label: 'Workshop 1: Loop Setup & VSM Demo — join Google Space for schedule', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 2,
+      title: 'Plan & Control',
+      modules: [
+        {
+          number: 3,
+          title: 'DevOps Plan — Change Management',
+          icon: '📋',
+          color: '#06b6d4',
+          topics: [
+            'What is DevOps Plan? — Low-code/no-code change management with AI assistant',
+            'Key objectives: Real-time collaboration, Auditability, Multiple workflows, Task management',
+            'Record state transition flow: Submitted → Backlog → Active → Resolved → Closed',
+            'Core components: Workflow types, Plan Application, Backend database, API Server',
+            'Plan Application naming — picks first 5 characters from Loop name (e.g., DevOp)',
+            'Creating a Workitem — Title, Project, Owner, and saving with unique ID (e.g., DevOp00000045)',
+            'State transitions: Change State dropdown — Submitted → Backlog → Start (Active) → Resolve → Close',
+            'Associating source code changes with Plan workitems using record ID in Control commits',
+            'SCM Events tab — viewing Control commits linked to a Plan record',
+            'Monitoring workitem movement in Measure Value Stream as state changes',
+          ],
+          resources: [
+            { type: 'video', label: 'DevOps Plan — Control Workflow', url: 'https://drive.google.com/file/d/1-GGGwdgiQS9YJaTRRKpJqOew4e55WHI1/view' },
+            { type: 'oreilly', label: "O'Reilly: Agile Project Management & Change Tracking", url: 'https://learning.oreilly.com/search/?q=agile+project+management+change+tracking+workitems' },
+            { type: 'playlist', label: 'IBM DevOps Plan — Workitem Lifecycle Demo', url: 'https://www.youtube.com/results?search_query=IBM+DevOps+Plan+workitem+lifecycle+change+management' },
+            { type: 'read', label: 'IBM DevOps Plan Documentation', url: 'https://www.ibm.com/docs/en/devops-plan' },
+            { type: 'video', label: 'Agile Change Management — State Transitions Explained', url: 'https://www.youtube.com/watch?v=9TycLR0TqFA' },
+          ],
+        },
+        {
+          number: 4,
+          title: 'DevOps Control — Source Code & Git Workflow',
+          icon: '🗂️',
+          color: '#8b5cf6',
+          topics: [
+            'What is DevOps Control? — Git hosting and code review platform (based on open-source Gitea)',
+            'Key features: Code hosting, lightweight & fast, security (access control, RBAC), code review',
+            'Code review workflows — Pull Request workflow and AGit workflow',
+            'Control repository — auto-created as part of Loop creation',
+            'Source code flow: Add/modify code → Associate with Plan workitem → Create PR → Merge → Trigger Build',
+            'Editing code in Control — adding changes and specifying workitem record ID in Commit changes field',
+            'Creating and merging Pull Requests — New Pull Request → Create Pull Request → Create merge commit',
+            'Traceability — linking commits to Plan record IDs for full audit trail',
+            'Webhooks — how Control triggers Build on merge to main branch',
+            'Viewing SCM Events in DevOps Plan to confirm code-record association',
+          ],
+          resources: [
+            { type: 'read', label: 'Gitea Documentation — Code Hosting & Review', url: 'https://docs.gitea.com/' },
+            { type: 'oreilly', label: "O'Reilly: Git Version Control & Code Review Best Practices", url: 'https://learning.oreilly.com/search/?q=Git+version+control+code+review+pull+request' },
+            { type: 'video', label: 'Git Pull Request Workflow Explained', url: 'https://www.youtube.com/watch?v=For9VtrQx58' },
+            { type: 'playlist', label: 'IBM DevOps Control — Git & PR Workflow Demo', url: 'https://www.youtube.com/results?search_query=IBM+DevOps+Control+Gitea+source+control+demo' },
+            { type: 'workshop', label: 'Workshop 2: Plan → Control Demo (Bichon Category) — join Google Space', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 3,
+      title: 'Build & Deploy',
+      modules: [
+        {
+          number: 5,
+          title: 'DevOps Build — Automated CI Pipeline',
+          icon: '🏗️',
+          color: '#f59e0b',
+          topics: [
+            'What is DevOps Build? — The bridge between development and deployment, transforming source code into deployable artifacts',
+            'Build flow: Repository (Control) → Build Server → Build Agent → CodeStation',
+            'Core components: Repository, Build Server, Build Agent, CodeStation (internal artifact repository)',
+            'Inputs: source code, build scripts, config files, env variables. Output: .war/.jar/.ear artifacts',
+            'Configuring Build Agents — setting Max Jobs, Agent Pools, confirming Online/Green status',
+            'Templates hierarchy: Project Template → Process Template → Source Template → Job/Step Template',
+            'Build step-by-step breakdown: Create Stamp → Disable SSL → Clean Workspace → Populate Workspace → Get Change Logs → Build Artifacts → Upload to CodeStation → Create Component Versions (APP/WEB/DB) → Create Snapshot → Deploy Snapshot → Assign Status',
+            'Repository Triggers — auto-trigger build on any branch push (continuous integration)',
+            'Project Triggers — custom triggers for specific projects',
+            'Build reports and step output logs',
+            'CodeStation — versioned, immutable artifact storage. Version traceability back to specific Commit ID',
+          ],
+          resources: [
+            { type: 'video', label: 'DevOps Loop Deep Dive session on Build', url: 'https://drive.google.com/file/d/1AX_wUCj4FLVBjbc5KvQWrwPaL1fc6JZm/view' },
+            { type: 'oreilly', label: "O'Reilly: Continuous Integration & Build Automation", url: 'https://learning.oreilly.com/search/?q=continuous+integration+build+automation+CI+pipeline' },
+            { type: 'video', label: 'CI/CD Pipeline Explained — Build to Artifact', url: 'https://www.youtube.com/watch?v=1er2cjUq1UI' },
+            { type: 'playlist', label: 'IBM DevOps Build — Agent & Template Configuration Demo', url: 'https://www.youtube.com/results?search_query=IBM+DevOps+Build+pipeline+agent+template+configuration' },
+            { type: 'read', label: 'IBM DevOps Build — CodeStation Artifact Management', url: 'https://www.ibm.com/docs/en/devops-build' },
+          ],
+        },
+        {
+          number: 6,
+          title: 'DevOps Deploy — Enterprise Deployment Automation',
+          icon: '🚀',
+          color: '#10b981',
+          topics: [
+            'What is DevOps Deploy? — Enterprise deployment solution (IBM UrbanCode Deploy/UCD)',
+            'Core functionality: Release Automation, Visibility & Traceability, Environment Modeling, Integrations (Jenkins, K8s, ServiceNow, WebSphere)',
+            'Deploy architecture: Deploy Server (central hub/UI/audit), Agents (lightweight on target systems), Repositories (artifact storage), Database',
+            'Key elements: Applications, Environments (Dev/QA/Prod), Components, Processes, Resources & Agents, Snapshots',
+            'JPetStore deployment setup — APP, DB, and WEB components',
+            'Component process design: APP (Clean → Download → Unzip → Update Config → Start Tomcat → Undeploy → Deploy)',
+            'Component process design: DB (Download Artifacts → Upgrade DB)',
+            'Component process design: WEB (Clean → Download → Remove old → Deploy new content)',
+            'Application Process — orchestrating APP + DB + WEB + TestUI deployment in sequence',
+            'Resource Tree — mapping Jpetstore_Dev environment with Dev_agent and component inventory',
+            'Snapshots — combining APP + WEB + DB component versions for consistent deployments',
+            'Configuring external agent communication via Kubernetes LoadBalancer and externalIPs',
+            'IBM Docs reference: Elements Overview and Firewall/Communication Configuration',
+          ],
+          resources: [
+            { type: 'video', label: 'DevOps Loop Deep Dive session on Deploy', url: 'https://drive.google.com/file/d/1PBZfGpSUHL6v4MdE5smJ9-Vkt499WR3f/view?usp=drive_web' },
+            { type: 'read', label: 'IBM DevOps Deploy — Elements Overview', url: 'https://www.ibm.com/docs/en/devops-deploy/8.2.0?topic=deploy-elements-overview' },
+            { type: 'read', label: 'IBM DevOps Deploy — Firewall Configuration', url: 'https://www.ibm.com/docs/en/devops-deploy/8.2.0?topic=installing-firewall-communication-configuration' },
+            { type: 'read', label: 'IBM Intermediate Tutorials — JPetStore Components', url: 'https://www.ibm.com/docs/en/devops-deploy/8.2.0?topic=tutorials-intermediate' },
+            { type: 'oreilly', label: "O'Reilly: Continuous Delivery & Deployment Automation", url: 'https://learning.oreilly.com/search/?q=continuous+delivery+deployment+automation+enterprise' },
+            { type: 'video', label: 'IBM UrbanCode Deploy — Application Deployment Overview', url: 'https://www.youtube.com/watch?v=2GJes_DLnAo' },
+            { type: 'workshop', label: 'Workshop 3: Build → Deploy Pipeline Demo — join Google Space', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+    {
+      weekNumber: 4,
+      title: 'Test & Measure',
+      modules: [
+        {
+          number: 7,
+          title: 'DevOps Test — Automation Testing Hub',
+          icon: '🧪',
+          color: '#ef4444',
+          topics: [
+            'What is DevOps Test Hub? — Scalable automation testing built on Docker, supports native Kubernetes, OpenShift, and RHEL',
+            'Challenges DevOps Test solves — fragmented tool integrations, slow innovation, duplication of effort, delivery risk',
+            'TeamSpace and project structure in Test Hub — admin permissions and member management',
+            'Creating a Web UI application in Test Hub — Author > Test Editor > Open Action Menu (+)',
+            'Edit Branch concept — temporary branch for creating/modifying test resources',
+            'Test asset format — .dtx.yaml file extension',
+            'Installing Test Runtime Agent (devops-test-runtime.msi) for recording on Linux/Mac/Windows',
+            'Recording Web UI tests — selecting browser and UI interactions, allowing delay between actions',
+            'Stopping recording and reviewing the captured test asset',
+            'Test execution — playback with progress bar, pass/fail/error counts, step details',
+            'Viewing execution results — Analyze section with functional report and test log links',
+            'Execution report contents: summary, test environment, detailed test steps, screenshots, SmartShots',
+            'Integration with Deploy — Run TestUI component as post-deployment step via Test Hub plugin',
+            'HCL DevOps Test Hub Plugin — download and configuration for UCD integration',
+          ],
+          resources: [
+            { type: 'video', label: 'DevOps Loop Deep Dive session on Test', url: 'https://drive.google.com/file/d/1Mq1TOVxayr_WMhRqtZufMl8L0FHAFfcW/view?usp=drive_web' },
+            { type: 'read', label: 'DevOps Test Hub — Recording Web UI Tests (IBM Docs)', url: 'https://www.ibm.com/docs/en/devops-test-hub/11.0.7?topic=creation-recording-web-ui-test' },
+            { type: 'read', label: 'HCL DevOps Test Hub Plugin — Downloads', url: 'https://urbancode.github.io/IBM-UCx-PLUGIN-DOCS/UCD/HCLDevOpsTestHub/downloads.html' },
+            { type: 'read', label: 'HCL DevOps Test Hub Plugin — Configuration Parameters', url: 'https://urbancode.github.io/IBM-UCx-PLUGIN-DOCS/UCD/HCLDevOpsTestHub/steps.html' },
+            { type: 'oreilly', label: "O'Reilly: Test Automation & Continuous Testing in DevOps", url: 'https://learning.oreilly.com/search/?q=test+automation+continuous+testing+DevOps' },
+            { type: 'video', label: 'Web UI Test Automation — Record and Playback', url: 'https://www.youtube.com/watch?v=nu_Fg-5YPJA' },
+          ],
+        },
+        {
+          number: 8,
+          title: 'DevOps Measure — Value Streams & Insights',
+          icon: '📊',
+          color: '#f97316',
+          topics: [
+            'What is DevOps Measure (Velocity)? — Enterprise-scale release management and DevOps process insights',
+            'Key elements: Value Streams, Pipelines, Dots (graphical work item representations), Integrations (Plugins), Insights (Metrics)',
+            'Value Stream — represents objects and activities from initial concept to delivered project',
+            'Pipeline — streamlined application lifecycle management with auto-generated deployment plans',
+            'Automated Integrations feeding the VSM: IBM DevOps Deploy, DevOps Build, DevOps Control, DevOps Plan, DevOps Test Hub',
+            'Integration sync: Online status, 5-minute auto-sync, manual toggle to force resync',
+            'Full VSM stage flow with queries:',
+            'Submitted: issue.status = Submitted',
+            'Backlog: issue.status = Backlog',
+            'In Progress: issue.status = Active',
+            'In Review: issue.status = Resolved AND (pr.status = open OR pr.status = review)',
+            'Completed: issue.status = Closed AND pr.status = merged',
+            'Failed Build / Success Build — build.status filters',
+            'DEV / QA / PROD — deployment.env filters for each environment',
+            'Insights dashboards — build multiple dashboards (Quality Dashboard, Executive Summary)',
+            'DevOps metrics: cycle time, lead time, deployment frequency, build success rates',
+          ],
+          resources: [
+            { type: 'video', label: 'DevOps Loop Deep Dive session on Measure', url: 'https://drive.google.com/file/d/1eM1fDiXL5MRt-d1pxGQ-95lIpCD2X37x/view?usp=drive_web' },
+            { type: 'read', label: 'IBM DevOps Velocity — Overview (IBM Docs)', url: 'https://www.ibm.com/docs/en/SSCKX6_5.2.x/user/topics/c_overview_se.html' },
+            { type: 'oreilly', label: "O'Reilly: DevOps Metrics, Measurement & DORA Metrics", url: 'https://learning.oreilly.com/search/?q=DevOps+metrics+DORA+measurement+value+stream' },
+            { type: 'video', label: 'DORA Metrics & DevOps Measurement Explained', url: 'https://www.youtube.com/watch?v=RBuPlMTXuFc' },
+            { type: 'playlist', label: 'IBM DevOps Measure — Value Stream Management Demo', url: 'https://www.youtube.com/results?search_query=IBM+DevOps+Velocity+value+stream+management+demo' },
+            { type: 'workshop', label: 'Workshop 4: End-to-End CI/CD Demo — Plan to PROD — join Google Space', url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7' },
+          ],
+        },
+      ],
+    },
+  ],
+};

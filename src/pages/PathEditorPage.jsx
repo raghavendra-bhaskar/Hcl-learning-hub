@@ -2,34 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Plus, X, Clock, Award, ChevronDown, ChevronRight, GripVertical, Trash2, Edit2, Globe, Lock, BookOpen, Search } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { DEVOPS_LEARNING_PATH_WEEKS } from '../data/devopsLearningPath.js';
-import { LEARNING_PATH_WEEKS } from '../data/learningPath.js';
 
 // ── URL builder for course navigation ──────────────────────────────────────
 const HARDCODED_ROUTES = { 'devops-loop':'/devops-loop', 'ai-quest':'/ai-quest' };
 function buildCourseUrl(refId) {
   return HARDCODED_ROUTES[refId] || `/c/${refId}`;
 }
-
-// ── Fallback weeks for courses that have no DB CourseWeek records ───────────
-function toWeekStubs(rawWeeks) {
-  return rawWeeks.map(w => ({
-    id:         `fallback-week-${w.week}`,
-    weekNumber: w.week,
-    title:      `${w.label}: ${w.theme}`,
-    modules:    (w.modules || []).map(m => ({ id: m.id, title: m.title, order: m.number || 0 })),
-  }));
-}
-const COURSE_FALLBACK_WEEKS = {
-  'devops-loop': toWeekStubs(DEVOPS_LEARNING_PATH_WEEKS),
-  'ai-quest':    toWeekStubs(LEARNING_PATH_WEEKS),
-};
-
-// ── Hardcoded courses (DevOps Loop + AI Quest) ───────────────────────────────
-const HARDCODED_COURSES = [
-  { id:'devops-loop', slug:'devops-loop', title:'DevOps Loop', tagline:'End-to-End DevOps Lifecycle', emoji:'🔄', accentColor:'#f97316', status:'live', weeks:[] },
-  { id:'ai-quest',    slug:'ai-quest',    title:'AI Quest',    tagline:'Generative AI & Machine Learning', emoji:'🤖', accentColor:'#06b6d4', status:'live', weeks:[] },
-];
 
 function fmtDuration(mins) {
   if (!mins) return '';
@@ -95,23 +73,18 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
     }).catch(() => {});
   }, []);
 
-  // Deduplicate: DB version (with real UUID) wins over hardcoded stubs
-  const dbSlugSet = new Set(dbCourses.map(c => c.slug || c.id));
-  const hardcodedFiltered = HARDCODED_COURSES.filter(h => !dbSlugSet.has(h.slug || h.id));
-  const allCourses = [...hardcodedFiltered, ...dbCourses];
+  const allCourses = dbCourses;
   const filtered = allCourses.filter(c =>
     !search || c.title.toLowerCase().includes(search.toLowerCase()) ||
     (c.tagline || '').toLowerCase().includes(search.toLowerCase())
   );
-
-  const isDbCourse = (course) => !HARDCODED_COURSES.some(h => h.id === course.id);
 
   const toggle = (id) => {
     const willOpen = !expanded[id];
     setExpanded(e => ({ ...e, [id]: !e[id] }));
     if (willOpen && !questsCache[id]) {
       const course = allCourses.find(c => c.id === id);
-      if (course && isDbCourse(course)) {
+      if (course) {
         api.get(`/courses-api/${course.id}/quests`)
           .then(d => setQuestsCache(q => ({ ...q, [id]: Array.isArray(d) ? d : [] })))
           .catch(() => setQuestsCache(q => ({ ...q, [id]: [] })));
@@ -151,9 +124,7 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
           {filtered.map(course => {
             const accent = course.accentColor || '#06b6d4';
             const courseSlugKey = course.slug || course.id;
-            const rawWeeks   = (course.weeks || []).length > 0
-              ? course.weeks
-              : (COURSE_FALLBACK_WEEKS[courseSlugKey] || []);
+            const rawWeeks = course.weeks || [];
             const allModules = rawWeeks.flatMap(w => (w.modules || []).map(m => ({ ...m, weekTitle: w.title })));
             const slugKey = courseSlugKey;
             const alreadyAdded = existingRefIds.has(slugKey);
@@ -178,7 +149,7 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                       {alreadyAdded ? <Check size={10} /> : <Plus size={10} />}
                       {alreadyAdded ? 'Added' : 'Add'}
                     </button>
-                    {(rawWeeks.length > 0 || allModules.length > 0 || isDbCourse(course)) && (
+                    {(rawWeeks.length > 0 || allModules.length > 0) && (
                       <button onClick={() => toggle(course.id)}
                         className="text-slate-600 hover:text-slate-400 p-1">
                         {expanded[course.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -235,7 +206,7 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                   </div>
                 )}
                 {/* Quests (DB courses only) */}
-                {expanded[course.id] && isDbCourse(course) && (() => {
+                {expanded[course.id] && (() => {
                   const quests = questsCache[course.id];
                   if (!quests) return (
                     <div className="border-t border-white/5 pl-11 pr-3 py-2">

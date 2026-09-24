@@ -1,27 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Map, ChevronRight, Star, UserCircle, ArrowLeft, GraduationCap, ExternalLink } from 'lucide-react';
-import { useAppStore } from '../App.jsx';
-import { QUESTS } from '../data/index.js';
-import XPBar from '../components/XPBar.jsx';
-import AvatarDisplay from '../components/AvatarDisplay.jsx';
+import { Trophy, Map, ChevronRight, Star, ArrowLeft, ExternalLink } from 'lucide-react';
 import { buildHandoffUrl } from '../components/ExternalHandoff.jsx';
 
 const AI_CERTIFICATION_URL = 'https://cnapp.prod.hclpnp.com/lms/course/index.php?categoryid=20';
 
 export default function Home() {
   const navigate = useNavigate();
-  const { playerName, avatar, totalXP, earnedBadges, completedQuests, levelInfo } = useAppStore();
-  const isSetup = !!playerName;
-
-  const completedCount = Object.keys(completedQuests).length;
-  const progressPct = Math.round((completedCount / QUESTS.length) * 100);
-
-  const stats = [
-    { label: 'Quests Completed', value: `${completedCount} / ${QUESTS.length}`, icon: '⚔️' },
-    { label: 'Total XP Earned', value: totalXP.toLocaleString(), icon: '⚡' },
-    { label: 'Badges Earned', value: earnedBadges.length, icon: '🏅' },
-    { label: 'Completion', value: `${progressPct}%`, icon: '🎯' },
-  ];
 
   const arsenalItems = [
     // ── Navigational cards (each goes to a unique page) ──────────────────────
@@ -71,88 +55,43 @@ export default function Home() {
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-900/20 via-transparent to-violet-900/20 pointer-events-none" />
         <div className="max-w-6xl mx-auto px-4 pt-16 pb-20 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-sm font-medium mb-6 animate-fade-in">
-            <Star size={14} className="animate-pulse-slow" />
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-[12px] font-medium mb-6 animate-fade-in">
+            <Star size={12} className="animate-pulse-slow" />
             Gamified AI Learning for Teams
           </div>
 
-          <h1 className="font-orbitron text-5xl md:text-7xl font-black mb-6 animate-slide-up">
+          <h1 className="font-orbitron text-4xl md:text-6xl font-black mb-6 animate-slide-up">
             <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
               AI QUEST
             </span>
           </h1>
 
-          <p className="text-xl md:text-2xl text-slate-300 mb-4 max-w-3xl mx-auto animate-slide-up">
+          <p className="text-base md:text-xl text-slate-300 mb-4 max-w-3xl mx-auto animate-slide-up">
             Conquer <span className="text-cyan-400 font-semibold">21 AI learning quests</span> through real-world scenarios.
             Earn XP, unlock badges, and climb the leaderboard.
           </p>
-          <p className="text-slate-500 mb-10 animate-fade-in">
+          <p className="text-slate-500 text-[12px] mb-10 animate-fade-in">
             Generative AI • Machine Learning • MLOps • NLP • Computer Vision • LLM Architecture • RAG • AI Security • Prompt Engineering • Python • APIs • Docker
           </p>
-
-          {!isSetup ? (
-            <div className="flex flex-col items-center gap-4 animate-scale-in">
-              <p className="text-slate-400 text-sm">Create your commander to begin the mission</p>
-              <button
-                onClick={() => navigate('/avatar')}
-                className="group flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-violet-500 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-cyan-500/25"
-              >
-                <UserCircle size={22} />
-                Create Your Commander
-                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
-              <button
-                onClick={() => navigate('/paths')}
-                className="group flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-cyan-500/25"
-              >
-                <Map size={20} />
-                Continue Mission
-                <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-              </button>
-              <button
-                onClick={() => navigate('/leaderboard')}
-                className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-yellow-500/30 transition-all"
-              >
-                <Trophy size={20} className="text-yellow-400" />
-                Leaderboard
-              </button>
-            </div>
-          )}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
+            <button
+              onClick={() => navigate('/paths')}
+              className="group flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-cyan-500/25"
+            >
+              <Map size={20} />
+              Continue Mission
+              <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+            <button
+              onClick={() => navigate('/leaderboard')}
+              className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-yellow-500/30 transition-all"
+            >
+              <Trophy size={20} className="text-yellow-400" />
+              Leaderboard
+            </button>
+          </div>
         </div>
       </section>
-
-      {/* Stats */}
-      {isSetup && (
-        <section className="max-w-6xl mx-auto px-4 pb-12">
-          <div className="glass-card rounded-2xl p-6 mb-8 neon-blue">
-            <div className="flex items-center gap-4 mb-4">
-              {avatar && <AvatarDisplay avatar={avatar} size="lg" />}
-              <div className="flex-1">
-                <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Commander</p>
-                <h2 className="font-orbitron font-bold text-xl text-white">{playerName}</h2>
-                <p className="text-sm text-slate-400">{levelInfo.icon} {levelInfo.title} — Level {levelInfo.level}</p>
-              </div>
-              <button onClick={() => navigate('/avatar')} className="text-xs text-slate-500 hover:text-cyan-400 transition-colors border border-white/10 rounded-lg px-3 py-1.5 hover:border-cyan-500/30">
-                Edit Avatar
-              </button>
-            </div>
-            <XPBar xp={totalXP} />
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-            {stats.map(stat => (
-              <div key={stat.label} className="glass-card rounded-xl p-5 text-center">
-                <div className="text-3xl mb-2">{stat.icon}</div>
-                <div className="text-2xl font-bold text-white mb-1">{stat.value}</div>
-                <div className="text-xs text-slate-500">{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Features */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
@@ -229,27 +168,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      {!isSetup && (
-        <section className="max-w-6xl mx-auto px-4 pb-20 text-center">
-          <div className="glass-card rounded-3xl p-12 border border-cyan-500/10">
-            <div className="text-5xl mb-4">🚀</div>
-            <h2 className="font-orbitron text-3xl font-bold mb-4 bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
-              Ready to Launch?
-            </h2>
-            <p className="text-slate-400 mb-8 max-w-xl mx-auto">
-              Join your team and master AI through adventure. Each quest takes 8-20 minutes and teaches real skills you can apply immediately.
-            </p>
-            <button
-              onClick={() => navigate('/avatar')}
-              className="flex items-center gap-2 mx-auto px-8 py-4 bg-gradient-to-r from-cyan-500 to-violet-500 rounded-2xl font-bold text-white hover:opacity-90 transition-all"
-            >
-              <UserCircle size={20} />
-              Create Your Commander
-            </button>
-          </div>
-        </section>
-      )}
     </div>
   );
 }

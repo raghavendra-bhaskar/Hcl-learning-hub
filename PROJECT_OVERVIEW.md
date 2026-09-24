@@ -121,7 +121,10 @@ Hcl-learning-hub/
 │   └── truststore.crt                # Same as server.crt (CA bundle alias)
 │
 ├── scripts/
-│   └── generate-certs.js             # Auto-generates self-signed cert via PowerShell (Windows) or OpenSSL
+│   ├── generate-certs.js             # Auto-generates self-signed cert via PowerShell (Windows) or OpenSSL
+│   ├── db-backup.sh                  # Dump PostgreSQL to SQL file (k3s / podman / docker auto-detect)
+│   ├── db-restore.sh                 # Restore SQL dump on new VM after setup
+│   └── validate.sh                   # Post-deployment health check: ports, DB, API, frontend, admin login
 │
 ├── src/
 │   ├── main.jsx                      # React root mount
@@ -527,7 +530,7 @@ npm run dev
 | **CourseWeek** | Week sections inside a course (weekNumber, title) |
 | **CourseModule** | Modules inside a week (order, number, title, icon, color) |
 | **CourseTopic** | Text/bullet topics inside a module (ordered content items) |
-| **CourseResource** | Resources inside a module (type: video/youtube/read/udemy/link, label, url) |
+| **CourseResource** | Resources inside a module (type: video/youtube/read/udemy/link/playlist, label, url) |
 | **CourseQuest** | Scenario MCQ quests per course (title, scenario, 4 options, correct, explanation, XP; optional learnTopics + learnResources JSON) |
 | **Setting** | Key-value admin config store (help moderator, chat space URLs, platform course status overrides) |
 | **LearningPath** | User-created learning paths (title, description, visibility, certificate field) |
@@ -560,6 +563,15 @@ The following courses are upserted on every server start if not already in the D
 | `observability` | Observability | coming-soon | 140 |
 | `azure` | Azure | coming-soon | 150 |
 | `openshift` | OpenShift | coming-soon | 160 |
+
+Platform learning path content is now standardized as **database content**, not page-local hardcoded arrays:
+
+- `server/src/seed/platformLearningPaths.ts` contains the authoritative seeded week/module/topic/resource content for `ai-quest` and `devops-loop`
+- `seedPlatformCourses()` in `server/src/index.ts` seeds that structure on startup when a platform course has no `CourseWeek` records yet
+- `src/pages/CoursePathPage.jsx` is the shared horizontal week-tab learning path UI used by DB courses and the platform wrappers
+- `src/pages/AIQuestCoursePathPage.jsx` and `src/pages/DevOpsCoursePathPage.jsx` route legacy platform learning path URLs into the shared DB-backed experience
+- `src/data/standardLearningPathNote.js` defines the standard "A Note Before You Start Your Learning Journey" block shown across course learning paths
+- `src/pages/PathEditorPage.jsx` now relies on DB-managed course content instead of hardcoded AI Quest / DevOps Loop fallback week data
 
 ---
 
@@ -605,30 +617,59 @@ Every course can have its own **moderator** and **Google Chat space** configured
 
 ---
 
-### One-Command VM Setup (Ubuntu 22.04+ — recommended)
+### Universal VM Setup Script
+
+`hcl-learning-hub-setup.sh` is a **single script that works on all supported OS** and automatically detects internet availability:
+
+| Condition | Behaviour |
+|---|---|
+| Ubuntu / Debian + internet | Installs Docker CE + k3s, clones from GitHub |
+| RHEL / CentOS / Rocky + internet | Installs Docker CE (dnf) + k3s, clones from GitHub |
+| RHEL / CentOS / Rocky — air-gap (no internet) | Uses pre-installed Podman, auto-mounts `/dev/sr0 → /cdrom` for dnf repos, deploys with `podman run` + systemd units |
+
+#### Online install (Ubuntu or RHEL with internet)
 
 ```bash
-# Run as root on a fresh Ubuntu VM:
+# Option A — pipe directly (requires internet):
 curl -fsSL https://raw.githubusercontent.com/raghavendra-bhaskar/Hcl-learning-hub/main/hcl-learning-hub-setup.sh \
   | sudo bash
+
+# Option B — download first, then run:
+curl -fsSL https://raw.githubusercontent.com/.../hcl-learning-hub-setup.sh -o setup.sh
+sed -i 's/\r//' setup.sh   # fix Windows line endings if downloaded on Windows
+sudo bash setup.sh --port 30080
 ```
 
-Or clone first then run:
+#### Air-gap install (RHEL/CentOS, no internet)
 
 ```bash
-sudo bash hcl-learning-hub-setup.sh \
-  --repo https://github.com/raghavendra-bhaskar/Hcl-learning-hub.git \
-  --port 30080
+# 1. Copy source from Windows machine to the VM:
+#    (run from PowerShell on your Windows dev machine)
+scp -r "d:\Windsurf\AI-Quest" hcluser@<VM-IP>:/product/hcl-learning-hub
+
+# 2. Copy the setup script (fix line endings)
+scp hcl-learning-hub-setup.sh hcluser@<VM-IP>:~/
+ssh hcluser@<VM-IP> "sed -i 's/\r//' ~/hcl-learning-hub-setup.sh"
+
+# 3. Run on the VM — script auto-detects no internet and uses Podman:
+ssh hcluser@<VM-IP>
+sudo bash ~/hcl-learning-hub-setup.sh --dir /product/hcl-learning-hub
+
+# Note: postgres:15-alpine must be pre-loaded if not available locally:
+#   podman pull postgres:15-alpine            (on a machine with internet)
+#   podman save postgres:15-alpine | gzip | ssh hcluser@<VM-IP> 'podman load'
 ```
 
-The setup script (`hcl-learning-hub-setup.sh`) automatically:
-1. Installs Docker CE (for image builds)
-2. Installs k3s (lightweight, production-grade Kubernetes)
-3. Clones the repository to `/product/hcl-learning-hub`
-4. Builds Docker images for the API and Web containers
-5. Imports images into k3s containerd (no registry required)
-6. Applies all `k8s/` manifests with auto-generated secrets
-7. Waits for pods to be healthy and prints the access URL
+The setup script automatically:
+1. Detects OS family (Debian/RHEL) and internet connectivity
+2. Mounts RHEL ISO at `/cdrom` if repos point there and it is not already mounted
+3. Installs Docker CE (online) or uses pre-installed Podman (air-gap)
+4. Installs k3s via `get.k3s.io` (online) or deploys via `podman run` (air-gap)
+5. Clones the repository (online) or uses pre-copied source (air-gap)
+6. Builds container images (`docker build` or `podman build`)
+7. Imports images into k3s containerd OR starts podman containers with systemd auto-start
+8. Generates random DB password + JWT secret, applies all manifests
+9. Waits for health and saves credentials to `.deploy-credentials`
 
 ---
 
@@ -726,6 +767,217 @@ docker save hcl-learning-hub-web:local | k3s ctr images import -
 # Rolling restart (zero downtime for web, brief restart for api)
 k3s kubectl rollout restart deployment/api deployment/web -n hcl-learning-hub
 ```
+
+---
+
+---
+
+### Required Ports & Firewall
+
+| Port | Protocol | Direction | Purpose | Notes |
+|---|---|---|---|---|
+| **30080** | TCP | Inbound (users) | App NodePort — nginx serving React SPA + `/api` proxy | Default; change with `--port` flag |
+| **4000** | TCP | Internal only | Node.js API server | Exposed internally to nginx; should NOT be open to internet |
+| **5432** | TCP | Internal only | PostgreSQL database | Must NOT be open to internet — security risk |
+| **22** | TCP | Inbound (admin) | SSH for deployment and management | Restrict to admin IP ranges |
+| **5173** | TCP | Local dev only | Vite frontend dev server (HTTPS) | Dev machine only, not production |
+| **6443** | TCP | Internal | k3s API server | Localhost only on single-node; not needed externally |
+
+The setup script **automatically**:
+- Checks if port `30080` (or `--port`) is already in use before deploying
+- Opens port `30080` in `firewalld` (RHEL) or `ufw` (Ubuntu) if a firewall is active
+- Warns if PostgreSQL port 5432 is incorrectly exposed in the firewall
+- Checks available disk space (≥5 GB) and memory (≥2 GB)
+
+Run `scripts/validate.sh` at any time to re-check all ports + firewall rules:
+```bash
+sudo bash /product/hcl-learning-hub/scripts/validate.sh
+```
+
+---
+
+### Post-Deployment Validation (`scripts/validate.sh`)
+
+Run after initial setup or any update:
+
+```bash
+sudo bash /product/hcl-learning-hub/scripts/validate.sh
+# or with custom port:
+sudo bash scripts/validate.sh --port 30080 --host 10.14.84.57
+```
+
+**Checks performed:**
+| # | Check | What it verifies |
+|---|---|---|
+| 1 | Container / Pod status | All 3 services (postgres, api, web) are running and ready |
+| 2 | Port availability | 30080, 4000, 5432 are listening; firewall rules verified |
+| 3 | PostgreSQL schema | Connects to DB, counts tables (expects 14) |
+| 4 | API health | `GET /health` + `GET /oidc-config` return correctly |
+| 5 | Frontend | `localhost:30080` returns HTTP 200; nginx→API proxy works |
+| 6 | Admin login | `POST /auth/local/login` with admin@local succeeds |
+| 7 | Security | DB password entropy, JWT secret length, Okta SSO configured |
+
+Exits with code `0` (all pass) or `1` (any critical failure).
+
+---
+
+### Windows VM / Windows Dev Machine
+
+The production server is Linux (RHEL/Ubuntu). The **Windows machine is the developer workstation** (`d:\Windsurf\AI-Quest`). Setup scripts run on the Linux VM, not Windows.
+
+#### Running locally on Windows (dev mode)
+
+```powershell
+# From PowerShell in d:\Windsurf\AI-Quest
+npm install
+cd server && npm install && cd ..
+npm run dev
+# Frontend: https://localhost:5173  (self-signed cert)
+# API:      http://localhost:4000
+# Admin:    admin@local / Admin@HCL2026!
+```
+
+Dev mode uses a **local PostgreSQL** (either Docker Desktop or a local install).
+For local PostgreSQL via Docker Desktop:
+```powershell
+docker run -d --name hcl-postgres-dev `
+  -e POSTGRES_DB=hclhub `
+  -e POSTGRES_USER=hcluser `
+  -e POSTGRES_PASSWORD=devpassword `
+  -p 5432:5432 postgres:15-alpine
+
+# Set DATABASE_URL in server/.env:
+# DATABASE_URL=postgresql://hcluser:devpassword@localhost:5432/hclhub
+
+npm run migrate     # apply schema
+npm run seed:admin  # create admin@local
+npm run dev
+```
+
+#### Backup PostgreSQL from Windows dev machine
+
+```powershell
+# Option A — if using Docker Desktop:
+$TS = Get-Date -Format 'yyyyMMdd-HHmmss'
+docker exec hcl-postgres-dev pg_dump -U hcluser -d hclhub `
+  --no-owner --no-acl --clean --if-exists `
+  > "C:\Backups\hcl-hub-db-$TS.sql"
+
+# Option B — if PostgreSQL is installed locally:
+$TS = Get-Date -Format 'yyyyMMdd-HHmmss'
+& 'C:\Program Files\PostgreSQL\15\bin\pg_dump.exe' `
+  -U hcluser -d hclhub --no-owner --no-acl --clean --if-exists `
+  -f "C:\Backups\hcl-hub-db-$TS.sql"
+```
+
+#### Restore PostgreSQL on Windows dev machine
+
+```powershell
+# Option A — Docker Desktop:
+docker exec -i hcl-postgres-dev psql -U hcluser -d hclhub `
+  < "C:\Backups\hcl-hub-db-20260922-143000.sql"
+
+# Option B — local PostgreSQL:
+& 'C:\Program Files\PostgreSQL\15\bin\psql.exe' `
+  -U hcluser -d hclhub `
+  -f "C:\Backups\hcl-hub-db-20260922-143000.sql"
+```
+
+#### Deploy to Linux VM from Windows (transfer source + run setup)
+
+```powershell
+# 1. Copy source to the Linux VM:
+scp -r "d:\Windsurf\AI-Quest" hcluser@10.14.84.57:/product/hcl-learning-hub
+
+# 2. Copy and fix the setup script (fix Windows CRLF line endings):
+scp "d:\Windsurf\AI-Quest\hcl-learning-hub-setup.sh" hcluser@10.14.84.57:~/
+ssh hcluser@10.14.84.57 "sed -i 's/`r//' ~/hcl-learning-hub-setup.sh"
+
+# 3. Run on the VM:
+ssh hcluser@10.14.84.57
+sudo bash ~/hcl-learning-hub-setup.sh --dir /product/hcl-learning-hub
+```
+
+> **Line endings:** Windows creates scripts with `\r\n` (CRLF). Always run `sed -i 's/\r//' scriptname.sh` on the Linux VM before executing any `.sh` file transferred from Windows.
+
+#### Ports for Windows dev
+
+| Port | Purpose | Status |
+|---|---|---|
+| 5173 | Vite HTTPS dev server | Open on localhost only |
+| 4000 | API (Express) | Open on localhost only |
+| 5432 | PostgreSQL | Open on localhost only |
+| 5555 | Prisma Studio | Open on localhost when running `npm run studio` |
+
+No firewall changes needed for Windows dev — all ports are localhost-only.
+
+---
+
+### Database Backup & Restore (VM Migration)
+
+**Every time you decommission a VM or rebuild infrastructure, run the backup first.** The backup captures all database state: users, progress, badges, certifications, courses, settings, Okta config, and learning paths.
+
+#### scripts/db-backup.sh
+
+Auto-detects the deployment mode (k3s, podman, or docker) and dumps PostgreSQL via `pg_dump`:
+
+```bash
+# Run on the OLD VM before decommissioning:
+sudo bash /product/hcl-learning-hub/scripts/db-backup.sh
+
+# Output (saved to /product/backups/):
+#   hcl-hub-db-YYYYMMDD-HHMMSS.sql      ← full PostgreSQL dump
+#   hcl-hub-credentials-YYYYMMDD.txt    ← copy of .deploy-credentials
+#   oidc-config-YYYYMMDD.json           ← Okta SSO config
+
+# Custom output directory:
+sudo bash scripts/db-backup.sh /my/backup/dir
+```
+
+**What is backed up:**
+| Data | Details |
+|---|---|
+| User accounts | All Okta SSO users + local accounts + roles |
+| Manager assignments | UserManager relationships |
+| Quest progress | All modules: questId, score, XP, timestamp |
+| Badges | All earned badges per user |
+| Certifications | Cert status (assigned / in-progress / achieved) |
+| Courses | Custom DB-managed courses, weeks, modules, topics, resources, quests |
+| Platform course status | live/coming-soon overrides for AI Quest, DevOps Loop, etc. |
+| Settings | Help moderator, Google Chat spaces, all admin key-value settings |
+| Learning paths | User-created paths with items and durations |
+| OIDC config | Okta issuer, clientId, endpoints (`oidc-config.json`) |
+
+#### scripts/db-restore.sh
+
+Run on the **new VM after setup** to load the backup:
+
+```bash
+# 1. Run setup script on new VM (installs everything fresh):
+sudo bash hcl-learning-hub-setup.sh
+
+# 2. Copy backup file from old VM or safe storage:
+scp user@old-vm:/product/backups/hcl-hub-db-20260922-143000.sql ./
+
+# 3. Restore:
+sudo bash /product/hcl-learning-hub/scripts/db-restore.sh ./hcl-hub-db-20260922-143000.sql
+
+# The script will:
+#   - Detect deploy mode (k3s / podman / docker) automatically
+#   - Drop & recreate all tables from the dump
+#   - Restore oidc-config.json if included in backup
+#   - Restart the API container/pod
+#   - Print admin credentials
+```
+
+> **Full workflow for moving to a new VM:**
+> ```
+> Old VM:  sudo bash scripts/db-backup.sh
+>          scp /product/backups/hcl-hub-db-*.sql  user@new-vm:~/
+>          scp /product/backups/oidc-config-*.json user@new-vm:~/
+> New VM:  sudo bash hcl-learning-hub-setup.sh
+>          sudo bash scripts/db-restore.sh ~/hcl-hub-db-*.sql
+> ```
 
 ---
 
@@ -848,6 +1100,8 @@ On every server startup, `seedPlatformCourses()` in `server/src/index.ts` upsert
 | **Dynamic Course Management** | Full CRUD admin system for courses, weeks, modules, topics, resources via CourseEditor |
 | **Scenario-based Quests (DB)** | Admin-created quests with Learn slides (learnTopics) and resources (learnResources) stored as JSON in DB |
 | **DevOps Loop + AI Quest in DB** | Both platform courses seeded to DB and fully editable via CourseEditor (weeks, modules, quests, help session) |
+| **Standardized Learning Path UI** | All course learning paths now use the shared DB-backed `CoursePathPage` horizontal week layout, including AI Quest and DevOps Loop wrapper routes |
+| **Shared Pre-learning Note** | New courses and platform learning paths use the same standard note block before the week/module roadmap |
 | **Per-course Moderator** | Each course has its own moderator name/email and Google Chat space, editable in CourseEditor → Help Session |
 | **Learning Paths** | Users can create, edit, and manage personal learning paths with courses, modules, duration per item, and certificate |
 | **Course Hub Search** | Search bar in CourseSelect filters both platform and DB-managed courses |
@@ -856,6 +1110,7 @@ On every server startup, `seedPlatformCourses()` in `server/src/index.ts` upsert
 | **Instructor → Moderator** | Renamed throughout all UI, labels, settings keys, and API fields |
 | **Admin Edit shortcut** | ⚙ button inside Help modal links directly to the CourseEditor for the current course (or global settings) |
 | **Kubernetes Deployment** | Production deployment fully migrated to k3s; `k8s/` manifests for namespace, secrets, configmap, postgres, api, web, ingress |
-| **VM Setup Script** | `hcl-learning-hub-setup.sh` — one-command Ubuntu deployment: installs Docker + k3s, builds images, applies manifests |
+| **Universal Setup Script** | `hcl-learning-hub-setup.sh` — auto-detects OS (Ubuntu/RHEL/CentOS/Rocky) and internet. Online: Docker CE + k3s. Air-gap: Podman + systemd. RHEL ISO auto-mounted for dnf repos |
+| **DB Backup / Restore** | `scripts/db-backup.sh` + `scripts/db-restore.sh` — full PostgreSQL dump/restore across VM migrations. Auto-detects k3s/podman/docker runtime. Backs up oidc-config.json and credentials |
 | **GitHub Repository** | Published at https://github.com/raghavendra-bhaskar/Hcl-learning-hub |
 | **Rebranded** | Project renamed from AI Quest → HCL Software Learning Hub; folder Hcl-learning-hub |

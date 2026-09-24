@@ -8,6 +8,17 @@ import {
   DEVOPS_QUEST_MORE_VIDEOS,
 } from '../data/devopsSolutionCenter.js';
 import SolutionCenterOverview from '../components/SolutionCenterOverview.jsx';
+import { getEmbedUrl, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
+
+function getYouTubeSearchEmbedUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const query = parsed.searchParams.get('search_query');
+    return query ? `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1` : null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Shared grid constants (same as AI Quest SolutionCenter) ──────────────────
 const COL_X = [0, 35, 165, 300, 435, 565, 695];
@@ -248,15 +259,16 @@ export default function DevOpsSolutionCenter() {
   const openVideo = (label) => {
     const url = DEVOPS_VIDEO_LINKS[label];
     if (!url) return;
-    const watchMatch = url.match(/youtube\.com\/watch\?v=([^&]+)/);
-    const embedUrl = watchMatch ? `https://www.youtube.com/embed/${watchMatch[1]}?autoplay=1` : null;
-    setVideoInfo({ label, url, embedUrl });
+    const resource = { type: 'youtube', label, url };
+    setVideoInfo({ label, url: resolvePlayableUrl(resource), embedUrl: getEmbedUrl(resource, { autoplay: true }) });
   };
 
   const openMoreVideos = () => {
     const url = DEVOPS_QUEST_MORE_VIDEOS[questId];
     if (!url) return;
-    setVideoInfo({ label: 'More Videos — ' + (quest?.title || questId), url, embedUrl: null });
+    const label = 'More Videos — ' + (quest?.title || questId);
+    const resource = { type: 'playlist', label, url };
+    setVideoInfo({ label, url: resolvePlayableUrl(resource), embedUrl: getEmbedUrl(resource, { autoplay: true }) });
   };
 
   if (!quest || !data) {

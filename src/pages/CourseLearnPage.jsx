@@ -1,57 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Target, X, Play } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Target, Play } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { canEmbedResource, getEmbedUrl, isNativeVideoResource, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 
 // Resource types that can be embedded inline
-const EMBEDDABLE = ['youtube', 'video'];
-
-function isYouTubeUrl(url) {
-  return url && (url.includes('youtube.com') || url.includes('youtu.be'));
-}
-
-function getEmbedUrl(type, url) {
-  if (!url) return null;
-  // Always try YouTube extraction first, regardless of declared type
-  const yt = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
-  if (yt) return `https://www.youtube.com/embed/${yt[1]}?autoplay=0&rel=0`;
-  if (url.includes('youtube.com/embed/')) return url;
-  if (type === 'video' || type === 'youtube') return url; // direct MP4 or other embeddable
-  return null;
-}
-
-function ResourceViewer({ resource, onClose }) {
-  const embedUrl = getEmbedUrl(resource.type, resource.url);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
-        style={{ background: '#0a0f1a', border: '1px solid rgba(255,255,255,0.1)' }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
-          <p className="text-sm font-semibold text-white truncate">{resource.label}</p>
-          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-all">
-            <X size={16} />
-          </button>
-        </div>
-        {resource.type === 'video' && !isYouTubeUrl(resource.url) ? (
-          <video src={resource.url} controls className="w-full max-h-[70vh] bg-black" />
-        ) : embedUrl ? (
-          <iframe
-            src={embedUrl}
-            className="w-full"
-            style={{ height: '56.25vw', maxHeight: '70vh' }}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            title={resource.label}
-          />
-        ) : (
-          <div className="p-6 text-center text-slate-500 text-sm">Unable to embed this resource. <a href={resource.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">Open in new tab ↗</a></div>
-        )}
-      </div>
-    </div>
-  );
-}
+const EMBEDDABLE = ['youtube', 'video', 'playlist'];
 
 export default function CourseLearnPage() {
   const { slug, questId } = useParams();
@@ -139,6 +93,11 @@ export default function CourseLearnPage() {
   const slideResources = slide === 0
     ? resources.filter(r => r.order === 0)
     : resources.filter(r => r.order === slide - 1);
+  const frameResource = slideResources.find(r => r.id === activeResource?.id)
+    || slideResources.find(r => canEmbedResource(r))
+    || null;
+  const frameEmbedUrl = frameResource ? getEmbedUrl(frameResource) : null;
+  const frameUseNativeVideo = frameResource ? isNativeVideoResource(frameResource) : false;
 
   // YouTube search URL for current step
   const ytSearchQuery = encodeURIComponent(`${course.title} ${quest.title} ${slide > 0 ? topics[slide - 1]?.content?.slice(0, 40) || '' : ''}`).trim();
@@ -215,14 +174,19 @@ export default function CourseLearnPage() {
               <div className="mt-6">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">Resources</p>
                 <div className="space-y-1.5">
-                  {resources.map(r => {
-                    const embeddable = EMBEDDABLE.includes(r.type);
+                  {slideResources.length === 0 && (
+                    <p className="text-[11px] text-slate-700 italic px-1 py-2">No resources for this step.</p>
+                  )}
+                  {slideResources.map(r => {
+                    const embeddable = EMBEDDABLE.includes(r.type) && canEmbedResource(r);
+                    const isSelected = frameResource?.id === r.id;
                     return (
                       <button key={r.id}
-                        onClick={() => embeddable ? setActiveResource(r) : window.open(r.url, '_blank', 'noopener,noreferrer')}
-                        className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-all">
+                        onClick={() => embeddable ? setActiveResource(r) : window.open(resolvePlayableUrl(r), '_blank', 'noopener,noreferrer')}
+                        className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                        style={isSelected ? { background: accent + '14', border: `1px solid ${accent}35`, color: '#fff' } : undefined}>
                         <span className="flex-shrink-0">
-                          {r.type === 'youtube' ? '▶' : r.type === 'video' ? '🎬' : r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}
+                          {r.type === 'youtube' || r.type === 'playlist' ? '▶' : r.type === 'video' ? '🎬' : r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}
                         </span>
                         <span className="truncate">{r.label}</span>
                         {embeddable && <Play size={10} className="ml-auto flex-shrink-0 opacity-50" />}
@@ -256,49 +220,58 @@ export default function CourseLearnPage() {
 
             {/* Inline resources for this slide */}
             {slideResources.length > 0 && (
-              <div className="space-y-3">
-                {slideResources.map(r => {
-                  const embeddable = EMBEDDABLE.includes(r.type);
-                  const embedUrl   = embeddable ? getEmbedUrl(r.type, r.url) : null;
-                  if (embedUrl && r.type !== 'video') {
-                    return (
-                      <div key={r.id} className="rounded-2xl overflow-hidden"
-                        style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <div className="px-4 py-2 flex items-center gap-2 border-b border-white/8"
-                          style={{ background: 'rgba(255,255,255,0.03)' }}>
-                          <span className="text-sm">▶</span>
-                          <span className="text-xs font-semibold text-slate-300">{r.label}</span>
-                        </div>
-                        <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-                          <iframe src={embedUrl} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen title={r.label} />
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (r.type === 'video' && !isYouTubeUrl(r.url)) {
-                    return (
-                      <div key={r.id} className="rounded-2xl overflow-hidden"
-                        style={{ border: '1px solid rgba(255,255,255,0.08)' }}>
-                        <div className="px-4 py-2 flex items-center gap-2 border-b border-white/8"
-                          style={{ background: 'rgba(255,255,255,0.03)' }}>
-                          <span className="text-sm">🎬</span>
-                          <span className="text-xs font-semibold text-slate-300">{r.label}</span>
-                        </div>
-                        <video src={r.url} controls className="w-full bg-black max-h-80" />
-                      </div>
-                    );
-                  }
-                  return (
-                    <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-slate-300 hover:text-white hover:border-white/20 transition-all">
-                      <span>{r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}</span>
-                      {r.label}
-                      <span className="ml-auto text-xs text-slate-600">↗</span>
-                    </a>
-                  );
-                })}
+              <div className="glass-card rounded-2xl overflow-hidden flex-1 min-h-[360px]"
+                style={{ borderColor: accent + '20', background: 'rgba(3,10,20,0.7)' }}>
+                <div className="px-4 py-3 flex items-center gap-2 border-b border-white/8"
+                  style={{ background: accent + '08' }}>
+                  <span className="text-sm">{frameResource ? (frameUseNativeVideo ? '🎬' : '▶') : '📚'}</span>
+                  <span className="text-xs font-semibold text-slate-200 truncate">{frameResource ? frameResource.label : 'Step Resources'}</span>
+                </div>
+
+                {frameResource ? (
+                  frameUseNativeVideo ? (
+                    <video src={resolvePlayableUrl(frameResource)} controls className="w-full bg-black min-h-[320px]" />
+                  ) : frameEmbedUrl ? (
+                    <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+                      <iframe src={frameEmbedUrl} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen title={frameResource.label} />
+                    </div>
+                  ) : null
+                ) : (
+                  <div className="p-5 space-y-3">
+                    {slideResources.map(r => (
+                      <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-slate-300 hover:text-white hover:border-white/20 transition-all">
+                        <span>{r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}</span>
+                        {r.label}
+                        <span className="ml-auto text-xs text-slate-600">↗</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+
+                {slideResources.length > 1 && (
+                  <div className="px-4 py-3 border-t border-white/8 flex flex-wrap gap-2">
+                    {slideResources.map(r => {
+                      const embeddable = canEmbedResource(r);
+                      const selected = frameResource?.id === r.id;
+                      return embeddable ? (
+                        <button key={r.id} onClick={() => setActiveResource(r)}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                          style={selected ? { background: accent + '20', color: accent, border: `1px solid ${accent}40` } : { background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          {r.label}
+                        </button>
+                      ) : (
+                        <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                          style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          {r.label} ↗
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -351,8 +324,6 @@ export default function CourseLearnPage() {
         </div>
       </div>
 
-      {/* Resource viewer modal */}
-      {activeResource && <ResourceViewer resource={activeResource} onClose={() => setActiveResource(null)} />}
     </div>
   );
 }

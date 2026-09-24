@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, Play, X, BookOpen, Layers, Pencil } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
+import { STANDARD_LEARNING_PATH_NOTE } from '../data/standardLearningPathNote.js';
+import { getEmbedUrl, isNativeVideoResource, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 
 const TYPE_META = {
   video:    { icon: '▶',  label: 'Video',        color: '#ef4444', bg: 'rgba(239,68,68,0.15)'   },
@@ -17,26 +19,15 @@ const TYPE_META = {
   link:     { icon: '🔗', label: 'Link',          color: '#94a3b8', bg: 'rgba(148,163,184,0.08)' },
 };
 
-function getEmbedUrl(type, url) {
-  if (!url) return null;
-  if (type === 'youtube' || type === 'playlist' || type === 'video') {
-    const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?/]+)/);
-    if (yt) return `https://www.youtube.com/embed/${yt[1]}?autoplay=1`;
-    if (url.includes('youtube.com/embed/')) return url.replace('?', '?autoplay=1&');
-  }
-  if (type === 'video' && (url.endsWith('.mp4') || url.includes('/videos/'))) return url;
-  return null;
-}
-
 function ResourceButton({ res, onVideo }) {
   const meta = TYPE_META[res.type] || TYPE_META.link;
-  const embedUrl = getEmbedUrl(res.type, res.url);
+  const embedUrl = getEmbedUrl(res, { autoplay: true });
   const isEmbeddable = !!embedUrl;
   const noLink = !res.url;
 
   const handleClick = () => {
-    if (isEmbeddable) { onVideo({ label: res.label, url: res.url, embedUrl }); }
-    else if (res.url) { window.open(res.url, '_blank', 'noopener,noreferrer'); }
+    if (isEmbeddable) { onVideo({ label: res.label, url: resolvePlayableUrl(res), embedUrl, nativeVideo: isNativeVideoResource(res) }); }
+    else if (res.url) { window.open(resolvePlayableUrl(res), '_blank', 'noopener,noreferrer'); }
   };
 
   return (
@@ -68,8 +59,7 @@ function ResourceButton({ res, onVideo }) {
 
 function VideoModal({ video, onClose }) {
   if (!video) return null;
-  const isYT = video.embedUrl?.includes('youtube.com/embed');
-  const isDirect = !isYT && video.embedUrl;
+  const isDirect = !!video.nativeVideo;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
@@ -103,8 +93,85 @@ function VideoModal({ video, onClose }) {
   );
 }
 
-export default function CoursePathPage() {
-  const { slug } = useParams();
+function ModuleCard({ mod, onVideo, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const modColor = mod.color || '#06b6d4';
+
+  return (
+    <div
+      className="rounded-xl overflow-hidden transition-all"
+      style={{ border: `1px solid ${modColor}25`, background: 'rgba(3,10,20,0.7)' }}
+    >
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-4 px-5 py-4 text-left transition-all hover:bg-white/[0.03]"
+      >
+        <div
+          className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-sm flex-shrink-0"
+          style={{ background: modColor + '22', border: `1px solid ${modColor}55`, color: modColor }}
+        >
+          {mod.number || 1}
+        </div>
+        <div className="text-2xl flex-shrink-0">{mod.icon || '📖'}</div>
+        <div className="flex-1 min-w-0">
+          <span className="font-bold text-white text-sm">{mod.title}</span>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            {mod.topics?.length || 0} topics · {mod.resources?.length || 0} resources
+          </div>
+        </div>
+        <ChevronDown
+          size={16}
+          className="flex-shrink-0 text-slate-500 transition-transform"
+          style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+        />
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 border-t" style={{ borderColor: modColor + '20' }}>
+          <div className="grid md:grid-cols-2 gap-6 pt-4">
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-slate-500 mb-3 uppercase">Topics Covered</p>
+              {mod.topics?.length === 0 ? (
+                <p className="text-xs text-slate-700 italic">No topics yet</p>
+              ) : (
+                <ul className="space-y-2">
+                  {mod.topics.map((t, i) => (
+                    <li key={t.id || i} className="flex items-start gap-2.5 text-xs text-slate-300 leading-relaxed">
+                      <span
+                        className="mt-0.5 w-4 h-4 rounded flex items-center justify-center flex-shrink-0 text-[9px] font-black"
+                        style={{ background: modColor + '22', color: modColor }}
+                      >
+                        {i + 1}
+                      </span>
+                      {t.content}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-slate-500 mb-3 uppercase">Learning Resources</p>
+              {mod.resources?.length === 0 ? (
+                <p className="text-xs text-slate-700 italic">No resources yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {mod.resources.map((res, i) => (
+                    <ResourceButton key={res.id || i} res={res} onVideo={onVideo} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
+  const params = useParams();
+  const slug = forcedSlug || params.slug;
   const navigate = useNavigate();
   const auth = getAuth();
   const isAdmin = auth?.role === 'ADMIN';
@@ -112,20 +179,24 @@ export default function CoursePathPage() {
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [openMods, setOpenMods] = useState({});
+  const [selectedWeek, setSelectedWeek] = useState(0);
   const [video, setVideo] = useState(null);
   const [showNote, setShowNote] = useState(true);
 
   useEffect(() => {
+    if (!slug) return;
+    setLoading(true);
+    setError('');
     (async () => {
       try {
         const c = await api.get(`/courses-api/${slug}`);
         setCourse(c);
-        if (c.weeks?.[0]?.modules?.[0]) {
-          setOpenMods({ [c.weeks[0].modules[0].id]: true });
-        }
-      } catch (e) { setError(e?.message || 'Course not found'); }
-      finally { setLoading(false); }
+        setSelectedWeek(0);
+      } catch (e) {
+        setError(e?.message || 'Course not found');
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [slug]);
 
@@ -143,176 +214,175 @@ export default function CoursePathPage() {
   );
 
   const accent = course.accentColor || '#06b6d4';
-  const accentBg = { background: accent + '18', border: `1px solid ${accent}30`, color: accent };
-
-  const toggleMod = id => setOpenMods(p => ({ ...p, [id]: !p[id] }));
+  const weeks = course.weeks || [];
+  const moduleCount = weeks.reduce((sum, w) => sum + (w.modules?.length || 0), 0);
+  const week = weeks[selectedWeek] || null;
+  const targetBackPath = backPath || `/c/${slug}`;
+  const targetBackLabel = backLabel || course.title;
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-20">
+      <VideoModal video={video} onClose={() => setVideo(null)} />
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5" style={{ background: 'rgba(3,10,20,0.88)' }}>
-        <div className="max-w-4xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate(`/c/${slug}`)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
-            <ArrowLeft size={14} /> {course.title}
+      <div
+        className="sticky top-0 z-40 flex items-center gap-4 px-4 py-3"
+        style={{
+          background: 'rgba(3,6,12,0.95)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: `1px solid ${accent}26`,
+        }}
+      >
+        <button
+          onClick={() => navigate(targetBackPath)}
+          className="flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-colors"
+        >
+          <ArrowLeft size={14} /> {targetBackLabel}
+        </button>
+
+        <div className="flex-1 text-center">
+          <p className="text-[11px] font-bold tracking-widest uppercase" style={{ color: accent, fontFamily: "'Courier New', monospace" }}>
+            {course.tagline || `${course.title} Learning Path`}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Layers size={12} style={{ color: accent }} />
+          <span className="text-[11px] text-slate-500">{weeks.length} Weeks · {moduleCount} Modules</span>
+        </div>
+
+        {isAdmin && (
+          <button
+            onClick={() => navigate(`/admin/courses/${course.slug || slug}/edit`)}
+            className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-white transition-colors border border-white/10 rounded-lg px-2.5 py-1"
+          >
+            <Pencil size={11} /> Edit
           </button>
-          <span className="text-slate-700">/</span>
-          <span className="text-xs font-semibold" style={{ color: accent }}>Learning Path</span>
-          {isAdmin && (
-            <button onClick={() => navigate(`/admin/courses/${course.id}/edit`)}
-              className="ml-auto flex items-center gap-1.5 text-[11px] text-slate-600 hover:text-cyan-400 border border-white/8 rounded-lg px-2.5 py-1">
-              <Pencil size={11} /> Edit
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* ── Title ───────────────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 pt-10 pb-6">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
-            style={{ background: accent + '18', border: `1px solid ${accent}30` }}>
-            {course.emoji || '📚'}
-          </div>
-          <div>
-            <h1 className="font-orbitron text-2xl font-bold text-white">{course.title} Learning Path</h1>
-            <p className="text-xs font-semibold mt-0.5" style={{ color: accent }}>
-              {course.weeks?.length || 0} Weeks · {course.weeks?.reduce((a, w) => a + (w.modules?.length || 0), 0) || 0} Modules
-            </p>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* ── Description note ────────────────────────────────────────────────── */}
-      {showNote && course.description && (
-        <div className="max-w-4xl mx-auto px-4 mb-8">
-          <div className="rounded-2xl p-6 relative"
-            style={{ background: accent + '08', border: `1px solid ${accent}25` }}>
-            <button onClick={() => setShowNote(false)}
-              className="absolute top-4 right-4 text-slate-600 hover:text-slate-400">
-              <X size={14} />
-            </button>
-            <h3 className="font-orbitron text-sm font-bold text-white mb-3">Welcome to {course.title}</h3>
-            <p className="text-slate-400 text-sm leading-relaxed">{course.description}</p>
+      <div className="max-w-4xl mx-auto px-4">
+        <div className="pt-10 pb-6 text-center">
+          <div
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-[11px] font-bold mb-5 tracking-widest uppercase"
+            style={{ borderColor: accent + '4d', background: accent + '14', color: accent }}
+          >
+            <BookOpen size={12} /> {course.title} Learning Path
           </div>
+          <h1 className="font-orbitron text-[2rem] md:text-[2.7rem] font-black mb-4 leading-[1.08] tracking-tight">
+            <span className="block" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}99)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              {course.title}:
+            </span>
+            <span className="block text-white text-[1.7rem] md:text-[2.3rem] mt-1">{course.tagline || 'Structured learning roadmap'}</span>
+          </h1>
+          {course.description && <p className="text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">{course.description}</p>}
+          <p className="text-slate-500 text-xs mt-4">{weeks.length} Week{weeks.length !== 1 ? 's' : ''} · {moduleCount} Module{moduleCount !== 1 ? 's' : ''}</p>
         </div>
-      )}
 
-      {/* ── Weeks & Modules ─────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 space-y-10">
-        {course.weeks?.length === 0 && (
-          <div className="glass-card rounded-2xl p-12 text-center">
-            <p className="text-slate-500">No content added yet.</p>
+        <div className="rounded-2xl mb-8 overflow-hidden" style={{ border: '1px solid rgba(245,158,11,0.25)', background: 'linear-gradient(180deg, rgba(32,21,10,0.82), rgba(18,14,10,0.52))' }}>
+          <button className="w-full flex items-center justify-between px-5 py-4 text-left" onClick={() => setShowNote(v => !v)}>
+            <div className="flex items-center gap-3">
+              <span className="text-xl">📋</span>
+              <div>
+                <p className="font-bold text-amber-400 text-sm">{STANDARD_LEARNING_PATH_NOTE.title}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">{STANDARD_LEARNING_PATH_NOTE.subtitle}</p>
+              </div>
+            </div>
+            <ChevronDown size={16} className="text-amber-400 transition-transform" style={{ transform: showNote ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+          </button>
+          {showNote && (
+            <div className="grid md:grid-cols-2 gap-3 px-5 pb-5 pt-1 border-t" style={{ borderColor: 'rgba(245,158,11,0.2)' }}>
+              {STANDARD_LEARNING_PATH_NOTE.points.map((point, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{ background: 'rgba(255,196,72,0.07)' }}>
+                  <span className="text-xl flex-shrink-0">{point.icon}</span>
+                  <div>
+                    <p className="font-bold text-amber-300 text-xs mb-1">{point.title}</p>
+                    <p className="text-slate-400 text-xs leading-relaxed">{point.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {weeks.length > 0 && (
+          <>
+            <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide">
+              {weeks.map((w, i) => (
+                <button
+                  key={w.id || w.weekNumber}
+                  onClick={() => setSelectedWeek(i)}
+                  className="flex-shrink-0 flex flex-col items-center gap-1 px-5 py-3 rounded-xl font-bold text-xs transition-all min-w-[112px]"
+                  style={{
+                    background: selectedWeek === i ? accent + '24' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${selectedWeek === i ? accent + '80' : 'rgba(255,255,255,0.08)'}`,
+                    color: selectedWeek === i ? accent : '#64748b',
+                    boxShadow: selectedWeek === i ? `0 0 16px ${accent}33` : 'none',
+                  }}
+                >
+                  <span className="font-orbitron text-base font-black">Week {w.weekNumber}</span>
+                  <span className="text-[10px] tracking-wider opacity-80">{w.title}</span>
+                </button>
+              ))}
+            </div>
+
+            {week && (
+              <>
+                <div className="flex items-center gap-4 px-5 py-4 rounded-xl mb-6" style={{ background: accent + '10', border: `1px solid ${accent}26` }}>
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center font-orbitron font-black text-lg text-white flex-shrink-0" style={{ background: `linear-gradient(135deg, ${accent}66, ${accent}33)`, border: `1px solid ${accent}66` }}>
+                    W{week.weekNumber}
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest mb-0.5">Now Learning</p>
+                    <p className="font-bold text-white text-lg">Week {week.weekNumber} — {week.title}</p>
+                    <p className="text-xs text-slate-500">{week.modules?.length || 0} module{(week.modules?.length || 0) !== 1 ? 's' : ''} · click any module to expand</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {week.modules?.map((mod, index) => (
+                    <ModuleCard key={mod.id || index} mod={mod} onVideo={setVideo} defaultOpen={index === 0} />
+                  ))}
+                </div>
+
+                <div className="flex justify-between items-center mt-8 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <button
+                    onClick={() => setSelectedWeek(v => Math.max(0, v - 1))}
+                    disabled={selectedWeek === 0}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-30 hover:bg-white/5"
+                    style={{ border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
+                  >
+                    ← Previous Week
+                  </button>
+                  <span className="text-xs text-slate-600">{selectedWeek + 1} / {weeks.length}</span>
+                  <button
+                    onClick={() => setSelectedWeek(v => Math.min(weeks.length - 1, v + 1))}
+                    disabled={selectedWeek === weeks.length - 1}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-30"
+                    style={{ border: `1px solid ${accent}4d`, color: accent }}
+                  >
+                    Next Week →
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {weeks.length === 0 && (
+          <div className="glass-card rounded-2xl p-12 text-center mb-12">
+            <p className="text-slate-500">No learning-path content added yet.</p>
             {isAdmin && (
-              <button onClick={() => navigate(`/admin/courses/${course.id}/edit`)}
+              <button
+                onClick={() => navigate(`/admin/courses/${course.slug || slug}/edit`)}
                 className="mt-4 mx-auto flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
+                style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}
+              >
                 <Pencil size={14} /> Add Content
               </button>
             )}
           </div>
         )}
-
-        {course.weeks?.map(week => (
-          <section key={week.id}>
-            {/* Week label */}
-            <div className="flex items-center gap-4 mb-5">
-              <div className="px-3 py-1 rounded-lg text-xs font-bold font-orbitron tracking-wider" style={accentBg}>
-                Week {week.weekNumber}
-              </div>
-              <div className="flex-1 h-px" style={{ background: accent + '20' }} />
-              <span className="text-slate-600 text-xs font-semibold">{week.title}</span>
-            </div>
-
-            {/* Modules */}
-            <div className="space-y-4">
-              {week.modules?.map((mod, mi) => {
-                const isOpen = !!openMods[mod.id];
-                const modColor = mod.color || accent;
-                return (
-                  <div key={mod.id} className="rounded-2xl border overflow-hidden"
-                    style={{
-                      border: isOpen ? `1px solid ${modColor}35` : '1px solid rgba(255,255,255,0.07)',
-                      background: isOpen ? modColor + '06' : 'rgba(255,255,255,0.02)',
-                    }}>
-                    <button onClick={() => toggleMod(mod.id)}
-                      className="w-full flex items-center gap-4 px-5 py-4 text-left">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                        style={{ background: modColor + '18', border: `1px solid ${modColor}30` }}>
-                        {mod.icon || '📖'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-bold tracking-widest uppercase mb-0.5" style={{ color: modColor }}>
-                          Module {mod.number || mi + 1}
-                        </div>
-                        <div className="text-white font-bold text-sm">{mod.title}</div>
-                        <div className="text-slate-600 text-xs mt-0.5">
-                          {mod.topics?.length || 0} topics · {mod.resources?.length || 0} resources
-                        </div>
-                      </div>
-                      <ChevronDown size={16} className="text-slate-600 flex-shrink-0 transition-transform"
-                        style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
-                    </button>
-
-                    {isOpen && (
-                      <div className="px-5 pb-5 border-t border-white/5">
-                        <div className="grid md:grid-cols-2 gap-6 pt-4">
-                          {/* Topics */}
-                          <div>
-                            <div className="flex items-center gap-2 mb-3">
-                              <Layers size={13} style={{ color: modColor }} />
-                              <span className="text-xs font-bold text-slate-300">Topics Covered</span>
-                            </div>
-                            {mod.topics?.length === 0
-                              ? <p className="text-xs text-slate-700 italic">No topics yet</p>
-                              : (
-                                <ul className="space-y-2">
-                                  {mod.topics.map(t => (
-                                    <li key={t.id} className="flex items-start gap-2 text-xs text-slate-400">
-                                      <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full"
-                                        style={{ background: modColor + 'aa' }} />
-                                      <span className="leading-relaxed">{t.content}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                          </div>
-
-                          {/* Resources */}
-                          <div>
-                            <div className="flex items-center gap-2 mb-3">
-                              <BookOpen size={13} style={{ color: modColor }} />
-                              <span className="text-xs font-bold text-slate-300">Resources</span>
-                            </div>
-                            {mod.resources?.length === 0
-                              ? <p className="text-xs text-slate-700 italic">No resources yet</p>
-                              : (
-                                <div className="space-y-2">
-                                  {mod.resources.map(res => (
-                                    <ResourceButton key={res.id} res={res} onVideo={setVideo} />
-                                  ))}
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {week.modules?.length === 0 && (
-                <div className="glass-card rounded-xl p-6 text-center text-slate-600 text-sm">
-                  No modules in this week yet.
-                </div>
-              )}
-            </div>
-          </section>
-        ))}
       </div>
-
-      {video && <VideoModal video={video} onClose={() => setVideo(null)} />}
     </div>
   );
 }

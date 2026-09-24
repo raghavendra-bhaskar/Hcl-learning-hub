@@ -13,6 +13,8 @@ import { coursesRouter } from './routes/courses.js';
 import { settingsRouter } from './routes/settings.js';
 import { learningPathsRouter } from './routes/learningPaths.js';
 import { prisma } from './lib/prisma.js';
+import { PLATFORM_LEARNING_PATHS } from './seed/platformLearningPaths.js';
+import { getPlatformCourseQuests } from './seed/platformCourseQuests.js';
 
 // ── Platform course seed (runs once on startup) ───────────────────────────────
 const SEED_COURSES = [
@@ -29,11 +31,87 @@ const SEED_COURSES = [
 
 async function seedPlatformCourses() {
   try {
+    const platformQuests = await getPlatformCourseQuests();
     for (const c of SEED_COURSES) {
       const exists = await (prisma as any).course.findUnique({ where: { slug: c.slug } });
+      const course = exists || await (prisma as any).course.create({ data: c });
       if (!exists) {
-        await (prisma as any).course.create({ data: c });
         console.log(`[seed] created platform course: ${c.title}`);
+      }
+
+      const weeksCount = await (prisma as any).courseWeek.count({ where: { courseId: course.id } });
+      const pathWeeks = PLATFORM_LEARNING_PATHS[c.slug];
+      if (pathWeeks?.length && weeksCount === 0) {
+        for (const week of pathWeeks) {
+          const createdWeek = await (prisma as any).courseWeek.create({
+            data: {
+              courseId: course.id,
+              weekNumber: week.weekNumber,
+              title: week.title,
+            },
+          });
+
+          for (const [moduleIndex, mod] of week.modules.entries()) {
+            const createdModule = await (prisma as any).courseModule.create({
+              data: {
+                weekId: createdWeek.id,
+                order: moduleIndex,
+                number: mod.number,
+                title: mod.title,
+                icon: mod.icon,
+                color: mod.color,
+              },
+            });
+
+            if (mod.topics.length) {
+              await (prisma as any).courseTopic.createMany({
+                data: mod.topics.map((content, topicIndex) => ({
+                  moduleId: createdModule.id,
+                  order: topicIndex,
+                  content,
+                })),
+              });
+            }
+
+            if (mod.resources.length) {
+              await (prisma as any).courseResource.createMany({
+                data: mod.resources.map((resource, resourceIndex) => ({
+                  moduleId: createdModule.id,
+                  order: resourceIndex,
+                  label: resource.label,
+                  type: resource.type,
+                  url: resource.url || '',
+                })),
+              });
+            }
+          }
+        }
+
+        console.log(`[seed] created learning path content for: ${c.title}`);
+      }
+
+      const questsCount = await (prisma as any).courseQuest.count({ where: { courseId: course.id } });
+      const seedQuests = platformQuests[c.slug];
+      if (questsCount === 0 && seedQuests?.length) {
+        await (prisma as any).courseQuest.createMany({
+          data: seedQuests.map((quest) => ({
+            courseId: course.id,
+            moduleId: null,
+            title: quest.title,
+            scenario: quest.scenario,
+            optionA: quest.optionA,
+            optionB: quest.optionB,
+            optionC: quest.optionC,
+            optionD: quest.optionD,
+            correct: quest.correct,
+            explanation: quest.explanation,
+            xp: quest.xp,
+            order: quest.order,
+            learnTopics: quest.learnTopics,
+            learnResources: quest.learnResources,
+          })),
+        });
+        console.log(`[seed] created quest content for: ${c.title}`);
       }
     }
   } catch (e) {
