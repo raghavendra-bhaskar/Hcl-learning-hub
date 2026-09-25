@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { X, MessageCircleQuestion, Settings } from 'lucide-react';
 import { getAuth } from '../pages/LoginPage.jsx';
 import { api } from '../lib/api.js';
+import AITutor from './AITutor.jsx';
 
 const DEFAULTS = {
   moderatorName:  'Raghavendra B',
@@ -70,6 +71,8 @@ export default function HelpButton() {
     api.get(`/courses-api/${dbCourseSlug}`).then(c => {
       if (c && (c.instructorName || c.helpSpaceUrl)) {
         setCourseHelp({
+          title:            c.title || dbCourseSlug,
+          emoji:            c.emoji || '📚',
           instructorName:  c.instructorName  || null,
           instructorEmail: c.instructorEmail || null,
           helpSpaceUrl:    c.helpSpaceUrl    || null,
@@ -86,23 +89,29 @@ export default function HelpButton() {
   const isAIQuest    = AI_QUEST_PATHS.some(p => location.pathname.startsWith(p));
   const isDevOpsLoop = DEVOPS_LOOP_PATHS_PREFIXES.some(p => location.pathname.startsWith(p));
 
-  // Per-course space: DB course record takes priority, then platform defaults, then generic
-  const space = courseHelp?.helpSpaceUrl
-    ? { url: courseHelp.helpSpaceUrl, name: courseHelp.helpSpaceName || 'Course Support Space', hint: courseHelp.helpSpaceHint || '', color: courseHelp.accentColor, glow: courseHelp.accentColor + '66' }
-    : isDevOpsLoop
-    ? { url: cfg.devopsUrl,  name: cfg.devopsName,  hint: cfg.devopsHint,  color: '#f97316', glow: 'rgba(249,115,22,0.4)' }
-    : isAIQuest
+  const activeCourse = courseHelp;
+  const selectedIsAIQuest = isAIQuest;
+  const selectedIsDevOps = isDevOpsLoop;
+  const selectedIsCourse = !!dbCourseSlug;
+  const selectedTitle = selectedIsCourse ? (activeCourse?.title || dbCourseSlug) : 'General Platform Support';
+
+  // A selected course gets its own support space; platform courses retain their configured defaults.
+  const space = activeCourse?.helpSpaceUrl
+    ? { url: activeCourse.helpSpaceUrl, name: activeCourse.helpSpaceName || `${selectedTitle} Support`, hint: activeCourse.helpSpaceHint || `${selectedTitle} questions, topics & assessments`, color: activeCourse.accentColor || '#06b6d4', glow: `${activeCourse.accentColor || '#06b6d4'}66` }
+    : selectedIsDevOps
+    ? { url: cfg.devopsUrl, name: cfg.devopsName, hint: cfg.devopsHint, color: '#f97316', glow: 'rgba(249,115,22,0.4)' }
+    : selectedIsAIQuest
     ? { url: cfg.aiQuestUrl, name: cfg.aiQuestName, hint: cfg.aiQuestHint, color: '#1a73e8', glow: 'rgba(26,115,232,0.4)' }
-    : { url: cfg.genericUrl, name: cfg.genericName, hint: cfg.genericHint, color: '#34a853', glow: 'rgba(52,168,83,0.35)' };
+    : { url: cfg.genericUrl, name: cfg.genericName, hint: selectedIsCourse ? `${selectedTitle} questions, topics & assessments` : cfg.genericHint, color: '#34a853', glow: 'rgba(52,168,83,0.35)' };
 
   // Per-course moderator: DB course record takes priority over global
   const moderator = {
-    name:  courseHelp?.instructorName  || cfg.moderatorName,
+    name:  activeCourse?.instructorName  || cfg.moderatorName,
     title: cfg.moderatorTitle,
-    email: courseHelp?.instructorEmail || cfg.moderatorEmail,
+    email: activeCourse?.instructorEmail || cfg.moderatorEmail,
   };
 
-  const hideFloating = location.pathname === '/' || location.pathname === '/courses';
+  const hideFloating = !auth?.isLoggedIn;
   if (hideFloating) return null;
 
   return (
@@ -130,7 +139,7 @@ export default function HelpButton() {
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
           <div
-            className="relative w-full max-w-md rounded-2xl p-8 text-center"
+            className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl p-6 sm:p-8 text-center"
             style={{
               background: 'linear-gradient(160deg, #0b1220 0%, #0d1a2e 100%)',
               border: '1.5px solid rgba(124,58,237,0.5)',
@@ -160,11 +169,11 @@ export default function HelpButton() {
             <div className="flex justify-center mb-4">
               <span className="text-[10px] font-bold tracking-widest px-3 py-1 rounded-full uppercase"
                 style={{
-                  background: isDevOpsLoop ? 'rgba(249,115,22,0.12)' : isAIQuest ? 'rgba(6,182,212,0.12)' : 'rgba(52,168,83,0.12)',
-                  color: isDevOpsLoop ? '#fb923c' : isAIQuest ? '#22d3ee' : '#4ade80',
-                  border: `1px solid ${isDevOpsLoop ? 'rgba(249,115,22,0.3)' : isAIQuest ? 'rgba(6,182,212,0.3)' : 'rgba(52,168,83,0.3)'}`,
+                  background: selectedIsDevOps ? 'rgba(249,115,22,0.12)' : selectedIsAIQuest ? 'rgba(6,182,212,0.12)' : 'rgba(52,168,83,0.12)',
+                  color: selectedIsDevOps ? '#fb923c' : selectedIsAIQuest ? '#22d3ee' : '#4ade80',
+                  border: `1px solid ${selectedIsDevOps ? 'rgba(249,115,22,0.3)' : selectedIsAIQuest ? 'rgba(6,182,212,0.3)' : 'rgba(52,168,83,0.3)'}`,
                 }}>
-                {isDevOpsLoop ? '🔄 DevOps Loop Support' : isAIQuest ? '🤖 AI Quest Support' : '🌐 General Platform Support'}
+                {selectedIsCourse ? `${activeCourse?.emoji || '📚'} ${selectedTitle} Support` : '🌐 General Platform Support'}
               </span>
             </div>
 
@@ -175,11 +184,15 @@ export default function HelpButton() {
             </div>
 
             <h2 className="font-orbitron text-xl font-bold text-white mb-2">Need Help?</h2>
+            <AITutor mode={selectedIsCourse ? 'course' : 'help'} courseSlug={selectedIsCourse ? dbCourseSlug : undefined}
+              title={selectedIsCourse ? `${selectedTitle} AI Help` : 'AI Help'} onNavigate={() => setOpen(false)} />
             <p className="text-slate-400 text-sm leading-relaxed mb-5">
-              {isDevOpsLoop
+              {selectedIsDevOps
                 ? 'Questions about DevOps Loop installation, quests, or curriculum? Reach out via the DevOps Loop Support Google Space.'
-                : isAIQuest
+                : selectedIsAIQuest
                 ? 'Stuck on a quest or have questions about the AI Transformation curriculum? Reach out via the AI Quest Google Space.'
+                : selectedIsCourse
+                ? `Questions about ${selectedTitle} topics, assessments, or learning path? Reach out via this course support session.`
                 : 'Login issues, platform access, or general questions? Reach out via the General Help Space.'}
             </p>
 

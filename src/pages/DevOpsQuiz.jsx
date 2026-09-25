@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Zap } from 'lucide-react';
 import { useAppStore } from '../App.jsx';
 import { getDevOpsQuest } from '../data/devopsIndex.js';
+import AITutor from '../components/AITutor.jsx';
 
 export default function DevOpsQuiz() {
   const { questId } = useParams();
@@ -89,6 +90,7 @@ export default function DevOpsQuiz() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 pt-10">
+        <AITutor courseSlug="devops-loop" />
         {/* Quest info */}
         <div className="flex items-center gap-3 mb-8">
           <span className="text-2xl">{quest.icon}</span>

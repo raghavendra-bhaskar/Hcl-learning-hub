@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Trophy, Map, ChevronRight, Star, ArrowLeft, Pencil, Zap, Lightbulb, Theater } from 'lucide-react';
+import { ChevronRight, Star, ArrowLeft, Pencil, ExternalLink } from 'lucide-react';
 import { getAuth } from './LoginPage.jsx';
 import { api } from '../lib/api.js';
+import { buildHandoffUrl } from '../components/ExternalHandoff.jsx';
+
+const CERTIFICATION_CATALOG_URL = 'https://cnapp.prod.hclpnp.com/lms/course/index.php?categoryid=20';
 
 export default function CoursePage() {
   const { slug } = useParams();
@@ -34,7 +37,10 @@ export default function CoursePage() {
 
   if (error || !course) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <p className="text-red-400">{error || 'Course not found'}</p>
+      <div className="max-w-lg rounded-2xl border border-red-500/20 bg-red-500/5 px-6 py-5">
+        <p className="text-red-300 font-semibold">{error || 'Course not found'}</p>
+        <p className="text-slate-500 text-xs mt-2">The course could not be loaded. Check your session and API connection, then try again.</p>
+      </div>
       <button onClick={() => navigate('/courses')} className="text-cyan-400 hover:text-cyan-300 text-sm">← Back to Course Hub</button>
     </div>
   );
@@ -43,8 +49,8 @@ export default function CoursePage() {
   const moduleCount = course.weeks?.reduce((a, w) => a + (w.modules?.length || 0), 0) || 0;
   const weekCount   = course.weeks?.length || 0;
   const heroTitleClass = course.title.length > 24
-    ? 'font-orbitron text-3xl md:text-5xl font-black mb-6 animate-slide-up leading-[0.95]'
-    : 'font-orbitron text-4xl md:text-6xl font-black mb-6 animate-slide-up';
+    ? 'font-orbitron text-2xl md:text-4xl font-black mb-6 animate-slide-up leading-[0.95]'
+    : 'font-orbitron text-3xl md:text-5xl font-black mb-6 animate-slide-up';
 
   const accentBg  = { background: accent + '18', border: `1px solid ${accent}35` };
 
@@ -68,6 +74,11 @@ export default function CoursePage() {
       action: () => navigate('/leaderboard'),
     },
     {
+      icon: '🎨', title: 'Avatar & Commander',
+      desc: 'Customize your commander and make your identity your own in the learning arena.',
+      action: () => navigate('/avatar'),
+    },
+    {
       icon: '⚡', title: 'XP & Leveling',
       desc: `Earn XP for correct answers on every ${course.title} quest. Each path contributes toward your total score and unlocks exclusive badges.`,
     },
@@ -75,7 +86,15 @@ export default function CoursePage() {
       icon: '💡', title: 'Expert Explanations',
       desc: 'Every answer includes a detailed expert explanation drawn from official documentation — learn why you were right or wrong.',
     },
+    {
+      icon: '🎭', title: 'Scenario-Based',
+      desc: 'Every question is framed as a real workplace scenario so you learn what to do, not just definitions.',
+    },
   ];
+
+  const certificationUrl = buildHandoffUrl(CERTIFICATION_CATALOG_URL, {
+    handoffType: 'certification-catalog', certificationId: course.slug,
+  });
 
   return (
     <div className="min-h-screen">
@@ -128,7 +147,7 @@ export default function CoursePage() {
 
       {/* ── Arsenal ──────────────────────────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-4 pb-20">
-        <h2 className="font-orbitron text-2xl font-bold text-center mb-10 text-slate-200">
+        <h2 className="font-orbitron text-xl md:text-2xl font-bold text-center mb-10 text-slate-200">
           {course.title} Arsenal
         </h2>
 
@@ -193,6 +212,19 @@ export default function CoursePage() {
             );
           })}
         </div>
+
+        <a href={certificationUrl} target="_blank" rel="noopener noreferrer"
+          className="mt-6 flex items-center gap-5 rounded-2xl p-6 border transition-all hover:-translate-y-0.5"
+          style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.1), rgba(6,182,212,0.06))', borderColor: 'rgba(139,92,246,0.35)' }}>
+          <div className="text-4xl flex-shrink-0">🎓</div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-orbitron font-bold text-white text-lg">Get {course.title} Certified</h3>
+            <p className="text-slate-400 text-sm leading-relaxed mt-1">Enroll for the assignment, take the examination, and earn your official {course.title} certificate in CNAPP LMS.</p>
+          </div>
+          <span className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-violet-200 border border-violet-400/30 bg-violet-500/10 flex-shrink-0">
+            Certify <ExternalLink size={14} />
+          </span>
+        </a>
       </section>
     </div>
   );

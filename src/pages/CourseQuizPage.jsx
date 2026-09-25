@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Check, X, Zap, Trophy } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
 import AvatarDisplay from '../components/AvatarDisplay.jsx';
+import AITutor from '../components/AITutor.jsx';
 
 const OPT_LABELS = { A: 'A', B: 'B', C: 'C', D: 'D' };
 const OPT_KEYS   = ['A', 'B', 'C', 'D'];
@@ -113,6 +114,7 @@ export default function CourseQuizPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 pt-10">
+        <AITutor key={slug} courseSlug={slug} />
         {/* Quest number + title */}
         <div className="mb-2">
           <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: accent }}>

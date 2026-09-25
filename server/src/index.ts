@@ -11,6 +11,7 @@ import { adminRouter } from './routes/admin.js';
 import { oidcRouter } from './routes/oidc.js';
 import { coursesRouter } from './routes/courses.js';
 import { settingsRouter } from './routes/settings.js';
+import { aiRouter } from './routes/ai.js';
 import { learningPathsRouter } from './routes/learningPaths.js';
 import { prisma } from './lib/prisma.js';
 import { PLATFORM_LEARNING_PATHS } from './seed/platformLearningPaths.js';
@@ -32,11 +33,36 @@ const SEED_COURSES = [
 async function seedPlatformCourses() {
   try {
     const platformQuests = await getPlatformCourseQuests();
+    const settingRows = await (prisma as any).setting.findMany();
+    const settings: Record<string, string> = {};
+    settingRows.forEach((row: any) => { settings[row.key] = row.value; });
     for (const c of SEED_COURSES) {
       const exists = await (prisma as any).course.findUnique({ where: { slug: c.slug } });
       const course = exists || await (prisma as any).course.create({ data: c });
       if (!exists) {
         console.log(`[seed] created platform course: ${c.title}`);
+      }
+
+      const legacySpacePrefix = c.slug === 'ai-quest' ? 'aiQuest' : c.slug === 'devops-loop' ? 'devops' : 'generic';
+      const platformSpaceDefaults = c.slug === 'ai-quest'
+        ? { url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7', name: 'HCL Software Support AI Hackathon 2026', hint: 'AI Quest questions, quests, curriculum & workshops' }
+        : c.slug === 'devops-loop'
+        ? { url: 'https://chat.google.com/room/AAAA0fg_fTQ?cls=7', name: 'DevOps Loop Support', hint: 'DevOps Loop questions, installation, quests & curriculum' }
+        : { url: 'https://chat.google.com/room/AAAAE-llN3w?cls=7', name: 'HCL Software — General Help Space', hint: 'Any generic issues, login problems, or platform questions' };
+      const helpDefaults = {
+        instructorName: settings['help.instructor.name'] || 'Raghavendra B',
+        instructorEmail: settings['help.instructor.email'] || 'raghavendrab@hcl-software.com',
+        helpSpaceUrl: settings[`help.spaces.${legacySpacePrefix}.url`] || settings['help.spaces.generic.url'] || platformSpaceDefaults.url,
+        helpSpaceName: settings[`help.spaces.${legacySpacePrefix}.name`] || settings['help.spaces.generic.name'] || platformSpaceDefaults.name,
+        helpSpaceHint: settings[`help.spaces.${legacySpacePrefix}.hint`] || settings['help.spaces.generic.hint'] || platformSpaceDefaults.hint,
+      };
+      const helpKeys = ['instructorName', 'instructorEmail', 'helpSpaceUrl', 'helpSpaceName', 'helpSpaceHint'] as const;
+      const missingHelpDefaults: Record<string, string> = {};
+      for (const key of helpKeys) {
+        if (!course[key] && helpDefaults[key]) missingHelpDefaults[key] = helpDefaults[key];
+      }
+      if (Object.keys(missingHelpDefaults).length) {
+        await (prisma as any).course.update({ where: { id: course.id }, data: missingHelpDefaults });
       }
 
       const weeksCount = await (prisma as any).courseWeek.count({ where: { courseId: course.id } });
@@ -134,6 +160,7 @@ app.use('/manager', authenticate, managerRouter);
 app.use('/admin', authenticate, adminRouter);
 app.use('/courses-api', authenticate, coursesRouter);
 app.use('/settings', authenticate, settingsRouter);
+app.use('/ai', authenticate, aiRouter);
 app.use('/learning-paths', authenticate, learningPathsRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

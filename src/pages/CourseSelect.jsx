@@ -342,7 +342,7 @@ export default function CourseSelect() {
         >
           ✦ HCL Software Learning Hub · {COURSES.length + visibleDbCourses.length} Technology Tracks
         </div>
-        <h1 className="font-orbitron text-4xl md:text-5xl font-black mb-4 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+        <h1 className="font-orbitron text-3xl md:text-4xl font-black mb-4 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
           Choose Your Learning Path
         </h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-sm leading-relaxed">

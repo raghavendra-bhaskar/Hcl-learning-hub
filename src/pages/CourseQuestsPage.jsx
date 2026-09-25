@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import AITutor from '../components/AITutor.jsx';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Target, ChevronRight, Clock } from 'lucide-react';
 import { api } from '../lib/api.js';
@@ -184,6 +185,7 @@ export default function CourseQuestsPage() {
 
       {/* Content */}
       <div className="max-w-5xl mx-auto px-4 space-y-10">
+        <AITutor key={slug} courseSlug={slug} />
         {quests.length === 0 ? (
           <div className="glass-card rounded-2xl p-12 text-center mt-4">
             <div className="text-4xl mb-4">🚧</div>

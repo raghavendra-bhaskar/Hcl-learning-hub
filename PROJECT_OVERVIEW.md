@@ -1,18 +1,15 @@
-# HCL Software Learning Hub — Project Overview
+# HCL L2 Support Learning Hub — Project Overview
 
-> **Internal gamified learning platform for HCL Software teams.**
-> Features a modern React SPA frontend with Okta OIDC & local auth, a Node.js / TypeScript / Prisma / PostgreSQL backend API, and a full dynamic course management system.
-> **Repository:** https://github.com/raghavendra-bhaskar/Hcl-learning-hub
+> **Internal gamified learning platform for HCL Software L2 Support teams.**
+> Features a modern React SPA frontend with client-side & Okta OIDC auth, accompanied by a Node.js / TypeScript / Prisma / PostgreSQL backend API.
 
 ---
 
 ## What Is This Project?
 
-The **HCL Software Learning Hub** is a scenario-based, gamified training platform that teaches real-world technical skills through interactive quests. Engineers complete bite-sized quests (8–20 minutes each), earn XP and badges, level up their commander, take hands-on CNAPP labs, and track team progress on a live leaderboard.
+The **HCL L2 Support Learning Hub** is a scenario-based, gamified training platform that teaches real-world technical skills through interactive quests. Engineers complete bite-sized quests (8–20 minutes each), earn XP and badges, level up their commander, take hands-on CNAPP labs, and track team progress on a live leaderboard.
 
-It is modelled after the IBM Cloud Quest style of gamification — with a Solution Center (Learn), Practice Quiz, and DIY challenge model per quest, backed by formal certification enrollment into CNAPP LMS.
-
-Admins can create and manage courses dynamically through a full-featured **Course Management System** — including weeks, modules, topics, resources, and scenario-based quests — all without touching code.
+It is modelled after the  Cloud Quest style of gamification — with a Solution Center (Learn), Practice Quiz, and DIY challenge model per quest, backed by formal certification enrollment into CNAPP LMS.
 
 **Currently live with 2 modules, 7 more planned:**
 
@@ -31,6 +28,23 @@ Admins can create and manage courses dynamically through a full-featured **Cours
 ---
 
 ## Technology Stack
+
+### Course Presentation Updates
+
+- Course hero headings use smaller responsive typography across the Course Hub, AI Quest, DevOps Loop, and database-backed course pages.
+- AI Quest and DevOps Loop no longer show the separate Continue Mission and Leaderboard hero buttons; those actions remain available in their learning arsenal/navigation.
+- Every database-backed course receives the shared six-feature arsenal (quests, leaderboard, avatar, XP, expert explanations, and scenario-based learning) plus a `Get <course title> Certified` CNAPP LMS catalog link using the course slug as the certification identifier.
+- AI Tutor hides the configured model name from learners and keeps retrieved source links inside a collapsed disclosure. Source citations in the answer remain available for context.
+- Help Session derives its course context from the current route, uses that course's moderator/support-space settings, and switches AI Help into that course's RAG scope; learners do not need a second selector. Administration > Help Settings has a dynamic course selector for moderator/support-space editing, including newly created courses. Administrators can use AI Course Topic Builder in the Course Editor to preview and add generated weeks, modules, and topics from an outline.
+
+### Local AI Tutor and Help
+
+- **Provider administration:** Administration > AI Provider configures one shared Ollama endpoint and chat model, stored atomically as `ai.provider` in the existing Setting table. AI starts disabled. Model discovery reads installed `/api/tags` models and marks `/api/ps` models currently running. A saved-provider chat panel supports model comparison.
+- **Learner experience:** `src/components/AITutor.jsx` supplies course-scoped tutoring in dynamic course quests and all three quiz implementations, plus Hub-wide AI Help in the Help Session modal. Pace selection, recent conversation, source references, errors, and loading states are included. Chats remain in component memory only.
+- **API:** Authenticated `/ai/status` and `/ai/chat`; admin-only `GET/PUT /ai/config` and `POST /ai/models`. `server/src/routes/ai.ts` validates requests and applies per-process concurrency/throttling. Learners cannot select endpoints or override models. Generic settings routes exclude/reserve `ai.*`.
+- **RAG:** `server/src/lib/aiKnowledge.ts` uses MiniSearch lexical retrieval over current live course descriptions, module topics, quest scenarios, learning topics, and explanations. Course requests filter the database by slug before retrieval; Help uses all live courses and platform guidance. No external resource content ingestion, embeddings, vector database, migration, or background index is required. No-match queries decline without inference. Model grounding is best-effort, not a guarantee against hallucinations or prompt injection.
+- **Ollama transport:** `server/src/lib/ollama.ts` supports local/private HTTP(S) origins, disallows credentials and redirects, and limits response size and time. Private endpoints are intentionally allowed for self-hosting; administrators and deployment egress controls are the trust boundary. Nginx's API read timeout is 150 seconds for slow local inference.
+- **Validation:** `npm run test:ai --prefix server` tests model discovery, endpoint validation, retrieval, admin authorization, request validation, selected-course filtering, disabled behavior, and throttling. See README for laptop/Docker connectivity and limitations.
 
 ### Frontend Framework
 | Technology | Version | Purpose |
@@ -67,14 +81,12 @@ Admins can create and manage courses dynamically through a full-featured **Cours
 ### Auth & User Roles
 | Role / Mechanism | Details |
 |---|---|
-| **Okta OIDC SSO** | Enterprise single sign-on via HCL Okta (Authorization Code + PKCE). Config stored in `server/data/oidc-config.json`, editable via Admin UI |
-| **Local Account Login** | Email + bcrypt password stored in DB. Covers all roles (USER, MANAGER, ADMIN). Admin logs in with `admin@local` / `Admin@HCL2026!` |
-| **Dynamic OIDC Config** | Frontend fetches `GET /oidc-config` at login; admin can update Okta settings live via Admin Panel without redeploying |
-| **Role-based Access** | Three roles: `USER` (learner), `MANAGER`, `ADMIN`. Enforced via `requireRole` middleware |
-| **JWT Tokens** | Okta: JWKS-verified ID token. Local: HS256 symmetric JWT (`kind: local-user`) |
+| **Okta OIDC SSO** | Enterprise single sign-on via HCL Okta (Authorization Code + PKCE) |
+| **Local Fallback** | Name, email, and optional Manager ID for offline/prototype testing |
+| **Local Admin Bypass** | `admin` / `admin` local login route gated by `ENABLE_LOCAL_ADMIN` |
 | **Identity & Manager Mapping** | Token claims (`managerEmail`, `managerId`, `groups`) extracted into auth context |
 | **External Handoff Query Params** | Passes `learnerId`, `learnerEmail`, `managerId`, `managerEmail` to CNAPP LMS & labs |
-| **Federated Sign-out** | Clears local storage; Okta users redirected to Okta end-session endpoint |
+| **Federated Sign-out** | Clears local storage and invokes Okta SSO token revocation |
 
 ### Backend Technology Stack (`server/`)
 | Technology | Details |
@@ -85,46 +97,32 @@ Admins can create and manage courses dynamically through a full-featured **Cours
 | **Validation** | `zod` for request schema validation |
 
 ### Build & Dev Commands
-
-All commands run from the **project root** (`Hcl-learning-hub/`):
-
 ```bash
-npm run dev          # Start BOTH frontend (HTTPS :5173) + backend (:4000) together
-npm run build        # Production bundle to /dist
-npm run preview      # Preview production build locally
-npm run migrate      # Apply Prisma DB migrations
-npm run studio       # Visual DB browser at http://localhost:5555
-npm run seed:admin   # (Re-)create admin@local user in DB
-npm run certs        # Generate self-signed TLS cert (auto-runs on dev start)
-npm run certs:regen  # Force-regenerate certs (replace existing)
-```
+# Frontend (AI-Quest/)
+npm run dev        # Vite dev server at http://localhost:5173
+npm run build      # Production bundle to /dist
+npm run preview    # Preview production build locally
 
-> `npm run dev` uses `concurrently` to launch **API** (cyan prefix) and **UI** (magenta prefix) side-by-side in one terminal. Killing it stops both.
+# Backend API (server/)
+cd server
+npm install        # Install server dependencies
+npm run dev        # Tsx watch server on http://localhost:4000
+npm run prisma:migrate # Apply DB migrations
+npm run prisma:studio  # Visual DB browser at http://localhost:5555
+```
 
 ---
 
 ## Project File Structure
 
 ```
-Hcl-learning-hub/
-├── index.html                        # Root HTML shell
-├── package.json                      # Root scripts (unified dev, build, migrate, studio)
-├── vite.config.js                    # Vite config: HTTPS (PFX cert), /api proxy to :4000
+AI-Quest/
+├── index.html                        # Root HTML shell (<title>HCL L2 Support Learning Hub</title>)
+├── package.json                      # Frontend dependencies + scripts
+├── vite.config.js                    # Vite config (React plugin)
 ├── tailwind.config.js                # Tailwind theme: colors, fonts, animations
 ├── postcss.config.js                 # PostCSS + Autoprefixer
-├── .env.example                      # Frontend environment template
-├── .gitignore                        # Excludes: node_modules, dist, certs/, .env, server/data/, *.mp4, *.pdf
-│
-├── certs/                            # TLS certificates (git-ignored — auto-generated)
-│   ├── server.pfx                    # PKCS#12 bundle (private key + cert, pass: changeit)
-│   ├── server.crt                    # PEM certificate (for browser truststore import)
-│   └── truststore.crt                # Same as server.crt (CA bundle alias)
-│
-├── scripts/
-│   ├── generate-certs.js             # Auto-generates self-signed cert via PowerShell (Windows) or OpenSSL
-│   ├── db-backup.sh                  # Dump PostgreSQL to SQL file (k3s / podman / docker auto-detect)
-│   ├── db-restore.sh                 # Restore SQL dump on new VM after setup
-│   └── validate.sh                   # Post-deployment health check: ports, DB, API, frontend, admin login
+├── .env.example                      # Frontend environment template (Okta credentials)
 │
 ├── src/
 │   ├── main.jsx                      # React root mount
@@ -154,44 +152,30 @@ Hcl-learning-hub/
 │   │
 │   ├── pages/                        # Route-level page components
 │   │
-│    │   ── Auth & Hub ──
-    │   ├── LoginPage.jsx             # Login: SSO button + local account toggle (dynamic OIDC config)
-    │   ├── LoginCallback.jsx         # Okta OIDC PKCE callback — builds OktaAuth from server config
-    │   ├── CourseSelect.jsx          # Course hub: search, side rail, course grid, Learning Paths button, Add to Path per card
-    │   ├── AdminPanel.jsx            # Admin tabs: users, courses, help settings, auth realm
-    │   ├── LearnerTracker.jsx        # Manager/Admin learner progress tracker
-    │   ├── AvatarEditor.jsx          # Commander avatar builder + custom image upload & naming
-    │   │
-│   │   ── Dynamic Course System ──
-    │   ├── CoursePage.jsx            # DB course landing: overview, modules list, quests CTA
-    │   ├── CoursePathPage.jsx        # DB course learning path: weeks/modules/topics/resources viewer
-    │   ├── CourseQuestsPage.jsx      # DB course quest list: Learn + Practice buttons per quest
-    │   ├── CourseLearnPage.jsx       # DB quest Learn tab: slide nav, embedded video, resources panel
-    │   ├── CourseQuizPage.jsx        # DB quest Practice tab: MCQ with feedback + explanation
-    │   ├── CourseEditor.jsx          # Admin course editor: info, help session, weeks, modules, topics, resources, quests
-    │   │
-│   │   ── Learning Paths ──
-    │   ├── LearningPathsPage.jsx     # User-owned paths: list, create, delete
-    │   ├── PathEditorPage.jsx        # Path editor: add courses/modules, duration, certificate, section headings
-    │   │
+│   │   ── Auth & Hub ──
+│   │   ├── LoginPage.jsx             # Dual login: Okta SSO button + local fallback
+│   │   ├── LoginCallback.jsx         # Okta OAuth2/OIDC PKCE callback handler
+│   │   ├── CourseSelect.jsx          # Course hub: side rail, course grid, "Dive into Certifications"
+│   │   ├── AvatarEditor.jsx          # Commander avatar builder + custom image upload & naming
+│   │   │
 │   │   ── AI Quest Module ──
-    │   ├── Home.jsx                  # AI Quest home: hero, commander stats, arsenal, Get Certified card
-    │   ├── Paths.jsx                 # 6 AI Quest learning paths with quest cards
-    │   ├── QuestDetail.jsx           # Quest detail: preview, objectives, lab launch, Learn / Practice CTA
-    │   ├── SolutionCenter.jsx        # Full-screen Learn: arch diagram (SVG) + step nav + videos
-    │   ├── Quiz.jsx                  # Scenario-based MCQ with immediate feedback + explanation
-    │   ├── Results.jsx               # Score card + XP + badge unlock + CNAPP cert/lab next steps
-    │   ├── LearningPath.jsx          # Structured 4-week AI curriculum view
-    │   └── Leaderboard.jsx           # Team XP rankings with animated avatar row
-    │
+│   │   ├── Home.jsx                  # AI Quest home: hero, commander stats, arsenal, Get Certified card
+│   │   ├── Paths.jsx                 # 6 AI Quest learning paths with quest cards
+│   │   ├── QuestDetail.jsx           # Quest detail: preview, objectives, lab launch, Learn / Practice CTA
+│   │   ├── SolutionCenter.jsx        # Full-screen Learn: arch diagram (SVG) + step nav + videos
+│   │   ├── Quiz.jsx                  # Scenario-based MCQ with immediate feedback + explanation
+│   │   ├── Results.jsx               # Score card + XP + badge unlock + CNAPP cert/lab next steps
+│   │   ├── LearningPath.jsx          # Structured 4-week AI curriculum view
+│   │   └── Leaderboard.jsx           # Team XP rankings with animated avatar row
+│   │
 │   │   ── DevOps Loop Module ──
-    │   ├── DevOpsHome.jsx            # DevOps home: hero, commander card (orange), arsenal grid
-    │   ├── DevOpsPaths.jsx           # 6 DevOps paths with Learn + Practice buttons per quest
-    │   ├── DevOpsQuestDetail.jsx     # DevOps quest detail: Learn First + Practice CTA + lab card
-    │   ├── DevOpsSolutionCenter.jsx  # Full-screen Learn: DevOps tool chain SVG + steps + videos
-    │   ├── DevOpsQuiz.jsx            # DevOps MCQ quiz with explanations
-    │   ├── DevOpsResults.jsx         # DevOps results + XP + badge + CNAPP cert/lab next steps
-    │   └── DevOpsLearningPath.jsx    # 4-week DevOps Loop curriculum (8 modules)
+│   │   ├── DevOpsHome.jsx            # DevOps home: hero, commander card (orange), arsenal grid
+│   │   ├── DevOpsPaths.jsx           # 6 DevOps paths with Learn + Practice buttons per quest
+│   │   ├── DevOpsQuestDetail.jsx     # DevOps quest detail: Learn First + Practice CTA + lab card
+│   │   ├── DevOpsSolutionCenter.jsx  # Full-screen Learn: DevOps tool chain SVG + steps + videos
+│   │   ├── DevOpsQuiz.jsx            # DevOps MCQ quiz with explanations
+│   │   ├── DevOpsResults.jsx         # DevOps results + XP + badge + CNAPP cert/lab next steps
+│   │   └── DevOpsLearningPath.jsx    # 4-week DevOps Loop curriculum (8 modules)
 │   │
 │   └── data/                         # Static content: all question banks + learn content
 │       ├── index.js                  # AI Quest: exports QUESTS (21), LEVELS, getLevelInfo()
@@ -214,46 +198,27 @@ Hcl-learning-hub/
     ├── package.json                  # Server dependencies & scripts
     ├── tsconfig.json                 # TypeScript compiler configuration
     ├── .env.example                  # Server environment variable template
-    ├── .env                          # Local database & secret configuration (git-ignored)
-    │
-    ├── data/
-    │   └── oidc-config.json          # Live OIDC / Okta config (issuer, clientId, endpoints) — editable via Admin UI
-    │
-    ├── scripts/
-    │   └── seed-admin.mjs            # Upserts admin@local user in DB (run once or after password change)
+    ├── .env                          # Local database & secret configuration
     │
     ├── prisma/
-    │   ├── schema.prisma             # Full schema — 14 models (see DB Schema section below)
-    │   ├── seed.ts                   # Demo seed (Managers + Learners)
-    │   └── migrations/               # Applied Prisma migrations
+    │   ├── schema.prisma             # PostgreSQL schema (User, Progress, Badge, Certification)
+    │   ├── seed.ts                   # Demo seed (1 Admin, 2 Managers, 7 Learners)
+    │   └── migrations/               # Applied database migrations
     │
     └── src/
-        ├── index.ts                  # Server entrypoint: CORS, route mount, seedPlatformCourses()
+        ├── index.ts                  # Server entrypoint & routing mount
         ├── env.ts                    # Environment variable parsing & validation
         ├── lib/
         │   └── prisma.ts             # Instantiated Prisma Client
         ├── middleware/
-        │   ├── auth.ts               # JWT verify: Okta JWKS + local HS256
+        │   ├── auth.ts               # Dual Okta JWKS / Local Admin JWT authenticator
         │   └── requireRole.ts        # Role-based access control (USER, MANAGER, ADMIN)
         └── routes/
-            ├── auth.ts               # POST /auth/local/login
-            ├── oidc.ts               # GET/PUT /oidc-config, POST /oidc-config/discover
+            ├── auth.ts               # POST /auth/admin/login
             ├── me.ts                 # GET/POST /me, /me/progress, /me/manager
             ├── manager.ts            # GET/POST/DELETE /manager/subordinates
-            ├── admin.ts              # GET/POST/PATCH/DELETE /admin/users, /admin/local-users
-            ├── courses.ts            # Full CRUD: courses, weeks, modules, topics, resources, quests, reorder
-            ├── settings.ts           # GET/PUT /settings (key-value admin config store)
-            └── learningPaths.ts      # CRUD for user-owned learning paths and path items
+            └── admin.ts              # GET/POST/PATCH /admin/users
 ```
-
-**AdminPanel page** (`src/pages/AdminPanel.jsx`) — accessible at `/admin` for ADMIN role users:
-| Tab | Description |
-|---|---|
-| **Okta Users** | List all SSO users, change roles (click badge to cycle USER/MANAGER/ADMIN) |
-| **Local Users** | Create local accounts (email + password), delete them |
-| **Authentication Realm** | Configure OIDC: realm name, Client ID, Client Secret, Issuer + Discover button (auto-fills endpoints) |
-| **Courses** | Platform Built-in Courses (DevOps Loop, AI Quest): status toggle + Edit → full CourseEditor. DB-Managed Courses: create, inline edit, drag-to-reorder, status toggle, delete, Edit Content → CourseEditor |
-| **Help Settings** | Global moderator name/email/title; General/AI Quest/DevOps Loop Google Chat Space URL, name, hint |
 
 ---
 
@@ -262,24 +227,10 @@ Hcl-learning-hub/
 ### Routing Map
 
 ```
-/login                              → LoginPage (Okta SSO + local account toggle)
+/login                              → LoginPage (dual Okta SSO + local login)
 /login/callback                     → LoginCallback (Okta OIDC PKCE token handler)
-/admin                              → AdminPanel (Users / Courses / Help Settings / Auth Realm — ADMIN only)
-/tracker                            → LearnerTracker (progress overview — MANAGER + ADMIN)
-/  or  /courses                     → CourseSelect (Course Hub: search, grid, Add to Path)
+/  or  /courses                     → CourseSelect (Course Hub + side rail)
 /avatar                             → AvatarEditor (commander builder & image upload)
-
-── Dynamic DB Courses ────────────────────────────────────────────
-/c/:slug                            → CoursePage (course landing: overview, modules, quests)
-/c/:slug/learning-path              → CoursePathPage (weeks / modules / topics / resources)
-/c/:slug/quests                     → CourseQuestsPage (quest list: Learn + Practice per quest)
-/c/:slug/learn/:questId             → CourseLearnPage (slide nav, embedded video, resources)
-/c/:slug/quiz/:questId              → CourseQuizPage (MCQ + explanation)
-/admin/courses/:slug/edit           → CourseEditor (ADMIN: full content editor)
-
-── Learning Paths ────────────────────────────────────────────────
-/my-paths                           → LearningPathsPage (user paths: list, create, delete)
-/my-paths/:id/edit                  → PathEditorPage (path editor: add content, duration, certificate)
 
 ── AI Quest ──────────────────────────────────────────────────────
 /ai-quest                           → Home (module landing + Get AI Certified)
@@ -381,9 +332,8 @@ Hcl-learning-hub/
 
 ```
 1. Login
-   Option A: Okta SSO ("Sign in with HCL SSO") -> redirects to Okta PKCE -> /login/callback
-   Option B: Local Account (toggle "▼ Local account login") -> email + password -> bcrypt verify -> JWT token
-   Admin:     email=admin@local  password=Admin@HCL2026!  (ADMIN role, all admin features)
+   Option A: Okta SSO ("Continue with HCL SSO") -> redirects to Okta PKCE -> /login/callback
+   Option B: Local login -> Enter Name, Email, and optional Manager ID -> stored in auth context
 
 2. Avatar Creation / Commander Customization
    Choose class preset OR upload custom photo (PNG/JPEG) and name class -> skin tone -> accessory -> badge colour
@@ -435,21 +385,18 @@ Hcl-learning-hub/
 
 ## How to Demo This Project
 
-### Setup (one terminal)
+### Setup (30 seconds)
 ```bash
+# Frontend
 cd AI-Quest
+npm install        # First time only
+npm run dev        # → http://localhost:5173
 
-# First time only — install all dependencies
+# Backend API (optional for full multi-user sync)
+cd AI-Quest/server
 npm install
-cd server && npm install && cd ..
-
-# Start EVERYTHING (frontend HTTPS + backend API) in one command
-npm run dev
-# UI  → https://localhost:5173  (or :5174 if 5173 is in use)
-# API → http://localhost:4000
+npm run dev        # → http://localhost:4000
 ```
-> First run auto-generates a self-signed TLS cert. Browser will show "Not Secure" — click **Advanced → Proceed** to accept it.  
-> Admin login: `admin@local` / `Admin@HCL2026!`
 
 ### Demo Script (10–15 minutes)
 
@@ -500,6 +447,8 @@ npm run dev
 | Launch Gate | High-tech radar sweep, skyline silhouette, animated walking commander, dynamic CTA buttons |
 | Icons | Lucide React (consistent SVG icon system) |
 | Animations | TailwindCSS custom keyframes: `animate-fade-in`, `animate-slide-up`, `animate-scale-in`, `shimmer` |
+| Icons | Lucide React (consistent SVG icon system) |
+| Animations | TailwindCSS custom keyframes: `animate-fade-in`, `animate-slide-up`, `animate-scale-in`, `shimmer` |
 
 ---
 
@@ -517,565 +466,98 @@ npm run dev
 
 ---
 
-## Database Schema (14 Models)
+## Running in Production
 
-| Model | Table Purpose |
-|---|---|
-| **User** | All users (Okta SSO + local accounts). Stores role, avatar data, manager links |
-| **UserManager** | Many-to-many: explicit learner → manager assignments |
-| **Progress** | Per-user quest completion records (module, questId, score, XP, timestamp) |
-| **Badge** | Earned badges per user (unique per user+badgeName) |
-| **Certification** | Per-user certification tracking (certId, level, status, achievedAt) |
-| **Course** | DB-managed course catalog (slug, title, emoji, accentColor, status, order, moderator + help space fields) |
-| **CourseWeek** | Week sections inside a course (weekNumber, title) |
-| **CourseModule** | Modules inside a week (order, number, title, icon, color) |
-| **CourseTopic** | Text/bullet topics inside a module (ordered content items) |
-| **CourseResource** | Resources inside a module (type: video/youtube/read/udemy/link/playlist, label, url) |
-| **CourseQuest** | Scenario MCQ quests per course (title, scenario, 4 options, correct, explanation, XP; optional learnTopics + learnResources JSON) |
-| **Setting** | Key-value admin config store (help moderator, chat space URLs, platform course status overrides) |
-| **LearningPath** | User-created learning paths (title, description, visibility, certificate field) |
-| **LearningPathItem** | Items inside a learning path (type: section/course/module, refId, title, durationMinutes, order) |
+Since this is a pure static SPA, it can be deployed to any static host:
 
-### Key Relationships
-```
-User ──< Progress          (one user, many quest progress records)
-User ──< Badge             (one user, many badges)
-User ──< Certification     (one user, many certifications)
-User ──< UserManager       (learner linked to manager)
-Course ──< CourseWeek ──< CourseModule ──< CourseTopic
-                                       ──< CourseResource
-                                       ──< CourseQuest (optional module link)
-Course ──< CourseQuest     (top-level quests not tied to a module)
-LearningPath ──< LearningPathItem
+```bash
+npm run build         # Outputs to /dist
 ```
 
-### Platform Courses (Auto-Seeded on Startup)
-The following courses are upserted on every server start if not already in the DB:
+Host `/dist` on any of:
+- **GitHub Pages** — free
+- **Netlify** — drag-and-drop deploy
+- **Vercel** — `vercel --prod`
+- **IBM Cloud Object Storage** — for internal HCL hosting
+- **Any web server** — Apache / Nginx just serve the `/dist` folder
 
-| Slug | Title | Status | Order |
-|---|---|---|---|
-| `devops-loop` | DevOps Loop | live | 10 |
-| `ai-quest` | AI Quest | live | 20 |
-| `kubernetes` | Kubernetes / K8s | coming-soon | 100 |
-| `aws` | AWS | coming-soon | 110 |
-| `gcp` | GCP | coming-soon | 120 |
-| `mcp` | MCP | coming-soon | 130 |
-| `observability` | Observability | coming-soon | 140 |
-| `azure` | Azure | coming-soon | 150 |
-| `openshift` | OpenShift | coming-soon | 160 |
-
-Platform learning path content is now standardized as **database content**, not page-local hardcoded arrays:
-
-- `server/src/seed/platformLearningPaths.ts` contains the authoritative seeded week/module/topic/resource content for `ai-quest` and `devops-loop`
-- `seedPlatformCourses()` in `server/src/index.ts` seeds that structure on startup when a platform course has no `CourseWeek` records yet
-- `src/pages/CoursePathPage.jsx` is the shared horizontal week-tab learning path UI used by DB courses and the platform wrappers
-- `src/pages/AIQuestCoursePathPage.jsx` and `src/pages/DevOpsCoursePathPage.jsx` route legacy platform learning path URLs into the shared DB-backed experience
-- `src/data/standardLearningPathNote.js` defines the standard "A Note Before You Start Your Learning Journey" block shown across course learning paths
-- `src/pages/PathEditorPage.jsx` now relies on DB-managed course content instead of hardcoded AI Quest / DevOps Loop fallback week data
+> ⚠️ Since routing uses the HTML5 History API, configure your host to redirect all 404s to `index.html`.
 
 ---
 
-## Help Session & Moderator System
+## Setting Up on a New VM (Step-by-Step Guide)
 
-Every course can have its own **moderator** and **Google Chat space** configured independently:
-
-- **DB courses** (`/c/:slug`): moderator name/email + chat space URL/name/hint stored as fields on the `Course` record. Edited via CourseEditor → Help Session panel.
-- **AI Quest & DevOps Loop**: same Course record fields (seeded to DB). Edited via Admin Panel → Edit → CourseEditor.
-- **Fallback hierarchy**: Course record → Global moderator settings (in `Setting` table) → hardcoded defaults.
-- **HelpButton** resolves the correct moderator and space for every route (`/c/:slug`, `/devops-loop/*`, `/ai-quest`, generic).
-- Admin ⚙ shortcut inside Help modal: links directly to that course's CourseEditor if on a course page, or global help settings otherwise.
+### 1. Prerequisites to Install on the New VM
+1. **Node.js 20 LTS** (includes `npm`) — download from [nodejs.org](https://nodejs.org/)
+2. **PostgreSQL 16 or 18** — install locally or run via Docker
+3. **Git** (optional, to pull/manage code)
 
 ---
 
-## Production Deployment — Kubernetes
+### 2. Database Initialization (PostgreSQL)
+Open terminal / PowerShell on the new VM and run:
 
-**Repository:** https://github.com/raghavendra-bhaskar/Hcl-learning-hub  
-**Production stack:** k3s (lightweight Kubernetes) · nginx (frontend) · Node.js/Express (API) · PostgreSQL (StatefulSet)
-
-### Architecture
-
-```
-[Browser]
-    │  HTTP :30080 (NodePort) or :80 (Ingress)
-    ▼
-[nginx Pod]  ─── /api/* ──▶  [api Pod :4000]  ──▶  [postgres StatefulSet]
-  serves                        Express + Prisma
-  React SPA
-```
-
-### Kubernetes Manifest Directory (`k8s/`)
-
-| File | Resource |
-|---|---|
-| `k8s/0-namespace.yaml` | Namespace `hcl-learning-hub` |
-| `k8s/1-secrets.yaml` | Secret template (DB password, JWT, admin password) |
-| `k8s/2-configmap.yaml` | ConfigMap (non-secret env vars) |
-| `k8s/3-postgres.yaml` | StatefulSet + PVC (10 Gi) + headless Service |
-| `k8s/4-api.yaml` | Deployment + PVC (1 Gi, Okta config) + Service |
-| `k8s/5-web.yaml` | Deployment × 2 replicas + Service |
-| `k8s/6-ingress.yaml` | Ingress + NodePort fallback (`:30080`) |
-
----
-
-### Universal VM Setup Script
-
-`hcl-learning-hub-setup.sh` is a **single script that works on all supported OS** and automatically detects internet availability:
-
-| Condition | Behaviour |
-|---|---|
-| Ubuntu / Debian + internet | Installs Docker CE + k3s, clones from GitHub |
-| RHEL / CentOS / Rocky + internet | Installs Docker CE (dnf) + k3s, clones from GitHub |
-| RHEL / CentOS / Rocky — air-gap (no internet) | Uses pre-installed Podman, auto-mounts `/dev/sr0 → /cdrom` for dnf repos, deploys with `podman run` + systemd units |
-
-#### Online install (Ubuntu or RHEL with internet)
-
-```bash
-# Option A — pipe directly (requires internet):
-curl -fsSL https://raw.githubusercontent.com/raghavendra-bhaskar/Hcl-learning-hub/main/hcl-learning-hub-setup.sh \
-  | sudo bash
-
-# Option B — download first, then run:
-curl -fsSL https://raw.githubusercontent.com/.../hcl-learning-hub-setup.sh -o setup.sh
-sed -i 's/\r//' setup.sh   # fix Windows line endings if downloaded on Windows
-sudo bash setup.sh --port 30080
-```
-
-#### Air-gap install (RHEL/CentOS, no internet)
-
-```bash
-# 1. Copy source from Windows machine to the VM:
-#    (run from PowerShell on your Windows dev machine)
-scp -r "d:\Windsurf\AI-Quest" hcluser@<VM-IP>:/product/hcl-learning-hub
-
-# 2. Copy the setup script (fix line endings)
-scp hcl-learning-hub-setup.sh hcluser@<VM-IP>:~/
-ssh hcluser@<VM-IP> "sed -i 's/\r//' ~/hcl-learning-hub-setup.sh"
-
-# 3. Run on the VM — script auto-detects no internet and uses Podman:
-ssh hcluser@<VM-IP>
-sudo bash ~/hcl-learning-hub-setup.sh --dir /product/hcl-learning-hub
-
-# Note: postgres:15-alpine must be pre-loaded if not available locally:
-#   podman pull postgres:15-alpine            (on a machine with internet)
-#   podman save postgres:15-alpine | gzip | ssh hcluser@<VM-IP> 'podman load'
-```
-
-The setup script automatically:
-1. Detects OS family (Debian/RHEL) and internet connectivity
-2. Mounts RHEL ISO at `/cdrom` if repos point there and it is not already mounted
-3. Installs Docker CE (online) or uses pre-installed Podman (air-gap)
-4. Installs k3s via `get.k3s.io` (online) or deploys via `podman run` (air-gap)
-5. Clones the repository (online) or uses pre-copied source (air-gap)
-6. Builds container images (`docker build` or `podman build`)
-7. Imports images into k3s containerd OR starts podman containers with systemd auto-start
-8. Generates random DB password + JWT secret, applies all manifests
-9. Waits for health and saves credentials to `.deploy-credentials`
-
----
-
-### Manual Step-by-Step Deployment
-
-#### Step 1 — Install k3s
-```bash
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-```
-
-#### Step 2 — Clone repository
-```bash
-git clone https://github.com/raghavendra-bhaskar/Hcl-learning-hub.git /product/hcl-learning-hub
-cd /product/hcl-learning-hub
-```
-
-#### Step 3 — Build images & import into k3s
-```bash
-docker build -t hcl-learning-hub-api:local ./server
-docker build -t hcl-learning-hub-web:local .
-docker save hcl-learning-hub-api:local | k3s ctr images import -
-docker save hcl-learning-hub-web:local | k3s ctr images import -
-```
-
-#### Step 4 — Apply manifests
-```bash
-# Create namespace
-k3s kubectl apply -f k8s/0-namespace.yaml
-
-# Create secrets (fill in real values first, or let the setup script generate them)
-k3s kubectl create secret generic hcl-learning-hub-secrets \
-  --namespace=hcl-learning-hub \
-  --from-literal=db-password="$(openssl rand -hex 16)" \
-  --from-literal=jwt-secret="$(openssl rand -hex 32)" \
-  --from-literal=admin-password="Admin@HCL2026!"
-
-# Apply remaining manifests
-k3s kubectl apply -f k8s/2-configmap.yaml
-k3s kubectl apply -f k8s/3-postgres.yaml
-k3s kubectl apply -f k8s/4-api.yaml      # patch image to hcl-learning-hub-api:local first
-k3s kubectl apply -f k8s/5-web.yaml      # patch image to hcl-learning-hub-web:local first
-k3s kubectl apply -f k8s/6-ingress.yaml
-```
-
-#### Step 5 — Verify
-```bash
-k3s kubectl get pods -n hcl-learning-hub
-# Expected:
-# postgres-0   1/1  Running
-# api-xxx      1/1  Running
-# web-xxx      1/1  Running
-# web-yyy      1/1  Running
-
-curl http://localhost:30080/    # NodePort access
+```sql
+-- Connect via psql: psql -U postgres
+CREATE USER hcl_hub WITH PASSWORD 'hcl_hub_dev';
+ALTER USER hcl_hub CREATEDB;
+CREATE DATABASE hcl_learning_hub OWNER hcl_hub;
+GRANT ALL PRIVILEGES ON DATABASE hcl_learning_hub TO hcl_hub;
 ```
 
 ---
 
-### Useful kubectl Commands
-
+### 3. Backend Setup & Run (`server/`)
 ```bash
-# Pod status
-k3s kubectl get pods -n hcl-learning-hub
+cd AI-Quest/server
 
-# Live API logs
-k3s kubectl logs -n hcl-learning-hub deploy/api -f
+# 1. Create environment file
+cp .env.example .env
+# (Ensure DATABASE_URL is: postgresql://hcl_hub:hcl_hub_dev@localhost:5432/hcl_learning_hub)
 
-# Live nginx logs
-k3s kubectl logs -n hcl-learning-hub deploy/web -f
-
-# Restart after config change
-k3s kubectl rollout restart deployment/api deployment/web -n hcl-learning-hub
-
-# Scale web replicas
-k3s kubectl scale deployment web --replicas=3 -n hcl-learning-hub
-```
-
----
-
-### Updating to a New Version
-
-```bash
-cd /product/hcl-learning-hub
-git pull
-
-# Rebuild images
-docker build -t hcl-learning-hub-api:local ./server
-docker build -t hcl-learning-hub-web:local .
-
-# Import updated images
-docker save hcl-learning-hub-api:local | k3s ctr images import -
-docker save hcl-learning-hub-web:local | k3s ctr images import -
-
-# Rolling restart (zero downtime for web, brief restart for api)
-k3s kubectl rollout restart deployment/api deployment/web -n hcl-learning-hub
-```
-
----
-
----
-
-### Required Ports & Firewall
-
-| Port | Protocol | Direction | Purpose | Notes |
-|---|---|---|---|---|
-| **30080** | TCP | Inbound (users) | App NodePort — nginx serving React SPA + `/api` proxy | Default; change with `--port` flag |
-| **4000** | TCP | Internal only | Node.js API server | Exposed internally to nginx; should NOT be open to internet |
-| **5432** | TCP | Internal only | PostgreSQL database | Must NOT be open to internet — security risk |
-| **22** | TCP | Inbound (admin) | SSH for deployment and management | Restrict to admin IP ranges |
-| **5173** | TCP | Local dev only | Vite frontend dev server (HTTPS) | Dev machine only, not production |
-| **6443** | TCP | Internal | k3s API server | Localhost only on single-node; not needed externally |
-
-The setup script **automatically**:
-- Checks if port `30080` (or `--port`) is already in use before deploying
-- Opens port `30080` in `firewalld` (RHEL) or `ufw` (Ubuntu) if a firewall is active
-- Warns if PostgreSQL port 5432 is incorrectly exposed in the firewall
-- Checks available disk space (≥5 GB) and memory (≥2 GB)
-
-Run `scripts/validate.sh` at any time to re-check all ports + firewall rules:
-```bash
-sudo bash /product/hcl-learning-hub/scripts/validate.sh
-```
-
----
-
-### Post-Deployment Validation (`scripts/validate.sh`)
-
-Run after initial setup or any update:
-
-```bash
-sudo bash /product/hcl-learning-hub/scripts/validate.sh
-# or with custom port:
-sudo bash scripts/validate.sh --port 30080 --host 10.14.84.57
-```
-
-**Checks performed:**
-| # | Check | What it verifies |
-|---|---|---|
-| 1 | Container / Pod status | All 3 services (postgres, api, web) are running and ready |
-| 2 | Port availability | 30080, 4000, 5432 are listening; firewall rules verified |
-| 3 | PostgreSQL schema | Connects to DB, counts tables (expects 14) |
-| 4 | API health | `GET /health` + `GET /oidc-config` return correctly |
-| 5 | Frontend | `localhost:30080` returns HTTP 200; nginx→API proxy works |
-| 6 | Admin login | `POST /auth/local/login` with admin@local succeeds |
-| 7 | Security | DB password entropy, JWT secret length, Okta SSO configured |
-
-Exits with code `0` (all pass) or `1` (any critical failure).
-
----
-
-### Windows VM / Windows Dev Machine
-
-The production server is Linux (RHEL/Ubuntu). The **Windows machine is the developer workstation** (`d:\Windsurf\AI-Quest`). Setup scripts run on the Linux VM, not Windows.
-
-#### Running locally on Windows (dev mode)
-
-```powershell
-# From PowerShell in d:\Windsurf\AI-Quest
+# 2. Install dependencies
 npm install
-cd server && npm install && cd ..
+
+# 3. Run database migrations & seed demo records
+npx prisma migrate dev
+npx prisma db seed
+
+# 4. Start the API server
 npm run dev
-# Frontend: https://localhost:5173  (self-signed cert)
-# API:      http://localhost:4000
-# Admin:    admin@local / Admin@HCL2026!
+# -> Backend starts at http://localhost:4000
 ```
 
-Dev mode uses a **local PostgreSQL** (either Docker Desktop or a local install).
-For local PostgreSQL via Docker Desktop:
-```powershell
-docker run -d --name hcl-postgres-dev `
-  -e POSTGRES_DB=hclhub `
-  -e POSTGRES_USER=hcluser `
-  -e POSTGRES_PASSWORD=devpassword `
-  -p 5432:5432 postgres:15-alpine
+---
 
-# Set DATABASE_URL in server/.env:
-# DATABASE_URL=postgresql://hcluser:devpassword@localhost:5432/hclhub
+### 4. Frontend Setup & Run (`AI-Quest/`)
+In a new terminal window:
+```bash
+cd AI-Quest
 
-npm run migrate     # apply schema
-npm run seed:admin  # create admin@local
+# 1. Install dependencies
+npm install
+
+# 2. (Optional) Configure Okta or environment vars
+cp .env.example .env.local
+
+# 3. Start development server
 npm run dev
+# -> Frontend starts at http://localhost:5173
 ```
-
-#### Backup PostgreSQL from Windows dev machine
-
-```powershell
-# Option A — if using Docker Desktop:
-$TS = Get-Date -Format 'yyyyMMdd-HHmmss'
-docker exec hcl-postgres-dev pg_dump -U hcluser -d hclhub `
-  --no-owner --no-acl --clean --if-exists `
-  > "C:\Backups\hcl-hub-db-$TS.sql"
-
-# Option B — if PostgreSQL is installed locally:
-$TS = Get-Date -Format 'yyyyMMdd-HHmmss'
-& 'C:\Program Files\PostgreSQL\15\bin\pg_dump.exe' `
-  -U hcluser -d hclhub --no-owner --no-acl --clean --if-exists `
-  -f "C:\Backups\hcl-hub-db-$TS.sql"
-```
-
-#### Restore PostgreSQL on Windows dev machine
-
-```powershell
-# Option A — Docker Desktop:
-docker exec -i hcl-postgres-dev psql -U hcluser -d hclhub `
-  < "C:\Backups\hcl-hub-db-20260922-143000.sql"
-
-# Option B — local PostgreSQL:
-& 'C:\Program Files\PostgreSQL\15\bin\psql.exe' `
-  -U hcluser -d hclhub `
-  -f "C:\Backups\hcl-hub-db-20260922-143000.sql"
-```
-
-#### Deploy to Linux VM from Windows (transfer source + run setup)
-
-```powershell
-# 1. Copy source to the Linux VM:
-scp -r "d:\Windsurf\AI-Quest" hcluser@10.14.84.57:/product/hcl-learning-hub
-
-# 2. Copy and fix the setup script (fix Windows CRLF line endings):
-scp "d:\Windsurf\AI-Quest\hcl-learning-hub-setup.sh" hcluser@10.14.84.57:~/
-ssh hcluser@10.14.84.57 "sed -i 's/`r//' ~/hcl-learning-hub-setup.sh"
-
-# 3. Run on the VM:
-ssh hcluser@10.14.84.57
-sudo bash ~/hcl-learning-hub-setup.sh --dir /product/hcl-learning-hub
-```
-
-> **Line endings:** Windows creates scripts with `\r\n` (CRLF). Always run `sed -i 's/\r//' scriptname.sh` on the Linux VM before executing any `.sh` file transferred from Windows.
-
-#### Ports for Windows dev
-
-| Port | Purpose | Status |
-|---|---|---|
-| 5173 | Vite HTTPS dev server | Open on localhost only |
-| 4000 | API (Express) | Open on localhost only |
-| 5432 | PostgreSQL | Open on localhost only |
-| 5555 | Prisma Studio | Open on localhost when running `npm run studio` |
-
-No firewall changes needed for Windows dev — all ports are localhost-only.
-
----
-
-### Database Backup & Restore (VM Migration)
-
-**Every time you decommission a VM or rebuild infrastructure, run the backup first.** The backup captures all database state: users, progress, badges, certifications, courses, settings, Okta config, and learning paths.
-
-#### scripts/db-backup.sh
-
-Auto-detects the deployment mode (k3s, podman, or docker) and dumps PostgreSQL via `pg_dump`:
-
-```bash
-# Run on the OLD VM before decommissioning:
-sudo bash /product/hcl-learning-hub/scripts/db-backup.sh
-
-# Output (saved to /product/backups/):
-#   hcl-hub-db-YYYYMMDD-HHMMSS.sql      ← full PostgreSQL dump
-#   hcl-hub-credentials-YYYYMMDD.txt    ← copy of .deploy-credentials
-#   oidc-config-YYYYMMDD.json           ← Okta SSO config
-
-# Custom output directory:
-sudo bash scripts/db-backup.sh /my/backup/dir
-```
-
-**What is backed up:**
-| Data | Details |
-|---|---|
-| User accounts | All Okta SSO users + local accounts + roles |
-| Manager assignments | UserManager relationships |
-| Quest progress | All modules: questId, score, XP, timestamp |
-| Badges | All earned badges per user |
-| Certifications | Cert status (assigned / in-progress / achieved) |
-| Courses | Custom DB-managed courses, weeks, modules, topics, resources, quests |
-| Platform course status | live/coming-soon overrides for AI Quest, DevOps Loop, etc. |
-| Settings | Help moderator, Google Chat spaces, all admin key-value settings |
-| Learning paths | User-created paths with items and durations |
-| OIDC config | Okta issuer, clientId, endpoints (`oidc-config.json`) |
-
-#### scripts/db-restore.sh
-
-Run on the **new VM after setup** to load the backup:
-
-```bash
-# 1. Run setup script on new VM (installs everything fresh):
-sudo bash hcl-learning-hub-setup.sh
-
-# 2. Copy backup file from old VM or safe storage:
-scp user@old-vm:/product/backups/hcl-hub-db-20260922-143000.sql ./
-
-# 3. Restore:
-sudo bash /product/hcl-learning-hub/scripts/db-restore.sh ./hcl-hub-db-20260922-143000.sql
-
-# The script will:
-#   - Detect deploy mode (k3s / podman / docker) automatically
-#   - Drop & recreate all tables from the dump
-#   - Restore oidc-config.json if included in backup
-#   - Restart the API container/pod
-#   - Print admin credentials
-```
-
-> **Full workflow for moving to a new VM:**
-> ```
-> Old VM:  sudo bash scripts/db-backup.sh
->          scp /product/backups/hcl-hub-db-*.sql  user@new-vm:~/
->          scp /product/backups/oidc-config-*.json user@new-vm:~/
-> New VM:  sudo bash hcl-learning-hub-setup.sh
->          sudo bash scripts/db-restore.sh ~/hcl-hub-db-*.sql
-> ```
-
----
-
-### Local Development (Docker Compose — dev only)
-
-```bash
-# From project root
-cp .env.docker .env           # fill in real values
-docker compose up -d --build  # starts postgres + api + nginx on port 80
-```
-
-> Docker Compose (`docker-compose.yml`) is **for local development only**. Production deployments use Kubernetes manifests.
-
----
-
-### GitHub — Push & Deploy Workflow
-
-```bash
-# Push changes to GitHub
-git add .
-git commit -m "feat: describe your change"
-git push origin main
-
-# Deploy on target VM
-cd /product/hcl-learning-hub && git pull
-docker build -t hcl-learning-hub-api:local ./server && docker save hcl-learning-hub-api:local | k3s ctr images import -
-docker build -t hcl-learning-hub-web:local . && docker save hcl-learning-hub-web:local | k3s ctr images import -
-k3s kubectl rollout restart deployment/api deployment/web -n hcl-learning-hub
-```
-
----
-
-### 4. Database Migration Details (All 14 Tables)
-
-Running `npm run migrate` (which executes `prisma migrate deploy` inside `server/`) creates all tables in order. Here is what each migration creates:
-
-#### Core User & Auth Tables
-| Table | Columns |
-|---|---|
-| `User` | id, oktaSub, email, name, role (ADMIN/MANAGER/USER), managerId, passwordHash, isLocalUser, hasAvatar, avatarData (JSON), createdAt, updatedAt |
-| `UserManager` | userId, managerId, assignedAt — composite PK |
-| `Progress` | id, userId, module, questId, score, totalQuestions, xpEarned, completedAt — unique(userId, module, questId) |
-| `Badge` | id, userId, module, badgeName, earnedAt — unique(userId, badgeName) |
-| `Certification` | id, userId, certId, level, status, achievedAt, createdAt — unique(userId, certId, level) |
-
-#### Course Management Tables
-| Table | Columns |
-|---|---|
-| `Course` | id, slug (unique), title, tagline, description, emoji, accentColor, status, order, instructorName, instructorEmail, helpSpaceUrl, helpSpaceName, helpSpaceHint, createdAt, updatedAt |
-| `CourseWeek` | id, courseId, weekNumber, title — unique(courseId, weekNumber) |
-| `CourseModule` | id, weekId, order, number, title, icon, color |
-| `CourseTopic` | id, moduleId, order, content |
-| `CourseResource` | id, moduleId, order, label, type, url |
-| `CourseQuest` | id, courseId, moduleId (nullable), order, title, scenario, optionA, optionB, optionC, optionD, correct, explanation, xp, learnTopics (JSON), learnResources (JSON), createdAt |
-
-#### Platform Config & Learning Path Tables
-| Table | Columns |
-|---|---|
-| `Setting` | id, key (unique), value — stores all admin config key-value pairs |
-| `LearningPath` | id, userId, title, description, visibility, certificate, createdAt, updatedAt |
-| `LearningPathItem` | id, pathId, type, refId, title, subtitle, emoji, accentColor, durationMinutes, order, createdAt |
-
-#### Verifying migrations applied correctly
-```bash
-# Option A — Prisma Studio (visual browser)
-npm run studio
-# Opens http://localhost:5555 — you should see all 14 models in the left panel
-
-# Option B — psql
-psql -U hcl_hub -d hcl_learning_hub -c "\dt"
-# Should list: User, UserManager, Progress, Badge, Certification,
-#              Course, CourseWeek, CourseModule, CourseTopic,
-#              CourseResource, CourseQuest, Setting,
-#              LearningPath, LearningPathItem
-
-# Option C — health + courses API check
-curl http://localhost:4000/health
-# → {"ok":true}
-```
-
-#### Platform course seeding (automatic)
-On every server startup, `seedPlatformCourses()` in `server/src/index.ts` upserts the 9 platform courses (`devops-loop`, `ai-quest`, `kubernetes`, `aws`, `gcp`, `mcp`, `observability`, `azure`, `openshift`) into the `Course` table if they do not already exist. **No manual action needed.**
 
 ---
 
 ### 5. How to Demonstrate & Show It Working
-1. **Login** (`https://<hostname>:5173/login`):
-   - **Admin**: email `admin@local` / password `Admin@HCL2026!` → lands on Course Hub with Admin link in header
-   - **Okta SSO**: click "Sign in with HCL SSO" (requires Okta configured in Admin Panel → Auth Realm)
-2. **Avatar Builder**: choose sci-fi presets or upload custom PNG/JPEG
-3. **Course Hub** (`/courses`): search bar, AI Quest + DevOps Loop cards, 7 coming-soon cards, Add to Learning Path per card
-4. **Admin Panel** (`/admin`):
-   - **Courses tab** → Edit on DevOps Loop or AI Quest → full CourseEditor with weeks, modules, quests, and Help Session panel
-   - **Help Settings tab** → set global moderator + Google Chat spaces
-5. **CourseEditor** (`/admin/courses/:slug/edit`): add weeks, modules, topics, resources; create scenario-based quests with Learn content
-6. **Quests & Missions**: launch animation, Solution Center, MCQ quiz, Results + badge
-7. **Learning Paths** (`/my-paths`): create a path, add courses/modules, set duration, add certificate
-8. **Help Session button**: per-course moderator and Google Chat space shown correctly per route
+1. **Frontend App (`http://localhost:5173`)**:
+   - **Login**: Use name & optional email (or click Okta SSO if configured).
+   - **Avatar Builder**: Choose built-in character presets or click **"Bring Your Own"** to upload a custom PNG/JPEG avatar and customize class title.
+   - **Course Hub (`/courses`)**: Explore the left side rail with quick links, platform features, and Help Session button.
+   - **Quests & Missions**: Click into **DevOps Loop** or **AI Quest**, observe the high-tech **"Mission Ready"** launch animation, and complete scenario MCQs.
+   - **Certifications & Labs**: Demonstrate direct handoff cards that link out to CNAPP LMS.
+2. **Backend API Verification**:
+   - Health check: `curl http://localhost:4000/health` → `{"ok": true}`
+   - Local admin login: `POST http://localhost:4000/auth/admin/login` with `{"username":"admin","password":"admin"}`
+   - Prisma Studio (Visual DB Browser): `npx prisma studio` (runs on `http://localhost:5555`)
 
 ---
 
@@ -1089,28 +571,4 @@ On every server startup, `seedPlatformCourses()` in `server/src/index.ts` upsert
 
 ---
 
-*Last updated: September 2026 | Platform: HCL Software | Repo: https://github.com/raghavendra-bhaskar/Hcl-learning-hub | Built with React 18 + Vite + TailwindCSS + Express + Prisma + PostgreSQL + Kubernetes (k3s)*
-
----
-
-## Recent Major Changes (September 2026)
-
-| Feature | Details |
-|---|---|
-| **Dynamic Course Management** | Full CRUD admin system for courses, weeks, modules, topics, resources via CourseEditor |
-| **Scenario-based Quests (DB)** | Admin-created quests with Learn slides (learnTopics) and resources (learnResources) stored as JSON in DB |
-| **DevOps Loop + AI Quest in DB** | Both platform courses seeded to DB and fully editable via CourseEditor (weeks, modules, quests, help session) |
-| **Standardized Learning Path UI** | All course learning paths now use the shared DB-backed `CoursePathPage` horizontal week layout, including AI Quest and DevOps Loop wrapper routes |
-| **Shared Pre-learning Note** | New courses and platform learning paths use the same standard note block before the week/module roadmap |
-| **Per-course Moderator** | Each course has its own moderator name/email and Google Chat space, editable in CourseEditor → Help Session |
-| **Learning Paths** | Users can create, edit, and manage personal learning paths with courses, modules, duration per item, and certificate |
-| **Course Hub Search** | Search bar in CourseSelect filters both platform and DB-managed courses |
-| **Add to Learning Path** | "Add to Path" button on every course card opens path selector modal |
-| **Help Session per course** | HelpButton resolves moderator + space from DB course record for all routes including /devops-loop and /ai-quest |
-| **Instructor → Moderator** | Renamed throughout all UI, labels, settings keys, and API fields |
-| **Admin Edit shortcut** | ⚙ button inside Help modal links directly to the CourseEditor for the current course (or global settings) |
-| **Kubernetes Deployment** | Production deployment fully migrated to k3s; `k8s/` manifests for namespace, secrets, configmap, postgres, api, web, ingress |
-| **Universal Setup Script** | `hcl-learning-hub-setup.sh` — auto-detects OS (Ubuntu/RHEL/CentOS/Rocky) and internet. Online: Docker CE + k3s. Air-gap: Podman + systemd. RHEL ISO auto-mounted for dnf repos |
-| **DB Backup / Restore** | `scripts/db-backup.sh` + `scripts/db-restore.sh` — full PostgreSQL dump/restore across VM migrations. Auto-detects k3s/podman/docker runtime. Backs up oidc-config.json and credentials |
-| **GitHub Repository** | Published at https://github.com/raghavendra-bhaskar/Hcl-learning-hub |
-| **Rebranded** | Project renamed from AI Quest → HCL Software Learning Hub; folder Hcl-learning-hub |
+*Last updated: August 2026 | Platform: HCL Software L2 Support | Built with React 18 + Vite + TailwindCSS*

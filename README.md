@@ -21,6 +21,25 @@ The **HCL Software Learning Hub** is a scenario-based, gamified training platfor
 
 ## Local development
 
+### Local Ollama AI Tutor
+
+1. Start Ollama on the machine reachable by the Hub API. Install a chat model, for example `ollama pull llama3.2` (run `ollama serve` only if Ollama is not already running).
+2. Sign in as an administrator and open **Administration > AI Provider**.
+3. Enter `http://localhost:11434` when the API and Ollama run on the same laptop. Models are discovered automatically from `/api/tags`; models currently loaded in memory are marked **running** using `/api/ps`. Installed models need not already be loaded to select them.
+4. Select a chat-capable model, enable AI, and save. Use **Test Saved Provider** to ask a Hub question. Save another model to compare responses. Embedding-only models cannot answer chat requests.
+5. Learners can open **AI Tutor** in course quests/assessments and **AI Help** in Help Session. The pace selector and recent conversation provide session-level adaptation. Conversations are not persisted and clear when leaving the page.
+6. Each Help Session can switch between General Platform Support and every configured course, including coming-soon courses. On a course editor page, administrators can use **AI Course Topic Builder** to generate a reviewable outline from a short description, then add the approved weeks, modules, and topics.
+
+Endpoint connectivity is from the **backend**, not the browser. With Docker Desktop, use `http://host.docker.internal:11434`; for a remote API, use a private address reachable from that server, not its `localhost`. Ollama may need a listening address that accepts that connection. Restrict firewall access to the backend; do not expose an unauthenticated Ollama server to the public internet. Browser CORS changes are not needed because the API proxies requests.
+
+Retrieval-augmented generation (RAG) uses MiniSearch full-text retrieval over live course descriptions, module topics, assessment scenarios, learning topics, and explanations in PostgreSQL. Course chat retrieves only the selected course; AI Help searches live Hub courses plus platform help. Source links accompany answers. Course edits are available on the next question without an indexing job. Linked videos, PDFs, and external websites are **not** downloaded or indexed; add their instructional text as course topics to make it retrievable. Sparse course material produces limited answers.
+
+No-match questions are declined without calling the model. Instructions constrain answers to retrieved material, but probabilistic models can still hallucinate or ignore scope instructions; citations are retrieved references, not independently verified claims. The tutor is a study aid, not an assessment-integrity boundary, and its corpus includes explanations. No student profile, credentials, or progress records are sent to Ollama. Questions, recent chat, and retrieved course text are sent to the administrator-configured endpoint. AI is disabled by default; no schema migration or embedding model is required.
+
+Requests have a two-minute inference timeout, bounded input/output, one active request per user, and four concurrent requests per API process. Nginx allows 150 seconds for the upstream response. For a multi-replica deployment, use a shared limiter before increasing usage. Endpoint configuration is trusted-admin functionality; enforce network egress restrictions in shared or production deployments.
+
+Verify the AI integration with `npm run test:ai --prefix server`, `npm run build --prefix server`, and `npm run build`.
+
 ### Run in development mode
 
 ```bash

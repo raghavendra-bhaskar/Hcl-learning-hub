@@ -520,6 +520,85 @@ function HelpSessionPanel({ course, onUpdate }) {
   );
 }
 
+function AICourseOutlinePanel({ course, weeks, onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [outline, setOutline] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const generate = async () => {
+    setBusy(true); setError('');
+    try {
+      const nextPlan = await api.post('/ai/course-outline', { courseId: course.id, outline });
+      setPlan(nextPlan);
+    } catch (e) { setError(e?.message || 'Could not generate course topics'); }
+    finally { setBusy(false); }
+  };
+
+  const addPlan = async () => {
+    if (!plan?.weeks?.length) return;
+    setBusy(true); setError('');
+    try {
+      const createdWeeks = [];
+      for (const [weekIndex, generatedWeek] of plan.weeks.entries()) {
+        const week = await api.post(`/courses-api/${course.id}/weeks`, { title: generatedWeek.title, weekNumber: weeks.length + weekIndex + 1 });
+        const modules = [];
+        for (const [moduleIndex, generatedModule] of generatedWeek.modules.entries()) {
+          const module = await api.post(`/courses-api/weeks/${week.id}/modules`, {
+            title: generatedModule.title, icon: '📖', color: course.accentColor || '#06b6d4', order: moduleIndex, number: moduleIndex + 1,
+          });
+          for (const [topicIndex, topic] of generatedModule.topics.entries()) {
+            await api.post(`/courses-api/modules/${module.id}/topics`, { content: topic.content, order: topicIndex });
+          }
+          modules.push({ ...module, topics: generatedModule.topics, resources: [] });
+        }
+        createdWeeks.push({ ...week, modules });
+      }
+      onCreated(createdWeeks);
+      setPlan(null); setOutline(''); setOpen(false);
+    } catch (e) { setError(e?.message || 'Could not add generated topics'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-2xl p-5 mb-8 border border-cyan-500/20" style={{ background: 'rgba(6,182,212,0.04)' }}>
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h3 className="font-orbitron text-sm font-bold text-white">AI Course Topic Builder</h3>
+          <p className="text-[11px] text-slate-500 mt-1">Describe an outline and review generated weeks, modules, and topics before adding them.</p>
+        </div>
+        <button onClick={() => setOpen(value => !value)} className="px-3 py-2 rounded-lg text-xs font-bold text-cyan-200 border border-cyan-400/30 bg-cyan-500/10">
+          {open ? 'Close' : 'Build with AI'}
+        </button>
+      </div>
+      {open && <div className="mt-4 space-y-3">
+        <textarea value={outline} onChange={e => setOutline(e.target.value)} rows={5} maxLength={12000}
+          placeholder="Example: Teach GCP fundamentals, IAM, networking, Compute Engine, Cloud Run, GKE, observability, cost control, and a production deployment exercise."
+          className="w-full rounded-xl px-3 py-2.5 text-sm text-white resize-y focus:outline-none" style={inputStyle} />
+        <button onClick={generate} disabled={busy || outline.trim().length < 20}
+          className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
+          {busy && !plan ? 'Researching outline…' : 'Generate Preview'}
+        </button>
+        {plan && <div className="space-y-3 rounded-xl p-4 border border-white/10" style={{ background: 'rgba(0,0,0,0.16)' }}>
+          <p className="text-xs text-cyan-300">Preview: {plan.weeks.length} week{plan.weeks.length === 1 ? '' : 's'} · review before adding</p>
+          {plan.weeks.map((week, weekIndex) => <div key={weekIndex}>
+            <p className="text-sm font-semibold text-white">Week {weeks.length + weekIndex + 1}: {week.title}</p>
+            <ul className="mt-1 pl-4 list-disc text-xs text-slate-400 space-y-1">
+              {week.modules.map((module, moduleIndex) => <li key={moduleIndex}><span className="text-slate-300">{module.title}</span> · {module.topics.length} topics</li>)}
+            </ul>
+          </div>)}
+          <button onClick={addPlan} disabled={busy} className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'rgba(16,185,129,0.7)' }}>
+            {busy ? 'Adding topics…' : 'Add Previewed Topics'}
+          </button>
+        </div>}
+        {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
+        <p className="text-[10px] text-slate-600">AI expands your outline using the configured local model. Verify technical accuracy and add official resources separately.</p>
+      </div>}
+    </div>
+  );
+}
+
 // ── Main CourseEditor page ────────────────────────────────────────────────────
 export default function CourseEditor() {
   const { slug } = useParams();
@@ -606,6 +685,8 @@ export default function CourseEditor() {
 
         {/* Help session */}
         {course && <HelpSessionPanel course={course} onUpdate={c => setCourse(c)} />}
+
+        {course && <AICourseOutlinePanel course={course} weeks={weeks} onCreated={created => setWeeks(p => [...p, ...created])} />}
 
         {/* Weeks */}
         <div className="flex items-center gap-3 mb-6">

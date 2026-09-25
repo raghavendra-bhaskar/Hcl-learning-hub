@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Map, ChevronRight, Star, ArrowLeft, ExternalLink } from 'lucide-react';
+import { ChevronRight, Star, ArrowLeft, ExternalLink } from 'lucide-react';
 import { buildHandoffUrl } from '../components/ExternalHandoff.jsx';
 
 const AI_CERTIFICATION_URL = 'https://cnapp.prod.hclpnp.com/lms/course/index.php?categoryid=20';
@@ -60,7 +60,7 @@ export default function Home() {
             Gamified AI Learning for Teams
           </div>
 
-          <h1 className="font-orbitron text-4xl md:text-6xl font-black mb-6 animate-slide-up">
+          <h1 className="font-orbitron text-3xl md:text-5xl font-black mb-6 animate-slide-up">
             <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
               AI QUEST
             </span>
@@ -73,23 +73,6 @@ export default function Home() {
           <p className="text-slate-500 text-[12px] mb-10 animate-fade-in">
             Generative AI • Machine Learning • MLOps • NLP • Computer Vision • LLM Architecture • RAG • AI Security • Prompt Engineering • Python • APIs • Docker
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
-            <button
-              onClick={() => navigate('/paths')}
-              className="group flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg shadow-cyan-500/25"
-            >
-              <Map size={20} />
-              Continue Mission
-              <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => navigate('/leaderboard')}
-              className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-yellow-500/30 transition-all"
-            >
-              <Trophy size={20} className="text-yellow-400" />
-              Leaderboard
-            </button>
-          </div>
         </div>
       </section>
 

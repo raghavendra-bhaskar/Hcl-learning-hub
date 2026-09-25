@@ -4,6 +4,7 @@ import { ArrowLeft, Zap, CheckCircle, XCircle, ChevronRight } from 'lucide-react
 import { useAppStore } from '../App.jsx';
 import { getQuest, getPath } from '../data/index.js';
 import Header from '../components/Header.jsx';
+import AITutor from '../components/AITutor.jsx';
 
 export default function Quiz() {
   const { questId } = useParams();
@@ -76,6 +77,7 @@ export default function Quiz() {
     <div className="min-h-screen">
       <Header />
       <div className="max-w-3xl mx-auto px-4 py-8">
+        <AITutor courseSlug="ai-quest" />
         {/* Top bar */}
         <div className="flex items-center justify-between mb-6">
           <button

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
 import LearnerTracker from './LearnerTracker.jsx';
+import AIProviderTab from '../components/AIProviderTab.jsx';
 
 const ROLE_LABELS = { ADMIN: 'Administrator', MANAGER: 'Manager', USER: 'Learner' };
 const ROLE_ORDER  = ['USER', 'MANAGER', 'ADMIN'];
@@ -924,23 +925,69 @@ const HELP_KEYS = [
   { key: 'help.spaces.generic.url',       label: 'General Help Space URL',       placeholder: 'https://chat.google.com/room/...' },
   { key: 'help.spaces.generic.name',      label: 'General Help Space Name',      placeholder: 'HCL Software — General Help Space' },
   { key: 'help.spaces.generic.hint',      label: 'General Help Space Hint',      placeholder: 'Any generic issues, login problems, or platform questions' },
-  { key: 'help.spaces.aiQuest.url',       label: 'AI Quest Space URL',           placeholder: 'https://chat.google.com/room/...' },
-  { key: 'help.spaces.aiQuest.name',      label: 'AI Quest Space Name',          placeholder: 'HCL Software Support AI Hackathon 2026' },
-  { key: 'help.spaces.aiQuest.hint',      label: 'AI Quest Space Hint',          placeholder: 'AI Quest questions, quests, curriculum & workshops' },
-  { key: 'help.spaces.devops.url',        label: 'DevOps Loop Space URL',        placeholder: 'https://chat.google.com/room/...' },
-  { key: 'help.spaces.devops.name',       label: 'DevOps Loop Space Name',       placeholder: 'DevOps Loop Support' },
-  { key: 'help.spaces.devops.hint',       label: 'DevOps Loop Space Hint',       placeholder: 'DevOps Loop questions, installation, quests & curriculum' },
 ];
 
 function HelpSettingsTab() {
   const [values, setValues] = useState({});
+  const [courses, setCourses] = useState([]);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [courseDraft, setCourseDraft] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(null);
   const [msg, setMsg]         = useState({ text: '', ok: true });
 
   useEffect(() => {
-    api.get('/settings').then(d => setValues(d || {})).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([api.get('/settings'), api.get('/courses-api')]).then(([settings, courseList]) => {
+      const globalSettings = settings || {};
+      setValues(globalSettings);
+      const list = (Array.isArray(courseList) ? courseList : []).map(course => {
+        const prefix = course.slug === 'ai-quest' ? 'aiQuest' : course.slug === 'devops-loop' ? 'devops' : 'generic';
+        const platformDefaults = course.slug === 'ai-quest'
+          ? { url: 'https://chat.google.com/room/AAQAKyozwQ8?cls=7', name: 'HCL Software Support AI Hackathon 2026', hint: 'AI Quest questions, quests, curriculum & workshops' }
+          : course.slug === 'devops-loop'
+          ? { url: 'https://chat.google.com/room/AAAA0fg_fTQ?cls=7', name: 'DevOps Loop Support', hint: 'DevOps Loop questions, installation, quests & curriculum' }
+          : { url: 'https://chat.google.com/room/AAAAE-llN3w?cls=7', name: 'HCL Software — General Help Space', hint: 'Any generic issues, login problems, or platform questions' };
+        return {
+          ...course,
+          instructorName: course.instructorName || globalSettings['help.instructor.name'] || 'Raghavendra B',
+          instructorEmail: course.instructorEmail || globalSettings['help.instructor.email'] || 'raghavendrab@hcl-software.com',
+          helpSpaceUrl: course.helpSpaceUrl || globalSettings[`help.spaces.${prefix}.url`] || platformDefaults.url,
+          helpSpaceName: course.helpSpaceName || globalSettings[`help.spaces.${prefix}.name`] || platformDefaults.name,
+          helpSpaceHint: course.helpSpaceHint || globalSettings[`help.spaces.${prefix}.hint`] || platformDefaults.hint,
+        };
+      });
+      setCourses(list);
+      if (list.length) {
+        setSelectedCourseId(list[0].id);
+        setCourseDraft(list[0]);
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const selectCourse = (id) => {
+    const next = courses.find(course => course.id === id);
+    setSelectedCourseId(id);
+    setCourseDraft(next || {});
+  };
+
+  const saveCourse = async () => {
+    if (!selectedCourseId) return;
+    setSaving(`course:${selectedCourseId}`);
+    try {
+      const updated = await api.put(`/courses-api/${selectedCourseId}`, {
+        instructorName: courseDraft.instructorName || '',
+        instructorEmail: courseDraft.instructorEmail || '',
+        helpSpaceUrl: courseDraft.helpSpaceUrl || '',
+        helpSpaceName: courseDraft.helpSpaceName || '',
+        helpSpaceHint: courseDraft.helpSpaceHint || '',
+      });
+      setCourses(previous => previous.map(course => course.id === updated.id ? { ...course, ...updated } : course));
+      setCourseDraft(previous => ({ ...previous, ...updated }));
+      setMsg({ text: 'Course Help Session saved!', ok: true });
+      setTimeout(() => setMsg({ text: '', ok: true }), 2500);
+    } catch (e) { setMsg({ text: e?.message || 'Save failed', ok: false }); }
+    finally { setSaving(null); }
+  };
 
   const save = async (key) => {
     setSaving(key);
@@ -969,9 +1016,9 @@ function HelpSettingsTab() {
   const sections = [
     { title: 'Instructor', keys: HELP_KEYS.slice(0, 3) },
     { title: 'General Help Space', keys: HELP_KEYS.slice(3, 6) },
-    { title: 'AI Quest Space', keys: HELP_KEYS.slice(6, 9) },
-    { title: 'DevOps Loop Space', keys: HELP_KEYS.slice(9) },
   ];
+  const selectedCourseName = courses.find(course => course.id === selectedCourseId)?.title || 'Course';
+  const courseField = (key) => e => setCourseDraft(previous => ({ ...previous, [key]: e.target.value }));
 
   return (
     <div className="max-w-2xl">
@@ -1016,6 +1063,38 @@ function HelpSettingsTab() {
             ))}
           </div>
         ))}
+        <div className="rounded-2xl p-5 space-y-4" style={cardStyle}>
+          <div>
+            <h4 className="text-xs font-bold text-white">Course Help Sessions</h4>
+            <p className="text-[11px] text-slate-600 mt-1">Each course has its own moderator and support space. New courses appear here automatically.</p>
+          </div>
+          {courses.length ? (
+            <>
+              <select value={selectedCourseId} onChange={e => selectCourse(e.target.value)}
+                className="w-full rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none" style={inputStyle}>
+                {courses.map(course => <option key={course.id} value={course.id}>{course.emoji || '📚'} {course.title}</option>)}
+              </select>
+              <div className="grid sm:grid-cols-2 gap-4">
+                {[
+                  ['instructorName', 'Moderator Name', 'e.g. John Smith'],
+                  ['instructorEmail', 'Moderator Email', 'john@example.com'],
+                  ['helpSpaceUrl', 'Chat Space URL', 'https://chat.google.com/room/...'],
+                  ['helpSpaceName', 'Chat Space Display Name', `${selectedCourseName} Support`],
+                  ['helpSpaceHint', 'Chat Space Hint', `${selectedCourseName} questions, labs & quests`],
+                ].map(([key, label, placeholder]) => <label key={key} className={key === 'helpSpaceUrl' || key === 'helpSpaceHint' ? 'sm:col-span-2' : ''}>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">{label}</span>
+                  <input value={courseDraft[key] || ''} onChange={courseField(key)} placeholder={placeholder}
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white placeholder-slate-700 focus:outline-none" style={inputStyle} />
+                </label>)}
+              </div>
+              <button onClick={saveCourse} disabled={saving === `course:${selectedCourseId}`}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
+                style={{ background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.3)', color: '#67e8f9' }}>
+                {saving === `course:${selectedCourseId}` ? 'Saving…' : `Save ${selectedCourseName} Help`}
+              </button>
+            </>
+          ) : <p className="text-xs text-slate-500">No courses have been created yet.</p>}
+        </div>
       </div>
     </div>
   );
@@ -1028,6 +1107,7 @@ const TABS = [
   { id:'courses',         label:'Courses'               },
   { id:'learner-tracker', label:'Learner Tracker'       },
   { id:'help-settings',   label:'Help Settings'         },
+  { id:'ai-provider',     label:'AI Provider'           },
   { id:'auth-realm',      label:'Authentication Realm'  },
 ];
 
@@ -1054,7 +1134,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl w-fit max-w-full" style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.06)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
@@ -1070,6 +1150,7 @@ export default function AdminPanel() {
       {activeTab==='courses'         && <CoursesTab/>}
       {activeTab==='learner-tracker' && <LearnerTracker asTab={true}/>}
       {activeTab==='help-settings'   && <HelpSettingsTab/>}
+      {activeTab==='ai-provider'     && <AIProviderTab/>}
       {activeTab==='auth-realm'      && <AuthRealmTab/>}
     </div>
   );

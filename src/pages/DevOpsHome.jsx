@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Trophy, Map, ChevronRight, Star, ArrowLeft } from 'lucide-react';
+import { ChevronRight, Star, ArrowLeft } from 'lucide-react';
 import { buildHandoffUrl } from '../components/ExternalHandoff.jsx';
 
 const DEVOPS_CERTIFICATION_URL = 'https://cnapp.prod.hclpnp.com/lms/course/index.php?categoryid=20';
@@ -83,7 +83,7 @@ export default function DevOpsHome() {
             Gamified DevOps Learning for Teams
           </div>
 
-          <h1 className="font-orbitron text-4xl md:text-6xl font-black mb-6 animate-slide-up">
+          <h1 className="font-orbitron text-3xl md:text-5xl font-black mb-6 animate-slide-up">
             <span className="bg-gradient-to-r from-orange-400 via-red-400 to-rose-400 bg-clip-text text-transparent">
               DEVOPS LOOP
             </span>
@@ -96,24 +96,6 @@ export default function DevOpsHome() {
           <p className="text-slate-500 text-[12px] mb-10 animate-fade-in">
             DevOps Plan • DevOps Control • DevOps Build • DevOps Deploy • DevOps Test • DevOps Measure • CNAPP Installation • Value Streams
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-scale-in">
-            <button
-              onClick={() => navigate('/devops-loop/paths')}
-              className="group flex items-center gap-2 px-8 py-4 rounded-2xl font-bold text-lg text-white hover:opacity-90 transition-all active:scale-95 shadow-lg"
-              style={{ background: 'linear-gradient(135deg, #f97316, #ef4444)', boxShadow: '0 8px 32px rgba(249,115,22,0.3)' }}
-            >
-              <Map size={20} />
-              Continue Mission
-              <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-            </button>
-            <button
-              onClick={() => navigate('/leaderboard')}
-              className="flex items-center gap-2 px-8 py-4 glass-card rounded-2xl font-bold text-lg hover:border-orange-500/30 transition-all"
-            >
-              <Trophy size={20} className="text-orange-400" />
-              Leaderboard
-            </button>
-          </div>
         </div>
       </section>
 
