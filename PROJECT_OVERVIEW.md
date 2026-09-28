@@ -113,6 +113,72 @@ npm run prisma:studio  # Visual DB browser at http://localhost:5555
 
 ---
 
+## Deployment & Packaging
+
+The Hub ships as three containers on a private network: **web** (nginx + the
+built React SPA), **api** (Express/Prisma) and **postgres**. nginx serves the SPA
+and proxies `/api/*` to `http://api:4000/`, so the API container must always
+carry the network alias `api`.
+
+### Deployment modes
+
+| Mode | Entry point | When to use |
+|---|---|---|
+| Local development | `docker-compose.yml` | Laptop development with hot reload off |
+| Connected server | `hcl-learning-hub-setup.sh` | VM with internet — installs Docker CE + k3s and builds from source |
+| **Air-gap / offline** | `packaging/` bundles | No internet, no registry — pre-built images shipped as tar archives |
+
+### Offline bundle (`packaging/`)
+
+Building from source on an air-gapped host fails because both `Dockerfile`s
+start from `node:20-alpine` and the runtime cannot reach `registry-1.docker.io`.
+The packaging pipeline removes that dependency:
+
+| Component | Purpose |
+|---|---|
+| `packaging/build-bundle.sh` | Builds on a connected Linux host → `dist-bundle/*-linux.tar.gz` + `.sha256` |
+| `packaging/build-bundle.ps1` | Builds on a connected Windows host → `dist-bundle/*-windows.zip` + `.sha256` |
+| `packaging/build-exe.ps1` | Compiles `Install.ps1` into `hcl-learning-hub-setup.exe` via ps2exe (UAC manifest embedded) |
+| `packaging/bundle/bundle.env` | Single source of truth for ports, image tags, container/volume names, DB settings and minimum host specs — parsed by both Bash and PowerShell |
+| `packaging/bundle/install.sh` / `Install.ps1` | Air-gap installers: pre-flight → load images → secrets → PostgreSQL → **auto DB restore** → API + web → firewall → auto-start |
+| `packaging/bundle/start.*` / `stop.*` | Ordered start/stop for both platforms; stop preserves volumes |
+| `packaging/bundle/restore-db.sh` / `Restore-Db.ps1` | Format-detecting restore (`PGDMP` → `pg_restore`, otherwise `psql`) |
+
+The bundle carries `hcl-learning-hub-api`, `hcl-learning-hub-web` and
+`postgres:16-alpine` as `images/*.tar`, plus `db/backup.dump`. Installation
+performs no network calls.
+
+**Database restore ordering:** the dump is restored after PostgreSQL reports
+healthy but *before* the API container starts, so `prisma migrate deploy` sees
+the restored `_prisma_migrations` history and applies only genuinely new
+migrations.
+
+**Secrets:** the DB password, JWT secret and local admin password are generated
+per install and written to `.deploy-credentials` (mode `600` on Linux;
+Administrators + SYSTEM ACL on Windows). Re-running the installer reuses them
+unless `--force` / `-Force` is passed, so the data volume stays valid.
+
+**Auto-start:** a `systemd` unit (`hcl-learning-hub.service`) on Linux and a
+`HCL Learning Hub` scheduled task on Windows, both invoking the start script.
+
+### Minimum host requirements
+
+| Resource | Minimum | Recommended | With local Ollama AI Tutor |
+|---|---|---|---|
+| CPU | 2 vCPU (x86_64) | 4 vCPU | 8 vCPU |
+| RAM | 4 GB | 8 GB | 16 GB |
+| Free disk | 20 GB | 50 GB | 50 GB + ~10 GB per model |
+
+Supported: RHEL/Rocky/Alma 8–9, CentOS Stream 9, Ubuntu 22.04/24.04 LTS,
+Debian 12 (Podman 4.x+ or Docker 24+); Windows 10 Pro 21H2+, Windows 11 Pro,
+Windows Server 2019/2022 (Docker Desktop 4.x, WSL2 backend).
+
+Exposed port: `30080/tcp` only. `4000` (API) and `5432` (PostgreSQL) remain on
+the internal container network. Full details in the README and
+`packaging/bundle/BUNDLE-README.md`.
+
+---
+
 ## Project File Structure
 
 ```
@@ -218,6 +284,23 @@ AI-Quest/
             ├── me.ts                 # GET/POST /me, /me/progress, /me/manager
             ├── manager.ts            # GET/POST/DELETE /manager/subordinates
             └── admin.ts              # GET/POST/PATCH /admin/users
+│
+└── packaging/                        # Offline / air-gap distribution
+    ├── README.md                     # How to build and ship the bundles
+    ├── build-bundle.sh               # Connected Linux build  → dist-bundle/*-linux.tar.gz
+    ├── build-bundle.ps1              # Connected Windows build → dist-bundle/*-windows.zip
+    ├── build-exe.ps1                 # Install.ps1 → hcl-learning-hub-setup.exe (ps2exe)
+    ├── payload/                      # Optional Docker Desktop installer for -WithDocker
+    └── bundle/                       # Everything shipped inside the archive
+        ├── bundle.env                # Ports, image tags, container names, min host specs
+        ├── BUNDLE-README.md          # Operator guide (becomes README.md in the archive)
+        ├── lib/common.sh             # Shared Bash helpers (runtime detect, waits, creds)
+        ├── lib/Common.ps1            # Shared PowerShell helpers
+        ├── install.sh  / Install.ps1 # Air-gap installers with built-in pre-flight checks
+        ├── start.sh    / Start.ps1   / start.cmd
+        ├── stop.sh     / Stop.ps1    / stop.cmd
+        ├── restore-db.sh / Restore-Db.ps1   # Format-detecting DB restore
+        └── install.cmd               # Self-elevating fallback when no EXE is shipped
 ```
 
 ---

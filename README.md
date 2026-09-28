@@ -9,6 +9,95 @@ The **HCL Software Learning Hub** is a scenario-based, gamified training platfor
 - API server: `4000`
 - Shared DB-backed course system for AI Quest, DevOps Loop, and custom courses
 
+## Minimum system requirements
+
+These apply to the server that hosts the Learning Hub (Docker/Podman host). The
+installers in `packaging/` verify every one of them before changing anything.
+
+| Resource | Minimum | Recommended | With local Ollama AI Tutor |
+|---|---|---|---|
+| CPU | 2 vCPU (x86_64) | 4 vCPU | 8 vCPU |
+| RAM | 4 GB | 8 GB | 16 GB |
+| Free disk | 20 GB | 50 GB | 50 GB + ~10 GB per model |
+| GPU | not required | not required | optional, speeds up inference |
+
+### Supported operating systems
+
+| Platform | Versions | Container runtime |
+|---|---|---|
+| RHEL / Rocky / AlmaLinux | 8, 9 | Podman 4.x+ or Docker 24+ |
+| CentOS Stream | 9 | Podman 4.x+ or Docker 24+ |
+| Ubuntu | 22.04 LTS, 24.04 LTS | Docker 24+ or Podman 4.x+ |
+| Debian | 12 | Docker 24+ or Podman 4.x+ |
+| Windows 10 Pro / Enterprise | 21H2+ (build 19044+) | Docker Desktop 4.x (WSL2) |
+| Windows 11 Pro / Enterprise | all supported builds | Docker Desktop 4.x (WSL2) |
+| Windows Server | 2019, 2022 (build 17763+) | Docker Desktop / Docker Engine |
+
+Windows hosts need hardware virtualization enabled in the BIOS and either WSL2
+or Hyper-V available.
+
+### Ports
+
+| Port | Exposure | Purpose |
+|---|---|---|
+| `30080/tcp` | inbound, open to users | Web UI (nginx) — change with `--port` / `-Port` |
+| `4000/tcp` | internal container network only | Express API |
+| `5432/tcp` | internal container network only | PostgreSQL — **never expose externally** |
+
+Roughly 2.5 GB of the disk budget is the container images; the rest is the
+PostgreSQL volume, uploaded avatars and logs.
+
+## Offline / air-gap installation
+
+Air-gapped hosts cannot build from source — the `Dockerfile`s start from
+`node:20-alpine`, so `podman build` fails with
+`pinging container registry registry-1.docker.io`. Use the pre-built bundles
+instead: images are built once on a connected machine and shipped as tar
+archives, together with the installer, start/stop scripts and the database dump.
+
+### Build the bundle (on a connected machine)
+
+```bash
+bash packaging/build-bundle.sh                 # -> dist-bundle/hcl-learning-hub-1.0.0-linux.tar.gz
+bash packaging/build-bundle.sh --with-docker   # also embeds the Docker Engine
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build-bundle.ps1 -WithExe
+# -> dist-bundle\hcl-learning-hub-1.0.0-windows.zip  (contains hcl-learning-hub-setup.exe)
+```
+
+### Install on the air-gapped host
+
+```bash
+# Linux
+tar -xzf hcl-learning-hub-1.0.0-linux.tar.gz
+cd hcl-learning-hub-1.0.0-linux
+sudo bash install.sh
+```
+
+```text
+# Windows
+Extract the .zip, then right-click hcl-learning-hub-setup.exe -> Run as administrator
+(or install.cmd if your bundle was built without the EXE)
+```
+
+The installer runs all pre-flight checks, loads the container images offline,
+generates secrets, starts PostgreSQL, **restores `db/backup.dump` automatically**,
+then starts the API and web tiers and registers auto-start (`systemd` on Linux,
+a scheduled task on Windows).
+
+### Start, stop and restore
+
+| Action | Linux | Windows |
+|---|---|---|
+| Start | `sudo bash start.sh` | `start.cmd` |
+| Stop | `sudo bash stop.sh` | `stop.cmd` |
+| Restore a dump | `sudo bash restore-db.sh --dump <file>` | `.\Restore-Db.ps1 -DumpFile <file>` |
+
+Full operator documentation: [packaging/README.md](packaging/README.md) and
+[packaging/bundle/BUNDLE-README.md](packaging/bundle/BUNDLE-README.md).
+
 ## Recent changes
 
 - AI Quest and DevOps Loop landing pages were simplified to match shared course pages.

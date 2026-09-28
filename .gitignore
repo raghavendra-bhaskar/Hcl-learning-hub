@@ -22,6 +22,14 @@ server/.env
 *.zip
 *.tar.gz
 
+# Offline bundle build output — regenerate with packaging/build-bundle.*
+dist-bundle/
+# Docker Desktop installer staged for packaging/build-bundle.ps1 -WithDocker
+packaging/payload/*
+!packaging/payload/README.txt
+# Generated at install time — contains DB password, JWT secret, admin password
+.deploy-credentials
+
 # OS
 .DS_Store
 Thumbs.db

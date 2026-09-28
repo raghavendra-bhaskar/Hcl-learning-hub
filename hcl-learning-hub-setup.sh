@@ -330,15 +330,33 @@ cd "$INSTALL_DIR"
 ok "Source ready at $INSTALL_DIR"
 
 # ── Step 5: Build Container Images ───────────────────────────────────────────
-banner "Step 5: Build Container Images"
+banner "Step 5: Container Images"
 
-info "Building API image (server/)..."
-$CONTAINER_RT build -t "$API_IMAGE" ./server
-ok "API image built: $API_IMAGE"
+# Both Dockerfiles start FROM node:20-alpine, so a build needs registry access.
+# With no internet, load the pre-built images shipped in the offline bundle.
+OFFLINE_IMAGE_DIR=""
+for CANDIDATE in "$INSTALL_DIR/images" "$(dirname "$0")/images" ./images; do
+  if compgen -G "$CANDIDATE/*.tar" > /dev/null 2>&1; then OFFLINE_IMAGE_DIR="$CANDIDATE"; break; fi
+done
 
-info "Building Web image (nginx + React SPA)..."
-$CONTAINER_RT build -t "$WEB_IMAGE" .
-ok "Web image built: $WEB_IMAGE"
+if [ "$HAS_INTERNET" = false ] && [ -n "$OFFLINE_IMAGE_DIR" ]; then
+  info "Offline mode — loading pre-built images from $OFFLINE_IMAGE_DIR"
+  for TAR in "$OFFLINE_IMAGE_DIR"/*.tar; do
+    info "Loading $(basename "$TAR")..."
+    $CONTAINER_RT load -i "$TAR" > /dev/null || fail "Failed to load $(basename "$TAR")"
+  done
+  ok "Images loaded from bundle"
+elif [ "$HAS_INTERNET" = false ]; then
+  fail "Cannot build images without internet — the Dockerfiles pull node:20-alpine.\n\nUse the offline bundle instead:\n  1. On a connected machine:  bash packaging/build-bundle.sh\n  2. Copy dist-bundle/hcl-learning-hub-*-linux.tar.gz to this host\n  3. tar -xzf hcl-learning-hub-*-linux.tar.gz && sudo bash install.sh"
+else
+  info "Building API image (server/)..."
+  $CONTAINER_RT build -t "$API_IMAGE" ./server
+  ok "API image built: $API_IMAGE"
+
+  info "Building Web image (nginx + React SPA)..."
+  $CONTAINER_RT build -t "$WEB_IMAGE" .
+  ok "Web image built: $WEB_IMAGE"
+fi
 
 # ── Step 6: Generate Secrets ──────────────────────────────────────────────────
 banner "Step 6: Secrets & Credentials"
@@ -359,7 +377,7 @@ if [ "$USE_PODMAN_DEPLOY" = true ]; then
 
   info "Starting PostgreSQL..."
   podman run -d --name hcl-postgres \
-    --network $NAMESPACE \
+    --network $NAMESPACE --network-alias postgres \
     -e POSTGRES_DB=hclhub \
     -e POSTGRES_USER=hcluser \
     -e "POSTGRES_PASSWORD=${DB_PASS}" \
@@ -369,7 +387,7 @@ if [ "$USE_PODMAN_DEPLOY" = true ]; then
       # Fallback to UBI PostgreSQL (available in RHEL registries)
       warn "docker.io/postgres not available — trying UBI image..."
       podman run -d --name hcl-postgres \
-        --network $NAMESPACE \
+        --network $NAMESPACE --network-alias postgres \
         -e POSTGRESQL_USER=hcluser \
         -e "POSTGRESQL_PASSWORD=${DB_PASS}" \
         -e POSTGRESQL_DATABASE=hclhub \
@@ -381,11 +399,15 @@ if [ "$USE_PODMAN_DEPLOY" = true ]; then
 
   sleep 8
   info "Starting API..."
+  # Alias must be "api": nginx.conf proxies /api/ to http://api:4000/
   podman run -d --name hcl-api \
-    --network $NAMESPACE \
+    --network $NAMESPACE --network-alias api \
     -e "DATABASE_URL=postgresql://hcluser:${DB_PASS}@hcl-postgres:5432/hclhub" \
-    -e "JWT_SECRET=${JWT_SECRET}" \
-    -e "ADMIN_PASSWORD=${ADMIN_PASS}" \
+    -e "NODE_ENV=production" \
+    -e "ENABLE_LOCAL_ADMIN=true" \
+    -e "LOCAL_ADMIN_USERNAME=admin" \
+    -e "LOCAL_ADMIN_PASSWORD=${ADMIN_PASS}" \
+    -e "LOCAL_ADMIN_JWT_SECRET=${JWT_SECRET}" \
     -e "FRONTEND_ORIGIN=http://${SERVER_HOST}:${NODE_PORT}" \
     -p 4000:4000 \
     --restart unless-stopped \
@@ -393,7 +415,7 @@ if [ "$USE_PODMAN_DEPLOY" = true ]; then
 
   info "Starting Web (nginx)..."
   podman run -d --name hcl-web \
-    --network $NAMESPACE \
+    --network $NAMESPACE --network-alias web \
     -p "${NODE_PORT}:80" \
     --restart unless-stopped \
     "$WEB_IMAGE"
