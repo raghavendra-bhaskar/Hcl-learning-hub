@@ -141,7 +141,18 @@ needs downloading; everything else arrives with the clone.
 | `deploy/start.sh` | One command for PostgreSQL + API + UI. Wraps the root `npm run dev` (which already runs both tiers) as a background process group with `logs/hub.log`, `run/hub.pid` and health checks |
 | `deploy/stop.sh` | Terminates the whole process group, then frees ports 5173/4000; `--with-db` also stops PostgreSQL |
 | `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, reinstalls deps, regenerates the Prisma client, migrates, restarts. `--restore`, `--no-restart`, `--backup-only` |
-| `deploy/hub.env` | Generated config (FQDN, ports, DB, git origin) shared by the three scripts; git-ignored |
+| `deploy/Backup-Remote.ps1` | Windows-side puller: triggers `sync.sh --backup-only` over SSH, downloads the dump via scp, verifies the `PGDMP` header, prunes by age, and can register a daily scheduled task |
+| `deploy/hub.env` | Generated config (FQDN, ports, DB, PostgreSQL service/bin path, git origin) shared by the scripts; git-ignored |
+
+Backup and restore both use the application role `hcluser` (owner of `hclhub`),
+never the `postgres` superuser; the password lives only in `.deploy-credentials`
+on the VM. Dumps are custom-format with `--no-owner --no-acl`, restored with
+`--clean --if-exists`, so they move between VMs with differing roles.
+
+On RHEL without a valid subscription, `install.sh` falls back to the PostgreSQL
+community (PGDG) repository and records the resulting `postgresql-<n>` service
+name and `/usr/pgsql-<n>/bin` path in `hub.env`. `--database-url` bypasses local
+PostgreSQL entirely.
 
 Private-repo access uses `GIT_ASKPASS`, keeping the token out of argv, the
 remote URL and shell history. `install.sh` optionally stores it at `.hub-token`

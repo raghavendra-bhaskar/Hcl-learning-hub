@@ -186,6 +186,86 @@ cat .deploy-credentials     # admin password, DB password (mode 600)
 ls backups/                 # pre-sync database dumps
 ```
 
+### Database backup and restore
+
+**Which user?** Everything uses the application role **`hcluser`** (the owner of
+the `hclhub` database), not the `postgres` superuser. Its password is generated
+at install time and stored in `.deploy-credentials`. Backup and restore use the
+same role, so no superuser access is needed for day-to-day operation.
+
+| Task | OS user | DB role | Why |
+|---|---|---|---|
+| `pg_dump` / `pg_restore` of `hclhub` | `hcluser` | `hcluser` | Owns every object in the database |
+| Cluster-wide roles dump (`pg_dumpall --globals-only`) | `postgres` | `postgres` | Roles live outside any single database |
+
+On the VM, the simplest backup is:
+
+```bash
+cd ~/software/hcl-learning-hub
+bash deploy/sync.sh --backup-only      # -> backups/hcl-hub-<timestamp>.dump
+```
+
+That is safe while the Hub is running — `pg_dump` takes a consistent snapshot
+and does not lock the application out.
+
+The equivalent manual command, if you prefer to run it yourself:
+
+```bash
+cd ~/software/hcl-learning-hub
+export PGPASSWORD="$(grep '^DB_PASSWORD=' .deploy-credentials | cut -d= -f2-)"
+pg_dump -h 127.0.0.1 -p 5432 -U hcluser -d hclhub \
+        --format=custom --no-owner --no-acl \
+        -f backups/manual-$(date +%Y%m%d-%H%M%S).dump
+unset PGPASSWORD
+```
+
+Restore a dump (this **overwrites** current data):
+
+```bash
+bash deploy/sync.sh --restore backups/hcl-hub-20260928-140000.dump
+```
+
+`--no-owner --no-acl` on dump and `--clean --if-exists` on restore are what let a
+dump taken on one VM load cleanly onto another where roles may differ.
+
+### Automatic backups from a Windows laptop
+
+[deploy/Backup-Remote.ps1](deploy/Backup-Remote.ps1) triggers the dump on the VM,
+copies it to your laptop, verifies it and prunes old copies. Database credentials
+stay on the VM — the script never sees them.
+
+```powershell
+# One-off
+.\deploy\Backup-Remote.ps1 -VmHost blmycldtl596461.nonprod.hclpnp.com
+
+# Daily at 02:00, unattended
+.\deploy\Backup-Remote.ps1 -VmHost blmycldtl596461.nonprod.hclpnp.com `
+                           -Destination D:\HclHubBackups -InstallTask
+```
+
+**Key-based SSH is required** for the scheduled task — a background task cannot
+answer a password prompt, so the script runs SSH in `BatchMode` and fails fast
+with instructions rather than hanging. Set the key up once:
+
+```powershell
+ssh-keygen -t ed25519 -C "hcl-hub-backup"
+type $env:USERPROFILE\.ssh\id_ed25519.pub | ssh hcluser@<vm> `
+  "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+ssh hcluser@<vm> "echo ok"     # must NOT prompt for a password
+```
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `-VmUser` | `hcluser` | SSH user |
+| `-InstallDir` | `/home/<user>/software/hcl-learning-hub` | Hub location on the VM |
+| `-Destination` | `%USERPROFILE%\HclHubBackups` | Local folder |
+| `-KeepDays` | `30` | Prune local dumps older than this (`0` disables) |
+| `-IdentityFile` | — | Explicit private key |
+| `-TaskTime` | `02:00` | Schedule time with `-InstallTask` |
+
+The script checks the downloaded file starts with the `PGDMP` magic bytes, so a
+truncated transfer is reported instead of sitting unnoticed until you need it.
+
 ### Hostname access and the TLS certificate
 
 The installer detects the machine FQDN and generates a self-signed certificate
