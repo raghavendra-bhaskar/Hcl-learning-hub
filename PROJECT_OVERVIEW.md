@@ -92,7 +92,7 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 | Technology | Details |
 |---|---|
 | **Runtime & Framework** | Node.js (ESNext / TypeScript), Express 4.21, `tsx` for hot reload |
-| **Database & ORM** | PostgreSQL 18 with Prisma ORM 5.22 (`schema.prisma` migrations) |
+| **Database & ORM** | PostgreSQL 18 with Prisma ORM 5.22 (`schema.prisma` migrations). `binaryTargets` includes `native`, `rhel-openssl-3.0.x`, `debian-openssl-3.0.x` and `linux-musl-openssl-3.0.x` so the generated client runs on dev machines, RHEL/Debian VMs and the Alpine container |
 | **Security & JWT** | `jose` for Okta JWKS verification; symmetric JWT for local admin tokens; `helmet` + `cors` |
 | **Validation** | `zod` for request schema validation |
 
@@ -126,7 +126,30 @@ carry the network alias `api`.
 |---|---|---|
 | Local development | `docker-compose.yml` | Laptop development with hot reload off |
 | Connected server | `hcl-learning-hub-setup.sh` | VM with internet — installs Docker CE + k3s and builds from source |
+| **Source on a VM** | `deploy/` scripts | VM with internet, running Vite + API directly (no containers) |
 | **Air-gap / offline** | `packaging/` bundles | No internet, no registry — pre-built images shipped as tar archives |
+
+### Source deployment (`deploy/`)
+
+For a connected VM that runs the Hub straight from source rather than in
+containers. `install.sh` is a standalone bootstrap — it is the only file that
+needs downloading; everything else arrives with the clone.
+
+| Component | Purpose |
+|---|---|
+| `deploy/install.sh` | Installs Node 20, PostgreSQL (initdb, role, scram auth), clones into `hcl-learning-hub/`, installs both workspaces, writes `server/.env`, generates a FQDN-matching TLS cert, restores `scripts/backup.dump`, runs migrations, opens the firewall |
+| `deploy/start.sh` | One command for PostgreSQL + API + UI. Wraps the root `npm run dev` (which already runs both tiers) as a background process group with `logs/hub.log`, `run/hub.pid` and health checks |
+| `deploy/stop.sh` | Terminates the whole process group, then frees ports 5173/4000; `--with-db` also stops PostgreSQL |
+| `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, reinstalls deps, regenerates the Prisma client, migrates, restarts. `--restore`, `--no-restart`, `--backup-only` |
+| `deploy/hub.env` | Generated config (FQDN, ports, DB, git origin) shared by the three scripts; git-ignored |
+
+Private-repo access uses `GIT_ASKPASS`, keeping the token out of argv, the
+remote URL and shell history. `install.sh` optionally stores it at `.hub-token`
+(mode 600) so `sync.sh` can pull unattended.
+
+`install.sh` also guards against npm/cli#4828: if a lockfile written on another
+OS omits this platform's optional native packages, it detects the broken `vite`
+and reinstalls without the lockfile.
 
 ### Offline bundle (`packaging/`)
 
@@ -219,7 +242,7 @@ AI-Quest/
 │   ├── pages/                        # Route-level page components
 │   │
 │   │   ── Auth & Hub ──
-│   │   ├── LoginPage.jsx             # Dual login: Okta SSO button + local fallback
+│   │   ├── LoginPage.jsx             # Dual login: Okta SSO button + local fallback (password show/hide toggle)
 │   │   ├── LoginCallback.jsx         # Okta OAuth2/OIDC PKCE callback handler
 │   │   ├── CourseSelect.jsx          # Course hub: side rail, course grid, "Dive into Certifications"
 │   │   ├── AvatarEditor.jsx          # Commander avatar builder + custom image upload & naming
@@ -301,6 +324,13 @@ AI-Quest/
         ├── stop.sh     / Stop.ps1    / stop.cmd
         ├── restore-db.sh / Restore-Db.ps1   # Format-detecting DB restore
         └── install.cmd               # Self-elevating fallback when no EXE is shipped
+│
+└── deploy/                           # Source deployment on a connected VM
+    ├── install.sh                    # Standalone bootstrap: prerequisites + clone + DB restore
+    ├── start.sh                      # PostgreSQL + API + UI in one command
+    ├── stop.sh                       # Stops the process group, frees 5173/4000
+    ├── sync.sh                       # Backup DB -> git pull -> deps -> migrate -> restart
+    └── hub.env.template              # Config template (install.sh writes deploy/hub.env)
 ```
 
 ---

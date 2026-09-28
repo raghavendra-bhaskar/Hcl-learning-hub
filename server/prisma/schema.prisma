@@ -1,5 +1,8 @@
 generator client {
   provider = "prisma-client-js"
+  // Query engines for every OS the Hub is deployed on: local dev, RHEL/Rocky,
+  // Debian/Ubuntu and the node:20-alpine (musl) container.
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

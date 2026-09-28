@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { OktaAuth } from '@okta/okta-auth-js';
+import { Eye, EyeOff } from 'lucide-react';
 import { api, storeToken, clearToken } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
 
@@ -62,6 +63,7 @@ export default function LoginPage() {
   const [showLocal, setShowLocal]     = useState(false);
   const [localEmail, setLocalEmail]   = useState('');
   const [localPass, setLocalPass]     = useState('');
+  const [showPass, setShowPass]       = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
 
   const hasAvatar = () => {
@@ -186,10 +188,18 @@ export default function LoginPage() {
                       onChange={e => { setLocalEmail(e.target.value); setError(''); }}
                       className="w-full rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
                       style={iStyle} onFocus={iFocus} onBlur={iBlur}/>
-                    <input value={localPass} type="password" placeholder="Password"
-                      onChange={e => { setLocalPass(e.target.value); setError(''); }}
-                      className="w-full rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-                      style={iStyle} onFocus={iFocus} onBlur={iBlur}/>
+                    <div className="relative">
+                      <input value={localPass} type={showPass ? 'text' : 'password'} placeholder="Password"
+                        onChange={e => { setLocalPass(e.target.value); setError(''); }}
+                        className="w-full rounded-xl pl-4 pr-11 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
+                        style={iStyle} onFocus={iFocus} onBlur={iBlur}/>
+                      <button type="button" onClick={() => setShowPass(v => !v)}
+                        aria-label={showPass ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPass}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-slate-500 hover:text-cyan-400 transition-colors focus:outline-none">
+                        {showPass ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+                      </button>
+                    </div>
                     <button type="submit" disabled={localLoading}
                       className="w-full py-2.5 rounded-xl font-bold text-white text-sm hover:opacity-90 flex items-center justify-center gap-2"
                       style={{ background: localLoading ? 'rgba(6,182,212,0.3)' : 'rgba(6,182,212,0.25)', border: '1px solid rgba(6,182,212,0.4)' }}>

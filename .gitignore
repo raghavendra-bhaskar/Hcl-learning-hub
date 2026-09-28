@@ -30,6 +30,15 @@ packaging/payload/*
 # Generated at install time — contains DB password, JWT secret, admin password
 .deploy-credentials
 
+# Source deployment runtime state (deploy/*.sh)
+deploy/hub.env
+.hub-token
+logs/
+run/
+backups/
+restore-*.log
+server/.env.bak.*
+
 # OS
 .DS_Store
 Thumbs.db

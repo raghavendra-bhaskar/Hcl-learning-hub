@@ -1,7 +1,10 @@
 # Packaging — Offline / Air-gap Distribution
 
 This directory produces **self-contained installation bundles** for hosts that
-have no internet access and no container registry.
+have no internet access and no container registry. For a connected Linux host,
+use the existing `hcl-learning-hub-setup.sh` script instead; its install steps
+and optional GitHub authorization example are documented in the root
+[README](../README.md#internet-connected-installation).
 
 It exists because building from source on an air-gapped host fails: the
 `Dockerfile`s start from `node:20-alpine`, and `podman build` cannot reach

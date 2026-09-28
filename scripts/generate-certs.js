@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join }  from 'node:path';
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import os from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const certsDir  = join(__dirname, '..', 'certs');
@@ -33,10 +34,33 @@ if ((existsSync(pfxPath) || (existsSync(keyPath) && existsSync(certPath)))) {
   process.exit(0);
 }
 
-const hostname = process.env.CERT_CN || 'lp3-ap-51737321';
-const fqdn     = `${hostname}.prod.hclpnp.com`;
+// CERT_CN / CERT_FQDN override the detected hostname; CERT_ALT_NAMES adds extra SANs.
+const osHost   = hostnameOf();
+const hostname = process.env.CERT_CN || osHost.short;
+const fqdn     = process.env.CERT_FQDN || osHost.fqdn || `${hostname}.prod.hclpnp.com`;
+
+const extraNames = (process.env.CERT_ALT_NAMES || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// IP addresses must be IP: SANs, not DNS: SANs, or browsers reject them.
+const extraIps = (process.env.CERT_ALT_IPS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const dnsNames = [...new Set([hostname, fqdn, 'localhost', ...extraNames])];
+const ipNames  = [...new Set(['127.0.0.1', ...extraIps])];
+
+function hostnameOf() {
+  const raw = os.hostname();
+  const short = raw.split('.')[0];
+  return { short, fqdn: raw.includes('.') ? raw : '' };
+}
 
 console.log(`[certs] Generating self-signed certificate (CN=${hostname})…`);
+console.log(`[certs] SANs: ${[...dnsNames, ...ipNames].join(', ')}`);
 
 if (process.platform === 'win32') {
   // ── Windows: write a .ps1 file then execute it (avoids inline escaping) ─────
@@ -48,7 +72,7 @@ if (process.platform === 'win32') {
     `$certsDir = '${certsDir.replace(/'/g, "''")}'`,
     `$cert = New-SelfSignedCertificate \``,
     `    -Subject 'CN=${hostname}' \``,
-    `    -DnsName '${hostname}','${fqdn}','localhost' \``,
+    `    -DnsName ${[...dnsNames, ...ipNames].map(n => `'${n}'`).join(',')} \``,
     `    -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 \``,
     `    -CertStoreLocation 'Cert:\\CurrentUser\\My' \``,
     `    -NotAfter (Get-Date).AddYears(2) \``,
@@ -77,7 +101,7 @@ if (process.platform === 'win32') {
     `openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes` +
     ` -keyout "${keyPath}" -out "${certPath}"` +
     ` -subj "/CN=${hostname}/O=HCL Software/C=IN"` +
-    ` -addext "subjectAltName=DNS:${hostname},DNS:${fqdn},DNS:localhost,IP:127.0.0.1"`,
+    ` -addext "subjectAltName=${[...dnsNames.map(n => `DNS:${n}`), ...ipNames.map(i => `IP:${i}`)].join(',')}"`,
     { stdio: 'inherit' }
   );
   execSync(`cp "${certPath}" "${trustPath}"`);
@@ -89,7 +113,7 @@ console.log('  certs/server.crt       ← certificate');
 console.log('  certs/truststore.crt   ← CA bundle (truststore)');
 console.log('');
 console.log('[certs] ⚠  Browser will show "Not Secure" warning for self-signed certs.');
-console.log('[certs]    Open https://' + hostname + ':5173, click Advanced → Proceed.');
-console.log('[certs]    Accept https://lp3-ap-51737321:4000/health in a separate tab too.');
+console.log(`[certs]    Open https://${fqdn}:5173, click Advanced → Proceed.`);
+console.log(`[certs]    Accept https://${fqdn}:4000/health in a separate tab too.`);
 console.log('');
 console.log('[certs] To use a CA-signed cert: replace certs/server.key + certs/server.crt');

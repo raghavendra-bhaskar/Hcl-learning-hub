@@ -47,6 +47,146 @@ or Hyper-V available.
 Roughly 2.5 GB of the disk budget is the container images; the rest is the
 PostgreSQL volume, uploaded avatars and logs.
 
+## Internet-connected installation
+
+There are two ways to install on a VM that has internet access:
+
+| Option | Entry point | Result |
+|---|---|---|
+| **Source** (recommended for this VM) | `deploy/install.sh` | Runs Vite + API directly on the host, managed by `start.sh` / `stop.sh` / `sync.sh` |
+| Containers | [hcl-learning-hub-setup.sh](hcl-learning-hub-setup.sh) | Installs Docker CE + k3s and deploys the Hub as containers |
+
+Both are separate from the air-gap bundle flow further below. Do not use either
+build-from-source path on a host without internet.
+
+The repository is **private**, so both the download and the clone need a
+GitHub personal access token. A GitHub account password will not work —
+password authentication for Git was removed, which is why `git clone` fails with
+*"Invalid username or token"*. GitHub returns that same prompt for a repository
+you cannot see **and** for one that does not exist, so double-check the
+owner/name if a valid token still fails.
+
+Create a fine-grained PAT with read-only **Contents** access to this repository,
+then download the installer. Prompt for the token instead of typing it inline so
+it never reaches your shell history:
+
+```bash
+sudo mkdir -p ~/software && sudo chown -R "$USER:$USER" ~/software
+cd ~/software
+
+read -rsp "GitHub token: " GH_TOKEN; echo
+curl -H "Authorization: token $GH_TOKEN" -fsSL \
+  https://raw.githubusercontent.com/raghavendra-bhaskar/Hcl-learning-hub/main/deploy/install.sh \
+  -o install.sh
+unset GH_TOKEN
+```
+
+`~/software` is created by root on a fresh VM, so the `chown` above is what lets
+`hcluser` write into it. If the repository is later made public, the
+`-H "Authorization: token ..."` header can simply be dropped.
+
+### Running from source on a connected VM
+
+`deploy/install.sh` is a self-contained bootstrap: download **only that file**,
+run it, and it installs every prerequisite, clones the repo into
+`hcl-learning-hub/`, restores the database and leaves the Hub ready to start.
+
+Run it as your normal user — **not** with `sudo`. It calls `sudo` itself for the
+package steps; running the whole script as root leaves `node_modules` and the
+clone owned by root.
+
+```bash
+cd ~/software
+bash install.sh                      # clones into ~/software/hcl-learning-hub
+```
+
+It installs and configures, in order:
+
+| Step | What it does |
+|---|---|
+| 1–2 | `git`, `curl`, `openssl`, then Node.js 20 LTS from NodeSource |
+| 3–4 | PostgreSQL server, `initdb`, password auth on localhost, role + database |
+| 5 | `git clone` into `hcl-learning-hub/` (prompts for the token if private) |
+| 6 | `npm install` for **both** workspaces (root UI and `server/`) |
+| 7 | `server/.env` with generated secrets, plus a TLS cert matching this FQDN |
+| 8 | Restores `scripts/backup.dump`, generates the Prisma client, applies migrations |
+| 9 | Opens the firewall ports |
+
+Useful options:
+
+```bash
+bash install.sh --host blmycldtl596461.nonprod.hclpnp.com   # explicit FQDN
+bash install.sh --dir /opt                                  # /opt/hcl-learning-hub
+bash install.sh --skip-db-restore                           # empty database
+bash install.sh --branch develop
+```
+
+### Start, stop and sync
+
+All three take care of everything — you never run `npm run dev` in `AI-Quest`
+and again in `server/`. The root dev script already starts the API and the UI
+together, and `start.sh` wraps it as a background service with logs, a PID file
+and health checks.
+
+```bash
+cd ~/software/hcl-learning-hub
+
+bash deploy/start.sh        # PostgreSQL + API + UI, one command
+bash deploy/stop.sh         # stops UI + API (data intact)
+bash deploy/sync.sh         # backup DB -> git pull -> deps -> migrate -> restart
+```
+
+| Script | Options |
+|---|---|
+| `start.sh` | `--foreground` to run attached to the terminal |
+| `stop.sh` | `--with-db` to stop PostgreSQL too |
+| `sync.sh` | `--restore <dump>`, `--no-restart`, `--backup-only` |
+
+`sync.sh` is what you run after any further development. It **always takes a
+database backup first** into `backups/` (keeping the 10 most recent), then stops
+the Hub, pulls the branch, reinstalls dependencies, regenerates the Prisma
+client, applies new migrations and starts everything again. Local edits are
+stashed automatically rather than blocking the pull.
+
+Logs and state live in the install directory:
+
+```bash
+tail -f logs/hub.log        # combined API + UI output
+cat .deploy-credentials     # admin password, DB password (mode 600)
+ls backups/                 # pre-sync database dumps
+```
+
+### Hostname access and the TLS certificate
+
+The installer detects the machine FQDN and generates a self-signed certificate
+whose SAN covers the FQDN, the short hostname and the IP, so
+`https://blmycldtl596461.nonprod.hclpnp.com:5173` works without a name mismatch.
+It also sets `FRONTEND_ORIGIN` in `server/.env` to that same URL.
+
+If the hostname changes, regenerate the certificate and update the origin:
+
+```bash
+rm -rf certs
+CERT_CN=blmycldtl596461 \
+CERT_FQDN=blmycldtl596461.nonprod.hclpnp.com \
+  node scripts/generate-certs.js
+# then edit FRONTEND_ORIGIN in server/.env and run: bash deploy/stop.sh && bash deploy/start.sh
+```
+
+The certificate is self-signed, so the browser warns once. Click
+**Advanced → Proceed** for both the UI and `https://<fqdn>:4000/health`.
+
+> **Never copy `node_modules` from Windows to Linux.** npm installs
+> platform-specific native binaries and Prisma generates a platform-specific
+> query engine. Copying them produces
+> `Cannot find module @rollup/rollup-linux-x64-gnu`,
+> `You installed esbuild for another platform`, and
+> `Prisma Client could not locate the Query Engine for runtime "rhel-openssl-3.0.x"`.
+> `install.sh` deletes both `node_modules` trees before installing for this reason.
+
+Do not run `npm install -g npm@latest`. npm 12 requires Node 22+ and fails with
+`EBADENGINE` on Node 20; the npm bundled with Node 20 is correct for this project.
+
 ## Offline / air-gap installation
 
 Air-gapped hosts cannot build from source — the `Dockerfile`s start from
