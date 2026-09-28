@@ -183,6 +183,8 @@ if [ -n "$DATABASE_URL_OVERRIDE" ]; then
   ok "Using the external database ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
   command -v psql >/dev/null 2>&1 \
     || warn "psql client not found — the dump restore step will be skipped"
+elif ls /usr/pgsql-*/bin/psql >/dev/null 2>&1; then
+  ok "PostgreSQL already installed (PGDG)"
 elif command -v psql >/dev/null 2>&1 && sudo test -d /var/lib/pgsql; then
   ok "PostgreSQL already installed: $(psql --version)"
 elif [ "$PKG" = "apt" ]; then
@@ -198,17 +200,51 @@ else
     warn "Distribution packages unavailable (expired RHEL subscription?)"
     info "Falling back to the PostgreSQL community (PGDG) repository..."
     EL_VER="${VERSION_ID%%.*}"
-    sudo dnf install -y \
-      "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${EL_VER}-x86_64/pgdg-redhat-repo-latest.noarch.rpm" \
-      || fail "Could not add the PGDG repository.
+    PGDG_REPO=/etc/yum.repos.d/pgdg-redhat-all.repo
+
+    # A previous failed run can leave this file behind with broken URLs, which
+    # would break every later dnf call, so disable pgdg while adding the RPM.
+    if ! sudo test -f "$PGDG_REPO"; then
+      sudo dnf --disablerepo="pgdg*" install -y \
+        "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${EL_VER}-x86_64/pgdg-redhat-repo-latest.noarch.rpm" \
+        || fail "Could not add the PGDG repository.
 
   No PostgreSQL package source is reachable. Pick one:
     1. Restore the RHEL subscription:  sudo subscription-manager refresh
     2. Point at an existing database:  bash install.sh --database-url postgresql://user:pass@host:5432/hclhub
     3. Run PostgreSQL in a container and use option 2 against it."
-    sudo dnf -qy module disable postgresql >/dev/null 2>&1 || true
-    sudo dnf install -y "postgresql${PG_MAJOR}-server" "postgresql${PG_MAJOR}-contrib" \
-      || fail "PGDG install of postgresql${PG_MAJOR}-server failed"
+    else
+      info "PGDG repository already present — reusing it"
+    fi
+
+    # PGDG publishes per MAJOR release (rhel-9), but RHEL expands $releasever to
+    # the minor version (9.0), producing a 404. Pin the URLs to the major.
+    if sudo test -f "$PGDG_REPO"; then
+      sudo test -f "${PGDG_REPO}.hcl-hub.bak" || sudo cp "$PGDG_REPO" "${PGDG_REPO}.hcl-hub.bak"
+      sudo sed -i "s|rhel-\$releasever-|rhel-${EL_VER}-|g" "$PGDG_REPO"
+      ok "PGDG repo URLs pinned to EL${EL_VER} (backup: ${PGDG_REPO}.hcl-hub.bak)"
+    fi
+
+    sudo dnf -qy --disablerepo="pgdg*" module disable postgresql >/dev/null 2>&1 || true
+    sudo dnf clean all >/dev/null 2>&1 || true
+
+    # Every pgdg<N> repo is enabled by default; one unreachable version aborts
+    # the whole transaction, so enable only the major we are installing.
+    if ! sudo dnf --disablerepo="pgdg*" --enablerepo="pgdg${PG_MAJOR}" \
+           install -y "postgresql${PG_MAJOR}-server" "postgresql${PG_MAJOR}-contrib"; then
+      fail "PGDG install of postgresql${PG_MAJOR}-server failed.
+
+  Try a different major version, or use an existing database:
+    bash install.sh --pg-version 15
+    bash install.sh --database-url postgresql://user:pass@host:5432/hclhub
+
+  To run PostgreSQL in a container instead:
+    podman run -d --name hcl-postgres -p 5432:5432 \\
+      -e POSTGRES_USER=hcluser -e POSTGRES_PASSWORD=<pick-one> -e POSTGRES_DB=hclhub \\
+      -v hcl-pgdata:/var/lib/postgresql/data --restart unless-stopped \\
+      docker.io/postgres:16-alpine
+    bash install.sh --database-url postgresql://hcluser:<pick-one>@127.0.0.1:5432/hclhub"
+    fi
     PG_SERVICE="postgresql-${PG_MAJOR}"
     PG_BIN="/usr/pgsql-${PG_MAJOR}/bin"
     ok "PostgreSQL ${PG_MAJOR} installed from PGDG"
@@ -223,8 +259,12 @@ if [ "$EXTERNAL_DB" = false ]; then
     done
   fi
   if [ -n "$PG_BIN" ]; then
+    # Derive the major from the path so a pre-existing PGDG install (which may
+    # be a different version than --pg-version) gets the right service name.
+    _found="${PG_BIN#/usr/pgsql-}"; _found="${_found%/bin}"
+    if [ -n "$_found" ] && [ "$_found" != "$PG_BIN" ]; then PG_MAJOR="$_found"; fi
     export PATH="$PG_BIN:$PATH"
-    if [ "$PG_SERVICE" = "postgresql" ]; then PG_SERVICE="postgresql-${PG_MAJOR}"; fi
+    PG_SERVICE="postgresql-${PG_MAJOR}"
   fi
 
   # RHEL needs an explicit initdb; Debian/Ubuntu initialise on install.

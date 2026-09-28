@@ -142,6 +142,16 @@ subscription. PGDG installs to `/usr/pgsql-<n>/` and the service is named
 `postgresql-<n>`; the scripts record both in `deploy/hub.env`, so
 `start.sh` and `sync.sh` keep working without further changes.
 
+Two PGDG quirks the installer handles for you:
+
+- PGDG publishes per **major** release (`rhel-9`), but RHEL expands
+  `$releasever` to the **minor** version (`9.0`), so the stock repo file 404s on
+  `repomd.xml`. The installer rewrites the URLs to the major version and keeps a
+  `.hcl-hub.bak` copy.
+- The repo RPM enables every `pgdg<N>` repo. An unreachable one (for example
+  `pgdg18`) aborts the whole transaction, so only the major being installed is
+  enabled.
+
 If PGDG is also blocked, point the Hub at a database you already have:
 
 ```bash
@@ -149,7 +159,17 @@ bash install.sh --database-url postgresql://user:pass@dbhost:5432/hclhub
 ```
 
 That skips the local server entirely. You still need the `psql` and `pg_restore`
-client tools on the VM for the dump restore to run.
+client tools on the VM for the dump restore to run. To keep it all on one host,
+run PostgreSQL as a container and point at that:
+
+```bash
+podman run -d --name hcl-postgres -p 5432:5432 \
+  -e POSTGRES_USER=hcluser -e POSTGRES_PASSWORD='<pick-one>' -e POSTGRES_DB=hclhub \
+  -v hcl-pgdata:/var/lib/postgresql/data --restart unless-stopped \
+  docker.io/postgres:16-alpine
+
+bash install.sh --database-url postgresql://hcluser:'<pick-one>'@127.0.0.1:5432/hclhub
+```
 
 ### Start, stop and sync
 
