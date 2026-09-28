@@ -494,7 +494,7 @@ DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 JWT_SECRET=${JWT_SECRET}
-ADMIN_USERNAME=admin
+ADMIN_USERNAME=admin@local
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 CREDS
 chmod 600 .deploy-credentials
@@ -517,6 +517,23 @@ elif [ -f "$DUMP_FILE" ]; then
   info "Restoring database from $(basename "$DUMP_FILE")..."
   RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
   MAGIC="$(head -c 5 "$DUMP_FILE" | tr -d '\0' || true)"
+
+  # A custom archive stores its format version at byte 6; pg_restore refuses
+  # anything newer than itself. 1.15 needs PG16, 1.16 needs PG17, and so on.
+  if [ "$MAGIC" = "PGDMP" ]; then
+    ARCHIVE_VMIN="$(od -An -tu1 -j6 -N1 "$DUMP_FILE" 2>/dev/null | tr -d ' ' || true)"
+    PGR_MAJOR="$(pg_restore --version 2>/dev/null | awk '{print $NF}' | cut -d. -f1 || true)"
+    if [ -n "$ARCHIVE_VMIN" ] && [ -n "$PGR_MAJOR" ] && [ "$ARCHIVE_VMIN" -ge 15 ] 2>/dev/null; then
+      NEED_MAJOR=$((ARCHIVE_VMIN + 1))
+      if [ "$PGR_MAJOR" -lt "$NEED_MAJOR" ] 2>/dev/null; then
+        warn "Dump archive version 1.${ARCHIVE_VMIN} needs pg_restore ${NEED_MAJOR}+, but this host has ${PGR_MAJOR}"
+        info "Restore will fail. Use a PostgreSQL ${NEED_MAJOR}+ container and restore with ITS pg_restore:"
+        info "  podman cp '$DUMP_FILE' hcl-postgres:/tmp/backup.dump"
+        info "  podman exec -e PGPASSWORD=<pw> hcl-postgres pg_restore -U ${DB_USER} -d ${DB_NAME} \\"
+        info "      --clean --if-exists --no-owner --no-acl /tmp/backup.dump"
+      fi
+    fi
+  fi
   set +e
   if [ "$MAGIC" = "PGDMP" ]; then
     PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
@@ -550,6 +567,27 @@ TABLES="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USE
   -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null | tr -d '[:space:]' || true)"
 ok "Database contains ${TABLES:-?} tables"
 
+# Local login authenticates against the User table, so an empty or failed
+# restore would leave no way in. Seed admin@local when no ADMIN row exists.
+ADMINS="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  -tAc "SELECT count(*) FROM \"User\" WHERE role='ADMIN';" 2>/dev/null | tr -d '[:space:]' || true)"
+USERS="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  -tAc "SELECT count(*) FROM \"User\";" 2>/dev/null | tr -d '[:space:]' || true)"
+
+if [ "${ADMINS:-0}" = "0" ]; then
+  info "No ADMIN user found — seeding admin@local..."
+  npm run seed:admin >/dev/null 2>&1 \
+    && ok "Local admin created: admin@local" \
+    || warn "Could not seed admin@local — run manually: npm run seed:admin"
+else
+  ok "Existing users preserved (${USERS:-?} total, ${ADMINS} admin)"
+fi
+
+if [ "${USERS:-0}" = "0" ] || [ "${USERS:-0}" = "1" ]; then
+  warn "The User table has ${USERS:-0} row(s) — the dump's users were NOT restored"
+  info "Check the restore log above, then re-restore with a matching pg_restore version"
+fi
+
 # ── Step 9: Firewall & finish ────────────────────────────────────────────────
 banner "Step 9/9: Firewall"
 
@@ -572,7 +610,7 @@ banner "Installation complete"
 cat <<SUMMARY
 
   Application URL : ${FRONTEND_ORIGIN}
-  Admin login     : admin / ${ADMIN_PASSWORD}
+  Admin login     : admin@local / ${ADMIN_PASSWORD}
   Install dir     : ${INSTALL_DIR}
   Credentials     : ${INSTALL_DIR}/.deploy-credentials
 

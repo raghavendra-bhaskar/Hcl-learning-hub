@@ -286,6 +286,88 @@ ssh hcluser@<vm> "echo ok"     # must NOT prompt for a password
 The script checks the downloaded file starts with the `PGDMP` magic bytes, so a
 truncated transfer is reported instead of sitting unnoticed until you need it.
 
+### Logging in locally
+
+The **Local account** form on the login page authenticates against the `User`
+table — it is not a static env-var check. A sign-in works only if a row exists
+with that email, `isLocalUser = true` and a bcrypt `passwordHash`.
+
+Setting `LOCAL_ADMIN_PASSWORD` alone does **not** create that row; it is only the
+password that `server/scripts/seed-admin.mjs` hashes. The installer runs the
+seeder whenever the database has no `ADMIN` user, creating:
+
+| Field | Value |
+|---|---|
+| Email | `admin@local` |
+| Password | `ADMIN_PASSWORD` from `.deploy-credentials` |
+| Role | `ADMIN` |
+
+Run it again at any time:
+
+```bash
+cd ~/software/hcl-learning-hub
+npm run seed:admin        # re-hashes LOCAL_ADMIN_PASSWORD from server/.env
+```
+
+If you see **Invalid credentials** right after an install, check whether the
+restore actually loaded any users:
+
+```bash
+PGPASSWORD="$(grep '^DB_PASSWORD=' .deploy-credentials | cut -d= -f2-)" \
+  psql -h 127.0.0.1 -U "$(grep '^DB_USER=' .deploy-credentials | cut -d= -f2-)" \
+       -d "$(grep '^DB_NAME=' .deploy-credentials | cut -d= -f2-)" \
+       -tAc 'SELECT count(*) FROM "User";'
+```
+
+`0` or `1` means the dump's users were not restored — see the version note below.
+
+### pg_restore version compatibility
+
+A custom-format dump records an archive version that `pg_restore` refuses to
+read if it is **newer than the tool**. This is the most common cause of a
+restore that exits non-zero and leaves an empty database:
+
+| Archive version | Written by | Minimum `pg_restore` |
+|---|---|---|
+| `1.14` | PostgreSQL ≤ 15 | 12 |
+| `1.15` | PostgreSQL 16 | 16 |
+| `1.16` | PostgreSQL 17 | 17 |
+
+Check what you have:
+
+```bash
+od -An -tu1 -j5 -N2 scripts/backup.dump   # prints e.g. "1 16"  -> archive 1.16
+pg_restore --version                      # the client that must be >= the table above
+```
+
+RHEL 9 ships `pg_restore` 14, so a 1.16 dump fails with
+`unsupported version (1.16) in file header`. The installer now detects this and
+tells you before attempting the restore.
+
+The simplest fix is to run a container whose PostgreSQL major is at least as new
+as the dump, and restore using **that container's** `pg_restore`:
+
+```bash
+podman rm -f hcl-postgres
+podman run -d --name hcl-postgres -p 5432:5432 \
+  -e POSTGRES_USER=hcl_hub -e POSTGRES_PASSWORD=hcl_hub_dev \
+  -e POSTGRES_DB=hcl_learning_hub \
+  -v hcl-pgdata:/var/lib/postgresql/data --restart unless-stopped \
+  docker.io/postgres:17-alpine
+
+cd ~/software/hcl-learning-hub
+podman cp scripts/backup.dump hcl-postgres:/tmp/backup.dump
+podman exec -e PGPASSWORD=hcl_hub_dev hcl-postgres \
+  pg_restore -U hcl_hub -d hcl_learning_hub \
+             --clean --if-exists --no-owner --no-acl /tmp/backup.dump
+```
+
+Then restart the Hub so Prisma reconnects:
+
+```bash
+bash deploy/stop.sh && bash deploy/start.sh
+```
+
 ### Hostname access and the TLS certificate
 
 The installer detects the machine FQDN and generates a self-signed certificate
