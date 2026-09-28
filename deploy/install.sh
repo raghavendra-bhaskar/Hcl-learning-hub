@@ -29,6 +29,8 @@
 #   --host <fqdn>     Public hostname (default: auto-detected FQDN)
 #   --dump <file>     Database dump to restore (default: repo scripts/backup.dump)
 #   --token <pat>     GitHub token for a private repo (default: prompt)
+#   --database-url <url>  Use an existing PostgreSQL instead of installing one
+#   --pg-version <n>  PGDG major version when falling back (default: 16)
 #   --skip-db-restore Leave the database empty
 #   --no-save-token   Do not store the token for sync.sh
 # ============================================================
@@ -51,6 +53,9 @@ DUMP_FILE=""
 GITHUB_TOKEN=""
 SKIP_DB_RESTORE=false
 SAVE_TOKEN=true
+DATABASE_URL_OVERRIDE=""
+EXTERNAL_DB=false
+PG_MAJOR=16
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -60,9 +65,11 @@ while [[ $# -gt 0 ]]; do
     --host)            SERVER_FQDN="$2"; shift 2 ;;
     --dump)            DUMP_FILE="$2"; shift 2 ;;
     --token)           GITHUB_TOKEN="$2"; shift 2 ;;
+    --database-url)    DATABASE_URL_OVERRIDE="$2"; shift 2 ;;
+    --pg-version)      PG_MAJOR="$2"; shift 2 ;;
     --skip-db-restore) SKIP_DB_RESTORE=true; shift ;;
     --no-save-token)   SAVE_TOKEN=false; shift ;;
-    -h|--help)         sed -n '2,34p' "$0"; exit 0 ;;
+    -h|--help)         sed -n '2,36p' "$0"; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
@@ -151,76 +158,148 @@ if [ "$NEED_NODE" = true ]; then
   ok "Node.js installed: $(node -v) (npm $(npm -v))"
 fi
 
-# npm 12 requires Node 22+; the npm bundled with Node 20 is the supported one.
-info "Keep the bundled npm — do NOT run 'npm install -g npm@latest' on Node 20"
+# npm 12 requires Node 22+; whichever npm ships with your Node is the safe one.
+info "Keep the bundled npm — do NOT run 'npm install -g npm@latest'"
 
 # ── Step 3: PostgreSQL ───────────────────────────────────────────────────────
 banner "Step 3/9: PostgreSQL"
 
-if ! command -v psql >/dev/null 2>&1; then
+PG_SERVICE="postgresql"
+PG_BIN=""
+
+if [ -n "$DATABASE_URL_OVERRIDE" ]; then
+  # postgresql://user:password@host:port/dbname
+  _rest="${DATABASE_URL_OVERRIDE#*://}"
+  _creds="${_rest%%@*}"
+  _hostpart="${_rest#*@}"
+  DB_USER="${_creds%%:*}"
+  DB_PASSWORD="${_creds#*:}"
+  _hostport="${_hostpart%%/*}"
+  DB_NAME="${_hostpart#*/}"; DB_NAME="${DB_NAME%%\?*}"
+  DB_HOST="${_hostport%%:*}"
+  DB_PORT="${_hostport#*:}"
+  if [ "$DB_PORT" = "$DB_HOST" ]; then DB_PORT=5432; fi
+  EXTERNAL_DB=true
+  ok "Using the external database ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+  command -v psql >/dev/null 2>&1 \
+    || warn "psql client not found — the dump restore step will be skipped"
+elif command -v psql >/dev/null 2>&1 && sudo test -d /var/lib/pgsql; then
+  ok "PostgreSQL already installed: $(psql --version)"
+elif [ "$PKG" = "apt" ]; then
   info "Installing PostgreSQL server..."
-  if [ "$PKG" = "dnf" ]; then
-    sudo dnf install -y postgresql-server postgresql-contrib
-  else
-    sudo apt-get install -y postgresql postgresql-contrib
-  fi
+  sudo apt-get install -y postgresql postgresql-contrib || fail "PostgreSQL install failed"
   ok "PostgreSQL installed"
 else
-  ok "PostgreSQL already installed: $(psql --version)"
-fi
-
-# RHEL needs an explicit initdb; Debian/Ubuntu initialise on install.
-PGDATA_DIR="/var/lib/pgsql/data"
-if [ "$PKG" = "dnf" ] && [ ! -f "$PGDATA_DIR/PG_VERSION" ]; then
-  info "Initialising the PostgreSQL data directory..."
-  sudo postgresql-setup --initdb >/dev/null 2>&1 \
-    || sudo /usr/bin/postgresql-setup initdb >/dev/null 2>&1 \
-    || fail "postgresql-setup --initdb failed"
-  ok "Data directory initialised"
-fi
-
-sudo systemctl enable --now postgresql >/dev/null 2>&1 || fail "Could not start PostgreSQL"
-for _ in $(seq 1 30); do
-  sudo -u postgres psql -tAc 'SELECT 1' >/dev/null 2>&1 && break
-  sleep 2
-done
-sudo -u postgres psql -tAc 'SELECT 1' >/dev/null 2>&1 || fail "PostgreSQL is not accepting connections"
-ok "PostgreSQL is running"
-
-# Prisma connects over TCP, so localhost must use password auth, not ident/peer.
-HBA_FILE="$(sudo -u postgres psql -tAc 'SHOW hba_file' | tr -d '[:space:]')"
-if [ -n "$HBA_FILE" ] && sudo test -f "$HBA_FILE"; then
-  if sudo grep -Eq '^[[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+(ident|peer)' "$HBA_FILE"; then
-    info "Enabling password auth for local TCP connections..."
-    sudo cp "$HBA_FILE" "${HBA_FILE}.hcl-hub.bak"
-    sudo sed -ri 's#^([[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+)(ident|peer)#\1scram-sha-256#' "$HBA_FILE"
-    sudo systemctl reload postgresql
-    ok "pg_hba.conf updated (backup: ${HBA_FILE}.hcl-hub.bak)"
+  info "Installing PostgreSQL server..."
+  if sudo dnf install -y postgresql-server postgresql-contrib 2>/dev/null; then
+    ok "PostgreSQL installed from the distribution repositories"
   else
-    ok "pg_hba.conf already allows password auth on localhost"
+    # RHEL without a valid subscription cannot see AppStream; PGDG is public.
+    warn "Distribution packages unavailable (expired RHEL subscription?)"
+    info "Falling back to the PostgreSQL community (PGDG) repository..."
+    EL_VER="${VERSION_ID%%.*}"
+    sudo dnf install -y \
+      "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${EL_VER}-x86_64/pgdg-redhat-repo-latest.noarch.rpm" \
+      || fail "Could not add the PGDG repository.
+
+  No PostgreSQL package source is reachable. Pick one:
+    1. Restore the RHEL subscription:  sudo subscription-manager refresh
+    2. Point at an existing database:  bash install.sh --database-url postgresql://user:pass@host:5432/hclhub
+    3. Run PostgreSQL in a container and use option 2 against it."
+    sudo dnf -qy module disable postgresql >/dev/null 2>&1 || true
+    sudo dnf install -y "postgresql${PG_MAJOR}-server" "postgresql${PG_MAJOR}-contrib" \
+      || fail "PGDG install of postgresql${PG_MAJOR}-server failed"
+    PG_SERVICE="postgresql-${PG_MAJOR}"
+    PG_BIN="/usr/pgsql-${PG_MAJOR}/bin"
+    ok "PostgreSQL ${PG_MAJOR} installed from PGDG"
+  fi
+fi
+
+if [ "$EXTERNAL_DB" = false ]; then
+  # PGDG installs outside /usr/bin, so put its tools on PATH for this script.
+  if [ -z "$PG_BIN" ]; then
+    for CANDIDATE in /usr/pgsql-*/bin; do
+      if [ -x "$CANDIDATE/psql" ]; then PG_BIN="$CANDIDATE"; fi
+    done
+  fi
+  if [ -n "$PG_BIN" ]; then
+    export PATH="$PG_BIN:$PATH"
+    if [ "$PG_SERVICE" = "postgresql" ]; then PG_SERVICE="postgresql-${PG_MAJOR}"; fi
+  fi
+
+  # RHEL needs an explicit initdb; Debian/Ubuntu initialise on install.
+  if [ "$PKG" = "dnf" ]; then
+    if [ -n "$PG_BIN" ]; then
+      PGDATA_DIR="/var/lib/pgsql/${PG_MAJOR}/data"
+      PG_SETUP="${PG_BIN}/postgresql-${PG_MAJOR}-setup"
+    else
+      PGDATA_DIR="/var/lib/pgsql/data"
+      PG_SETUP="$(command -v postgresql-setup || echo /usr/bin/postgresql-setup)"
+    fi
+    if ! sudo test -f "$PGDATA_DIR/PG_VERSION"; then
+      info "Initialising the data directory at $PGDATA_DIR..."
+      sudo "$PG_SETUP" initdb >/dev/null 2>&1 \
+        || sudo "$PG_SETUP" --initdb >/dev/null 2>&1 \
+        || fail "postgresql initdb failed"
+      ok "Data directory initialised"
+    fi
+  fi
+
+  sudo systemctl enable --now "$PG_SERVICE" >/dev/null 2>&1 \
+    || fail "Could not start ${PG_SERVICE}. Check: sudo journalctl -u ${PG_SERVICE}"
+  for _ in $(seq 1 30); do
+    sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SELECT 1' >/dev/null 2>&1 && break
+    sleep 2
+  done
+  sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SELECT 1' >/dev/null 2>&1 \
+    || fail "PostgreSQL is not accepting connections"
+  ok "PostgreSQL is running (service: ${PG_SERVICE})"
+
+  # Prisma connects over TCP, so localhost must use password auth, not ident/peer.
+  HBA_FILE="$(sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SHOW hba_file' | tr -d '[:space:]')"
+  if [ -n "$HBA_FILE" ] && sudo test -f "$HBA_FILE"; then
+    if sudo grep -Eq '^[[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+(ident|peer)' "$HBA_FILE"; then
+      info "Enabling password auth for local TCP connections..."
+      sudo cp "$HBA_FILE" "${HBA_FILE}.hcl-hub.bak"
+      sudo sed -ri 's#^([[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+)(ident|peer)#\1scram-sha-256#' "$HBA_FILE"
+      sudo systemctl reload "$PG_SERVICE"
+      ok "pg_hba.conf updated (backup: ${HBA_FILE}.hcl-hub.bak)"
+    else
+      ok "pg_hba.conf already allows password auth on localhost"
+    fi
   fi
 fi
 
 # ── Step 4: Database role & schema ───────────────────────────────────────────
 banner "Step 4/9: Database role and database"
 
-DB_PASSWORD="$(openssl rand -hex 16)"
-
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-  info "Role ${DB_USER} exists — resetting its password"
-  sudo -u postgres psql -c "ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
+if [ "$EXTERNAL_DB" = true ]; then
+  if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+       -tAc 'SELECT 1' >/dev/null 2>&1; then
+    ok "Connected to the external database"
+  else
+    fail "Cannot connect with the supplied --database-url"
+  fi
 else
-  sudo -u postgres psql -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
-  ok "Role ${DB_USER} created"
-fi
+  DB_PASSWORD="$(openssl rand -hex 16)"
+  PSQL_ADMIN=("sudo" "-u" "postgres" "${PG_BIN:+$PG_BIN/}psql")
 
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
-  ok "Database ${DB_NAME} already exists"
-else
-  sudo -u postgres createdb -O "${DB_USER}" "${DB_NAME}"
-  ok "Database ${DB_NAME} created"
+  if "${PSQL_ADMIN[@]}" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
+    info "Role ${DB_USER} exists — resetting its password"
+    "${PSQL_ADMIN[@]}" -c "ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
+  else
+    "${PSQL_ADMIN[@]}" -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
+    ok "Role ${DB_USER} created"
+  fi
+
+  if "${PSQL_ADMIN[@]}" -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+    ok "Database ${DB_NAME} already exists"
+  else
+    sudo -u postgres "${PG_BIN:+$PG_BIN/}createdb" -O "${DB_USER}" "${DB_NAME}"
+    ok "Database ${DB_NAME} created"
+  fi
+  "${PSQL_ADMIN[@]}" -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" >/dev/null
 fi
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" >/dev/null
 
 # ── Step 5: Source code ──────────────────────────────────────────────────────
 banner "Step 5/9: Source code"
@@ -356,6 +435,9 @@ DB_HOST=${DB_HOST}
 DB_PORT=${DB_PORT}
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
+PG_SERVICE=${PG_SERVICE}
+PG_BIN=${PG_BIN}
+EXTERNAL_DB=${EXTERNAL_DB}
 GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
 HUBENV

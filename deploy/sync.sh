@@ -46,12 +46,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # shellcheck disable=SC1091
-[ -f "$SCRIPT_DIR/hub.env" ] && . "$SCRIPT_DIR/hub.env"
+if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-hclhub}"
 DB_USER="${DB_USER:-hcluser}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
+# PGDG installs pg_dump/pg_restore outside /usr/bin.
+if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 
 cd "$INSTALL_DIR"
 

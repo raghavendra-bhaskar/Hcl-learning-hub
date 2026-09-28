@@ -82,8 +82,17 @@ unset GH_TOKEN
 ```
 
 `~/software` is created by root on a fresh VM, so the `chown` above is what lets
-`hcluser` write into it. If the repository is later made public, the
-`-H "Authorization: token ..."` header can simply be dropped.
+`hcluser` write into it. Skipping it makes curl fail with
+`(23) Failure writing output to destination` — that error means the download
+itself worked and only the local write was refused. If the repository is later
+made public, the `-H "Authorization: token ..."` header can simply be dropped.
+
+Verify the download before running it, since a truncated or error response would
+otherwise be executed as a script:
+
+```bash
+head -3 install.sh    # must start with #!/bin/bash
+```
 
 ### Running from source on a connected VM
 
@@ -119,7 +128,28 @@ bash install.sh --host blmycldtl596461.nonprod.hclpnp.com   # explicit FQDN
 bash install.sh --dir /opt                                  # /opt/hcl-learning-hub
 bash install.sh --skip-db-restore                           # empty database
 bash install.sh --branch develop
+bash install.sh --database-url postgresql://u:p@dbhost:5432/hclhub   # external DB
+bash install.sh --pg-version 15                             # PGDG major version
 ```
+
+#### If PostgreSQL cannot be installed
+
+On RHEL with an **expired subscription**, `dnf install postgresql-server` fails
+with `No match for argument: postgresql-server` because the AppStream repository
+is no longer reachable. The installer detects this and automatically falls back
+to the PostgreSQL community (PGDG) repository, which needs no Red Hat
+subscription. PGDG installs to `/usr/pgsql-<n>/` and the service is named
+`postgresql-<n>`; the scripts record both in `deploy/hub.env`, so
+`start.sh` and `sync.sh` keep working without further changes.
+
+If PGDG is also blocked, point the Hub at a database you already have:
+
+```bash
+bash install.sh --database-url postgresql://user:pass@dbhost:5432/hclhub
+```
+
+That skips the local server entirely. You still need the `psql` and `pg_restore`
+client tools on the VM for the dump restore to run.
 
 ### Start, stop and sync
 

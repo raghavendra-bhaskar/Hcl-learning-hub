@@ -26,13 +26,17 @@ info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
 
 FOREGROUND=false
-[ "${1:-}" = "--foreground" ] && FOREGROUND=true
+if [ "${1:-}" = "--foreground" ]; then FOREGROUND=true; fi
 
 # shellcheck disable=SC1091
-[ -f "$SCRIPT_DIR/hub.env" ] && . "$SCRIPT_DIR/hub.env"
+if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 SERVER_FQDN="${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
 UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
+PG_SERVICE="${PG_SERVICE:-postgresql}"
+EXTERNAL_DB="${EXTERNAL_DB:-false}"
+# PGDG installs psql/pg_dump outside /usr/bin.
+if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 
 LOG_DIR="$INSTALL_DIR/logs"
 RUN_DIR="$INSTALL_DIR/run"
@@ -55,12 +59,14 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────
-if command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet postgresql 2>/dev/null; then
-    ok "PostgreSQL is running"
+if [ "$EXTERNAL_DB" = true ]; then
+  ok "Using an external database — not managing a local service"
+elif command -v systemctl >/dev/null 2>&1; then
+  if systemctl is-active --quiet "$PG_SERVICE" 2>/dev/null; then
+    ok "PostgreSQL is running ($PG_SERVICE)"
   else
-    info "Starting PostgreSQL..."
-    sudo systemctl start postgresql || fail "Could not start PostgreSQL"
+    info "Starting PostgreSQL ($PG_SERVICE)..."
+    sudo systemctl start "$PG_SERVICE" || fail "Could not start $PG_SERVICE"
     ok "PostgreSQL started"
   fi
 fi

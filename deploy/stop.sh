@@ -21,12 +21,13 @@ info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
 
 WITH_DB=false
-[ "${1:-}" = "--with-db" ] && WITH_DB=true
+if [ "${1:-}" = "--with-db" ]; then WITH_DB=true; fi
 
 # shellcheck disable=SC1091
-[ -f "$SCRIPT_DIR/hub.env" ] && . "$SCRIPT_DIR/hub.env"
+if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
+PG_SERVICE="${PG_SERVICE:-postgresql}"
 
 PID_FILE="$INSTALL_DIR/run/hub.pid"
 
@@ -78,8 +79,8 @@ done
 
 # ── Optional: stop PostgreSQL too ────────────────────────────────────────────
 if [ "$WITH_DB" = true ]; then
-  info "Stopping PostgreSQL..."
-  sudo systemctl stop postgresql && ok "PostgreSQL stopped" || warn "Could not stop PostgreSQL"
+  info "Stopping PostgreSQL ($PG_SERVICE)..."
+  sudo systemctl stop "$PG_SERVICE" && ok "PostgreSQL stopped" || warn "Could not stop $PG_SERVICE"
 else
   info "PostgreSQL left running (use --with-db to stop it as well)"
 fi
