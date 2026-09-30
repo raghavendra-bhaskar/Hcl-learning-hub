@@ -103,6 +103,110 @@ aiRouter.post('/course-outline', requireRole('ADMIN'), handle(async (req, res) =
   res.json({ ...parsed.data, model: undefined });
 }));
 
+const builderSchema = z.object({
+  courseId: z.string().min(1).max(100),
+  outline: z.string().trim().min(20).max(12000),
+}).strict();
+const builderResourceSchema = z.object({
+  label: z.string().trim().min(2).max(180),
+  type: z.enum(['youtube', 'playlist', 'video', 'read', 'ibm', 'link']),
+  url: z.string().url().max(1000),
+});
+const builderQuestSchema = z.object({
+  title: z.string().trim().min(4).max(180),
+  scenario: z.string().trim().min(20).max(1200),
+  optionA: z.string().trim().min(2).max(400),
+  optionB: z.string().trim().min(2).max(400),
+  optionC: z.string().trim().min(2).max(400),
+  optionD: z.string().trim().min(2).max(400),
+  correct: z.enum(['A', 'B', 'C', 'D']),
+  explanation: z.string().trim().min(20).max(1200),
+});
+const builderTopicSchema = z.object({
+  title: z.string().trim().min(2).max(180),
+  content: z.string().trim().min(20).max(1200),
+  resources: z.array(builderResourceSchema).max(4).default([]),
+  quest: builderQuestSchema,
+});
+const builderModuleSchema = z.object({
+  title: z.string().trim().min(2).max(180),
+  topics: z.array(builderTopicSchema).min(1).max(8),
+});
+const builderWeekSchema = z.object({
+  title: z.string().trim().min(2).max(180),
+  modules: z.array(builderModuleSchema).min(1).max(6),
+});
+const builderPlanSchema = z.object({
+  learningMap: z.string().trim().min(20).max(4000),
+  diagram: z.string().trim().min(20).max(6000),
+  weeks: z.array(builderWeekSchema).min(1).max(6),
+});
+
+async function searchCourseResources(courseTitle: string, outline: string) {
+  const queries = [
+    `${courseTitle} official documentation fundamentals`,
+    `${courseTitle} official tutorial video`,
+    `${courseTitle} security best practices official`,
+    outline.split(/[,.]/).map(value => value.trim()).filter(Boolean).slice(0, 2).join(' '),
+  ].filter(Boolean);
+  const resources: Array<{ label: string; type: 'youtube' | 'read' | 'link'; url: string }> = [];
+  for (const query of queries) {
+    try {
+      const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+        headers: { 'User-Agent': 'HCL-Learning-Hub-Course-Builder/1.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) continue;
+      const html = await response.text();
+      const matches = [...html.matchAll(/class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi)];
+      for (const match of matches.slice(0, 4)) {
+        const rawUrl = match[1].replace(/&amp;/g, '&');
+        let url = rawUrl;
+        try { url = new URL(rawUrl, 'https://html.duckduckgo.com').searchParams.get('uddg') || rawUrl; } catch {}
+        if (!/^https?:\/\//i.test(url) || resources.some(item => item.url === url)) continue;
+        const label = match[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').trim().slice(0, 180);
+        resources.push({ label: label || query, type: /youtube\.com|youtu\.be/i.test(url) ? 'youtube' : 'read', url });
+      }
+    } catch {}
+  }
+  return resources.slice(0, 12);
+}
+
+aiRouter.post('/course-builder', requireRole('ADMIN'), handle(async (req, res) => {
+  const input = builderSchema.parse(req.body);
+  const config = await readConfig();
+  if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
+  const course = await prisma.course.findUnique({ where: { id: input.courseId }, select: { title: true, description: true } });
+  if (!course) { res.status(404).json({ error: 'Course not found.' }); return; }
+
+  const resources = await searchCourseResources(course.title, input.outline);
+  const resourceText = resources.length
+    ? resources.map((resource, index) => `${index + 1}. ${resource.label} | ${resource.url}`).join('\n')
+    : 'No web results were available. Do not invent URLs; leave resources empty.';
+  const result = await ollamaRequest(config.endpoint, '/api/chat', {
+    model: config.model, stream: false, format: 'json',
+    messages: [{ role: 'system', content: [
+      'You are the HCL Software Learning Hub full course designer.',
+      'Use the AI Quest course style as a reference: progressive learning, small practical topics, a clear learning map, scenario-based learning, and one quiz quest per topic.',
+      'Return JSON only in this exact shape: {"learningMap":"...","diagram":"...","weeks":[{"title":"...","modules":[{"title":"...","topics":[{"title":"...","content":"...","resources":[{"label":"...","type":"read|youtube|link","url":"..."}],"quest":{"title":"...","scenario":"...","optionA":"...","optionB":"...","optionC":"...","optionD":"...","correct":"A|B|C|D","explanation":"..."}}]}]}]}.',
+      'Create 1 to 6 weeks, 1 to 6 modules per week, and 1 to 8 small topics per module. Make every topic teachable in 8 to 20 minutes.',
+      'learningMap must explain the progression from foundations to practice and assessment. diagram must be a Mermaid flowchart using only course concepts, with no markdown fences.',
+      'Each topic must have one accurate quiz quest with exactly four options and one correct answer. Include a short learn explanation in content.',
+      'Use only the supplied candidate URLs. Do not invent or modify URLs. A topic may have zero resources if none fit.',
+      `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nOUTLINE: ${input.outline}\nCANDIDATE RESOURCES:\n${resourceText}`,
+    ].join('\n') }],
+    options: { temperature: 0.2, num_predict: 12000, num_ctx: 16384 },
+  });
+  let plan: unknown;
+  try {
+    const text = String(result.message?.content || '').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+    plan = JSON.parse(text);
+  } catch { throw new Error('The AI returned an invalid full course plan. Try a smaller outline.'); }
+  const parsed = builderPlanSchema.safeParse(plan);
+  if (!parsed.success) throw new Error('The AI returned an incomplete course plan. Try a smaller outline or model.');
+  res.json({ ...parsed.data, discoveredResources: resources });
+}));
+
 aiRouter.get('/status', handle(async (_req, res) => {
   const config = await readConfig();
   res.json({ enabled: config.enabled, model: config.enabled ? config.model : null });

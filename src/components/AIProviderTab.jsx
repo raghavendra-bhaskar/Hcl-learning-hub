@@ -68,6 +68,18 @@ export default function AIProviderTab() {
     <div className="max-w-2xl" style={{ letterSpacing: 0 }}>
       <h2 className="font-orbitron text-lg font-bold text-white mb-6">AI Provider Settings</h2>
       <form onSubmit={save} className="space-y-5">
+        <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          <p className="font-semibold">Check HCL-approved AI models before adding one.</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-200/80">
+            Read the HCL AI Tools document first. Only configure approved models,
+            such as an approved Qwen or Llama variant, from your Ollama endpoint.
+            <a href="https://sites.google.com/hcl.software/productsecurity/ai-portal/ai-tools"
+              target="_blank" rel="noopener noreferrer"
+              className="ml-1 font-semibold text-cyan-300 underline underline-offset-2 hover:text-cyan-200">
+              Open HCL AI Tools approval list
+            </a>
+          </p>
+        </div>
         <label className="block text-sm text-slate-300">AI Provider
           <select value={config.provider} disabled className={`${inputClass} mt-2`}><option value="ollama">Ollama</option></select>
         </label>

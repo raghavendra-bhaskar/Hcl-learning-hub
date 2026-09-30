@@ -530,7 +530,7 @@ function AICourseOutlinePanel({ course, weeks, onCreated }) {
   const generate = async () => {
     setBusy(true); setError('');
     try {
-      const nextPlan = await api.post('/ai/course-outline', { courseId: course.id, outline });
+      const nextPlan = await api.post('/ai/course-builder', { courseId: course.id, outline });
       setPlan(nextPlan);
     } catch (e) { setError(e?.message || 'Could not generate course topics'); }
     finally { setBusy(false); }
@@ -548,10 +548,34 @@ function AICourseOutlinePanel({ course, weeks, onCreated }) {
           const module = await api.post(`/courses-api/weeks/${week.id}/modules`, {
             title: generatedModule.title, icon: '📖', color: course.accentColor || '#06b6d4', order: moduleIndex, number: moduleIndex + 1,
           });
+          const moduleResources = [];
           for (const [topicIndex, topic] of generatedModule.topics.entries()) {
             await api.post(`/courses-api/modules/${module.id}/topics`, { content: topic.content, order: topicIndex });
+            for (const resource of topic.resources || []) {
+              if (!moduleResources.some(item => item.url === resource.url)) moduleResources.push(resource);
+            }
+            await api.post(`/courses-api/${course.id}/quests`, {
+              title: topic.quest.title,
+              scenario: topic.quest.scenario,
+              optionA: topic.quest.optionA,
+              optionB: topic.quest.optionB,
+              optionC: topic.quest.optionC,
+              optionD: topic.quest.optionD,
+              correct: topic.quest.correct,
+              explanation: topic.quest.explanation,
+              xp: 15,
+              moduleId: module.id,
+              order: modules.length + topicIndex,
+              learnTopics: [{ content: topic.content, order: 0 }],
+              learnResources: (topic.resources || []).map((resource, resourceIndex) => ({ ...resource, order: resourceIndex })),
+            });
           }
-          modules.push({ ...module, topics: generatedModule.topics, resources: [] });
+          for (const [resourceIndex, resource] of moduleResources.entries()) {
+            await api.post(`/courses-api/modules/${module.id}/resources`, {
+              label: resource.label, type: resource.type, url: resource.url, order: resourceIndex,
+            });
+          }
+          modules.push({ ...module, topics: generatedModule.topics, resources: moduleResources });
         }
         createdWeeks.push({ ...week, modules });
       }
@@ -565,35 +589,45 @@ function AICourseOutlinePanel({ course, weeks, onCreated }) {
     <div className="rounded-2xl p-5 mb-8 border border-cyan-500/20" style={{ background: 'rgba(6,182,212,0.04)' }}>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-orbitron text-sm font-bold text-white">AI Course Topic Builder</h3>
-          <p className="text-[11px] text-slate-500 mt-1">Describe an outline and review generated weeks, modules, and topics before adding them.</p>
+          <h3 className="font-orbitron text-sm font-bold text-white">AI Full Course Builder</h3>
+          <p className="text-[11px] text-slate-500 mt-1">Build small topics, learning content, resource links, a learning map, course diagram, and a quiz quest for every topic.</p>
         </div>
         <button onClick={() => setOpen(value => !value)} className="px-3 py-2 rounded-lg text-xs font-bold text-cyan-200 border border-cyan-400/30 bg-cyan-500/10">
-          {open ? 'Close' : 'Build with AI'}
+          {open ? 'Close' : 'Build full course'}
         </button>
       </div>
       {open && <div className="mt-4 space-y-3">
         <textarea value={outline} onChange={e => setOutline(e.target.value)} rows={5} maxLength={12000}
-          placeholder="Example: Teach GCP fundamentals, IAM, networking, Compute Engine, Cloud Run, GKE, observability, cost control, and a production deployment exercise."
+          placeholder="Example: Teach AWS fundamentals, IAM, networking, EC2, containers, observability, cost control, security, and a production deployment exercise."
           className="w-full rounded-xl px-3 py-2.5 text-sm text-white resize-y focus:outline-none" style={inputStyle} />
         <button onClick={generate} disabled={busy || outline.trim().length < 20}
           className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
-          {busy && !plan ? 'Researching outline…' : 'Generate Preview'}
+          {busy && !plan ? 'Researching resources and building course…' : 'Generate Full Course Preview'}
         </button>
         {plan && <div className="space-y-3 rounded-xl p-4 border border-white/10" style={{ background: 'rgba(0,0,0,0.16)' }}>
           <p className="text-xs text-cyan-300">Preview: {plan.weeks.length} week{plan.weeks.length === 1 ? '' : 's'} · review before adding</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">Learning map</p>
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{plan.learningMap}</p>
+            </div>
+            <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 p-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300">Course diagram</p>
+              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] leading-relaxed text-slate-300">{plan.diagram}</pre>
+            </div>
+          </div>
           {plan.weeks.map((week, weekIndex) => <div key={weekIndex}>
             <p className="text-sm font-semibold text-white">Week {weeks.length + weekIndex + 1}: {week.title}</p>
             <ul className="mt-1 pl-4 list-disc text-xs text-slate-400 space-y-1">
-              {week.modules.map((module, moduleIndex) => <li key={moduleIndex}><span className="text-slate-300">{module.title}</span> · {module.topics.length} topics</li>)}
+              {week.modules.map((module, moduleIndex) => <li key={moduleIndex}><span className="text-slate-300">{module.title}</span> · {module.topics.length} topics · {module.topics.reduce((count, topic) => count + (topic.resources?.length || 0), 0)} resources · {module.topics.length} quests</li>)}
             </ul>
           </div>)}
           <button onClick={addPlan} disabled={busy} className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'rgba(16,185,129,0.7)' }}>
-            {busy ? 'Adding topics…' : 'Add Previewed Topics'}
+            {busy ? 'Creating course content…' : 'Create Full Course Content'}
           </button>
         </div>}
         {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
-        <p className="text-[10px] text-slate-600">AI expands your outline using the configured local model. Verify technical accuracy and add official resources separately.</p>
+        <p className="text-[10px] text-slate-600">The builder searches public web results for candidate resources and uses the configured model to structure the course. Review technical accuracy, licensing, and links before publishing.</p>
       </div>}
     </div>
   );
