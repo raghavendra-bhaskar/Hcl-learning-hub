@@ -5,7 +5,9 @@ import {
   Save, ExternalLink, GripVertical, Pencil,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { getAuth } from './LoginPage.jsx';
 import { validateEmbeddableVideoResource } from '../lib/learningResourceEmbeds.js';
+import { useAppStore } from '../App.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const RESOURCE_TYPES = [
@@ -28,9 +30,31 @@ const ACCENT_COLORS = [
 const MODULE_ICONS = ['📖','📚','🔧','💡','🧪','🔬','🎓','🗺️','🏗️','🔐','📊','🎯','⚡','🚀','🔄','🛠️','🌐','🖥️','🤖','🔑'];
 const COURSE_EMOJIS = ['📚','🚀','🤖','🔄','☸️','☁️','🛡️','📊','💻','🔐','⚡','🎓','🌐','🏗️','🔬'];
 
-const cardStyle = { background: 'rgba(3,10,20,0.7)', border: '1px solid rgba(255,255,255,0.07)' };
-const inputStyle = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#e2e8f0' };
-const focusStyle = { border: '1px solid rgba(6,182,212,0.5)' };
+const cardStyle = { background: 'var(--course-editor-card-bg)', border: '1px solid var(--course-editor-card-border)' };
+const inputStyle = { background: 'var(--course-editor-input-bg)', border: '1px solid var(--course-editor-input-border)', color: 'var(--course-editor-input-text)' };
+const focusStyle = { border: '1px solid var(--course-editor-focus-border)' };
+const BUILDER_MODES = [
+  { id: 'create', label: 'Create full course', hint: 'Build a full learning path and add missing modules without duplicating existing ones.' },
+  { id: 'modify', label: 'Modify existing course', hint: 'Improve or extend the current course structure based on your request.' },
+  { id: 'quests-only', label: 'Recreate quests only', hint: 'Refresh learn content and quiz quests for existing modules without rebuilding the whole course.' },
+];
+
+function cleanBuilderDisplayTitle(value, fallback = '') {
+  return String(value || fallback)
+    .replace(/^week\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^module\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^[A-Z]\.[\s-]*/i, '')
+    .replace(/\s+learning path$/i, '')
+    .replace(/\s+learn and practice$/i, '')
+    .trim() || fallback;
+}
+
+function normalizeBuilderKey(value) {
+  return cleanBuilderDisplayTitle(value, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
 function IconPicker({ value, options, onChange, className = '' }) {
@@ -394,7 +418,7 @@ function WeekSection({ week, accentColor, onUpdateWeek, onDeleteWeek, onReload }
 }
 
 // ── Course Info panel ─────────────────────────────────────────────────────────
-function CourseInfoPanel({ course, onUpdate }) {
+function CourseInfoPanel({ course, onUpdate, isLight }) {
   const [draft, setDraft]   = useState({ ...course });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -423,24 +447,24 @@ function CourseInfoPanel({ course, onUpdate }) {
           onChange={e => setDraft(p => ({ ...p, emoji: e }))} className="mt-1" />
         <div className="flex-1 space-y-3">
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Course Title</label>
+            <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Course Title</label>
             <input value={draft.title} onChange={e => setDraft(p => ({ ...p, title: e.target.value }))}
               className="w-full rounded-xl px-4 py-2.5 font-orbitron font-bold text-xl focus:outline-none" style={{ ...inputStyle, ...focusStyle }} />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Tagline</label>
+            <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Tagline</label>
             <input value={draft.tagline || ''} onChange={e => setDraft(p => ({ ...p, tagline: e.target.value }))}
               placeholder="Short subtitle shown on course page"
               className="w-full rounded-xl px-4 py-2 text-sm focus:outline-none" style={inputStyle} />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Description</label>
+            <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Description</label>
             <textarea value={draft.description || ''} onChange={e => setDraft(p => ({ ...p, description: e.target.value }))}
               placeholder="Short overview shown on the course page and learning-path hero"
               rows={2} className="w-full rounded-xl px-4 py-2 text-sm focus:outline-none resize-none" style={inputStyle} />
           </div>
           <div>
-            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-2">Accent Color</label>
+            <label className={`text-[10px] font-bold uppercase tracking-widest block mb-2 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Accent Color</label>
             <ColorPicker value={draft.accentColor || '#06b6d4'} onChange={c => setDraft(p => ({ ...p, accentColor: c }))} />
           </div>
         </div>
@@ -451,14 +475,14 @@ function CourseInfoPanel({ course, onUpdate }) {
           style={{ background: saving || saved ? 'rgba(16,185,129,0.7)' : 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
           {saved ? <><Check size={14} /> Saved!</> : saving ? '…' : <><Save size={14} /> Save Info</>}
         </button>
-        <p className="text-[11px] text-slate-600">Slug: <code className="text-slate-500">{course.slug}</code></p>
+        <p className={`text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Slug: <code className={isLight ? 'text-slate-800' : 'text-slate-500'}>{course.slug}</code></p>
       </div>
     </div>
   );
 }
 
 // ── Help Session panel ────────────────────────────────────────────────────────
-function HelpSessionPanel({ course, onUpdate }) {
+function HelpSessionPanel({ course, onUpdate, isLight }) {
   const [d, setD] = useState({
     instructorName:  course.instructorName  || '',
     instructorEmail: course.instructorEmail || '',
@@ -468,6 +492,16 @@ function HelpSessionPanel({ course, onUpdate }) {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
+
+  useEffect(() => {
+    setD({
+      instructorName:  course.instructorName  || '',
+      instructorEmail: course.instructorEmail || '',
+      helpSpaceUrl:    course.helpSpaceUrl    || '',
+      helpSpaceName:   course.helpSpaceName   || '',
+      helpSpaceHint:   course.helpSpaceHint   || '',
+    });
+  }, [course.id, course.instructorName, course.instructorEmail, course.helpSpaceUrl, course.helpSpaceName, course.helpSpaceHint]);
 
   const f = k => e => setD(p => ({ ...p, [k]: e.target.value }));
 
@@ -482,32 +516,41 @@ function HelpSessionPanel({ course, onUpdate }) {
     finally { setSaving(false); }
   };
 
-  const Field = ({ label, k, placeholder, hint }) => (
-    <div>
-      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">{label}</label>
-      <input value={d[k]} onChange={f(k)} placeholder={placeholder}
-        className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
-      {hint && <p className="text-[10px] text-slate-700 mt-0.5">{hint}</p>}
-    </div>
-  );
-
   return (
     <div className="rounded-2xl p-6 mb-8" style={cardStyle}>
       <div className="flex items-center gap-3 mb-5">
         <span className="text-lg">💬</span>
         <div>
-          <h3 className="font-orbitron text-sm font-bold text-white">Help Session</h3>
-          <p className="text-[11px] text-slate-600 mt-0.5">Moderator & chat space shown when learners click Help on this course. Leave blank to use global defaults.</p>
+          <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Help Session</h3>
+          <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Moderator & chat space shown when learners click Help on this course. Leave blank to use global defaults.</p>
         </div>
       </div>
       <div className="grid sm:grid-cols-2 gap-4">
-        <Field label="Moderator Name"      k="instructorName"  placeholder="e.g. John Smith" />
-        <Field label="Moderator Email"     k="instructorEmail" placeholder="john@example.com" />
-        <div className="sm:col-span-2">
-          <Field label="Chat Space URL" k="helpSpaceUrl" placeholder="https://chat.google.com/room/..." />
+        <div>
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Moderator Name</label>
+          <input value={d.instructorName} onChange={f('instructorName')} placeholder="e.g. John Smith"
+            className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
         </div>
-        <Field label="Chat Space Display Name" k="helpSpaceName" placeholder="Security Support Space" />
-        <Field label="Chat Space Hint"         k="helpSpaceHint" placeholder="Security course questions, labs & quests" />
+        <div>
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Moderator Email</label>
+          <input value={d.instructorEmail} onChange={f('instructorEmail')} placeholder="john@example.com"
+            className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Chat Space URL</label>
+          <input value={d.helpSpaceUrl} onChange={f('helpSpaceUrl')} placeholder="https://chat.google.com/room/..."
+            className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
+        </div>
+        <div>
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Chat Space Display Name</label>
+          <input value={d.helpSpaceName} onChange={f('helpSpaceName')} placeholder="Security Support Space"
+            className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
+        </div>
+        <div>
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Chat Space Hint</label>
+          <input value={d.helpSpaceHint} onChange={f('helpSpaceHint')} placeholder="Security course questions, labs & quests"
+            className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
+        </div>
       </div>
       <div className="mt-4">
         <button onClick={save} disabled={saving}
@@ -520,17 +563,21 @@ function HelpSessionPanel({ course, onUpdate }) {
   );
 }
 
-function AICourseOutlinePanel({ course, weeks, onCreated }) {
+function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
   const [open, setOpen] = useState(false);
   const [outline, setOutline] = useState('');
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [mode, setMode] = useState('create');
+
+  const currentModuleCount = weeks.reduce((count, week) => count + (Array.isArray(week.modules) ? week.modules.length : 0), 0);
+  const activeMode = BUILDER_MODES.find(item => item.id === mode) || BUILDER_MODES[0];
 
   const generate = async () => {
     setBusy(true); setError('');
     try {
-      const nextPlan = await api.post('/ai/course-builder', { courseId: course.id, outline });
+      const nextPlan = await api.post('/ai/course-builder', { courseId: course.id, outline, mode });
       setPlan(nextPlan);
     } catch (e) { setError(e?.message || 'Could not generate course topics'); }
     finally { setBusy(false); }
@@ -540,94 +587,200 @@ function AICourseOutlinePanel({ course, weeks, onCreated }) {
     if (!plan?.weeks?.length) return;
     setBusy(true); setError('');
     try {
-      const createdWeeks = [];
+      const currentCourse = await api.get(`/courses-api/${course.slug}`);
+      const currentQuests = await api.get(`/courses-api/${course.id}/quests`);
+      const workingWeeks = Array.isArray(currentCourse.weeks)
+        ? currentCourse.weeks.map(week => ({
+            ...week,
+            modules: Array.isArray(week.modules)
+              ? week.modules.map(module => ({
+                  ...module,
+                  topics: Array.isArray(module.topics) ? [...module.topics] : [],
+                  resources: Array.isArray(module.resources) ? [...module.resources] : [],
+                }))
+              : [],
+          }))
+        : [];
+      const workingQuests = Array.isArray(currentQuests) ? [...currentQuests] : [];
+      let nextWeekNumber = workingWeeks.length + 1;
+      let nextQuestOrder = workingQuests.reduce((max, quest) => Math.max(max, Number(quest.order ?? -1)), -1) + 1;
+
+      const replaceWeek = (updatedWeek) => {
+        const index = workingWeeks.findIndex(week => week.id === updatedWeek.id);
+        if (index >= 0) workingWeeks[index] = { ...workingWeeks[index], ...updatedWeek, modules: workingWeeks[index].modules };
+      };
+
+      const replaceModule = (weekId, updatedModule) => {
+        const week = workingWeeks.find(item => item.id === weekId);
+        if (!week) return;
+        const index = week.modules.findIndex(module => module.id === updatedModule.id);
+        if (index >= 0) week.modules[index] = { ...week.modules[index], ...updatedModule };
+      };
+
       for (const [weekIndex, generatedWeek] of plan.weeks.entries()) {
-        const week = await api.post(`/courses-api/${course.id}/weeks`, { title: generatedWeek.title, weekNumber: weeks.length + weekIndex + 1 });
-        const modules = [];
-        for (const [moduleIndex, generatedModule] of generatedWeek.modules.entries()) {
-          const module = await api.post(`/courses-api/weeks/${week.id}/modules`, {
-            title: generatedModule.title, icon: '📖', color: course.accentColor || '#06b6d4', order: moduleIndex, number: moduleIndex + 1,
-          });
-          const moduleResources = [];
-          for (const [topicIndex, topic] of generatedModule.topics.entries()) {
-            await api.post(`/courses-api/modules/${module.id}/topics`, { content: topic.content, order: topicIndex });
-            for (const resource of topic.resources || []) {
-              if (!moduleResources.some(item => item.url === resource.url)) moduleResources.push(resource);
-            }
-            await api.post(`/courses-api/${course.id}/quests`, {
-              title: topic.quest.title,
-              scenario: topic.quest.scenario,
-              optionA: topic.quest.optionA,
-              optionB: topic.quest.optionB,
-              optionC: topic.quest.optionC,
-              optionD: topic.quest.optionD,
-              correct: topic.quest.correct,
-              explanation: topic.quest.explanation,
-              xp: 15,
-              moduleId: module.id,
-              order: modules.length + topicIndex,
-              learnTopics: [{ content: topic.content, order: 0 }],
-              learnResources: (topic.resources || []).map((resource, resourceIndex) => ({ ...resource, order: resourceIndex })),
-            });
-          }
-          for (const [resourceIndex, resource] of moduleResources.entries()) {
-            await api.post(`/courses-api/modules/${module.id}/resources`, {
-              label: resource.label, type: resource.type, url: resource.url, order: resourceIndex,
-            });
-          }
-          modules.push({ ...module, topics: generatedModule.topics, resources: moduleResources });
+        const generatedWeekTitle = cleanBuilderDisplayTitle(generatedWeek.title, `Week ${weekIndex + 1}`);
+        let week = workingWeeks.find(item => normalizeBuilderKey(item.title) === normalizeBuilderKey(generatedWeekTitle));
+        if (!week && mode !== 'create') week = workingWeeks[weekIndex];
+        if (!week) {
+          const createdWeek = await api.post(`/courses-api/${course.id}/weeks`, { title: generatedWeekTitle, weekNumber: nextWeekNumber });
+          nextWeekNumber += 1;
+          week = { ...createdWeek, modules: [] };
+          workingWeeks.push(week);
+        } else if (mode !== 'quests-only' && normalizeBuilderKey(week.title) !== normalizeBuilderKey(generatedWeekTitle)) {
+          week = { ...week, ...(await api.put(`/courses-api/weeks/${week.id}`, { title: generatedWeekTitle })) };
+          replaceWeek(week);
         }
-        createdWeeks.push({ ...week, modules });
+
+        for (const [moduleIndex, generatedModule] of generatedWeek.modules.entries()) {
+          const generatedModuleTitle = cleanBuilderDisplayTitle(generatedModule.title, generatedModule.topics?.[0]?.title || `Module ${moduleIndex + 1}`);
+          let module = week.modules.find(item => normalizeBuilderKey(item.title) === normalizeBuilderKey(generatedModuleTitle));
+          if (!module && mode !== 'create') module = week.modules[moduleIndex];
+          if (!module) {
+            const createdModule = await api.post(`/courses-api/weeks/${week.id}/modules`, {
+              title: generatedModuleTitle, icon: '📖', color: course.accentColor || '#06b6d4', order: moduleIndex, number: moduleIndex + 1,
+            });
+            module = { ...createdModule, topics: [], resources: [] };
+            week.modules.push(module);
+          } else if (mode !== 'quests-only') {
+            module = {
+              ...module,
+              ...(await api.put(`/courses-api/modules/${module.id}`, { title: generatedModuleTitle, order: moduleIndex, number: moduleIndex + 1 })),
+            };
+            replaceModule(week.id, module);
+          }
+
+          const primaryTopic = generatedModule.topics?.[0];
+          if (!primaryTopic) continue;
+          const moduleResources = Array.isArray(primaryTopic.resources) ? primaryTopic.resources : [];
+
+          if (mode !== 'quests-only') {
+            if (Array.isArray(module.topics) && module.topics[0]) {
+              const updatedTopic = await api.put(`/courses-api/topics/${module.topics[0].id}`, { content: primaryTopic.content, order: 0 });
+              module.topics = [updatedTopic, ...module.topics.slice(1)];
+            } else {
+              const createdTopic = await api.post(`/courses-api/modules/${module.id}/topics`, { content: primaryTopic.content, order: 0 });
+              module.topics = [...(module.topics || []), createdTopic];
+            }
+
+            const existingUrls = new Set((module.resources || []).map(resource => resource.url).filter(Boolean));
+            for (const [resourceIndex, resource] of moduleResources.entries()) {
+              if (existingUrls.has(resource.url)) continue;
+              const createdResource = await api.post(`/courses-api/modules/${module.id}/resources`, {
+                label: resource.label, type: resource.type, url: resource.url, order: (module.resources || []).length + resourceIndex,
+              });
+              module.resources = [...(module.resources || []), createdResource];
+              existingUrls.add(resource.url);
+            }
+          }
+
+          const questKeyCandidates = new Set([
+            normalizeBuilderKey(primaryTopic.quest?.title),
+            normalizeBuilderKey(generatedModuleTitle),
+            normalizeBuilderKey(primaryTopic.title),
+          ]);
+          let existingQuest = workingQuests.find(quest => quest.moduleId === module.id && questKeyCandidates.has(normalizeBuilderKey(quest.title)));
+          if (!existingQuest && mode !== 'create') existingQuest = workingQuests.find(quest => quest.moduleId === module.id);
+
+          const questPayload = {
+            title: primaryTopic.quest.title,
+            scenario: primaryTopic.quest.scenario,
+            optionA: primaryTopic.quest.optionA,
+            optionB: primaryTopic.quest.optionB,
+            optionC: primaryTopic.quest.optionC,
+            optionD: primaryTopic.quest.optionD,
+            correct: primaryTopic.quest.correct,
+            explanation: primaryTopic.quest.explanation,
+            xp: existingQuest?.xp || 15,
+            moduleId: module.id,
+            learnTopics: [{ content: primaryTopic.content, order: 0 }],
+            learnResources: moduleResources.map((resource, resourceIndex) => ({ ...resource, order: resourceIndex })),
+          };
+
+          if (existingQuest) {
+            const updatedQuest = await api.put(`/courses-api/quests/${existingQuest.id}`, { ...questPayload, order: existingQuest.order ?? 0 });
+            const questIndex = workingQuests.findIndex(quest => quest.id === existingQuest.id);
+            if (questIndex >= 0) workingQuests[questIndex] = updatedQuest;
+          } else {
+            const createdQuest = await api.post(`/courses-api/${course.id}/quests`, { ...questPayload, order: nextQuestOrder });
+            workingQuests.push(createdQuest);
+            nextQuestOrder += 1;
+          }
+        }
       }
-      onCreated(createdWeeks);
+
+      const refreshedCourse = await api.get(`/courses-api/${course.slug}`);
+      onCreated(refreshedCourse.weeks || []);
       setPlan(null); setOutline(''); setOpen(false);
     } catch (e) { setError(e?.message || 'Could not add generated topics'); }
     finally { setBusy(false); }
   };
 
   return (
-    <div className="rounded-2xl p-5 mb-8 border border-cyan-500/20" style={{ background: 'rgba(6,182,212,0.04)' }}>
+    <div className="rounded-2xl p-5 mb-8 border" style={{ background: isLight ? 'rgba(6,182,212,0.08)' : 'rgba(6,182,212,0.04)', borderColor: isLight ? 'rgba(6,182,212,0.22)' : 'rgba(6,182,212,0.20)' }}>
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="font-orbitron text-sm font-bold text-white">AI Full Course Builder</h3>
-          <p className="text-[11px] text-slate-500 mt-1">Build small topics, learning content, resource links, a learning map, course diagram, and a quiz quest for every topic.</p>
+          <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>AI Full Course Builder</h3>
+          <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Build small topics, learning content, resource links, a learning map, course diagram, and a quiz quest for every topic.</p>
         </div>
-        <button onClick={() => setOpen(value => !value)} className="px-3 py-2 rounded-lg text-xs font-bold text-cyan-200 border border-cyan-400/30 bg-cyan-500/10">
+        <button onClick={() => setOpen(value => !value)} className="px-3 py-2 rounded-lg text-xs font-bold border"
+          style={{ color: isLight ? '#0f766e' : '#bae6fd', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
           {open ? 'Close' : 'Build full course'}
         </button>
       </div>
       {open && <div className="mt-4 space-y-3">
+        <div className="grid gap-2 md:grid-cols-3">
+          {BUILDER_MODES.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setMode(item.id)}
+              className="rounded-xl border px-3 py-3 text-left transition-all"
+              style={mode === item.id
+                ? { background: isLight ? 'rgba(236,254,255,0.95)' : 'rgba(6,182,212,0.12)', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)' }
+                : { background: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+              <p className={`text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{item.label}</p>
+              <p className={`text-[10px] mt-1 leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{item.hint}</p>
+            </button>
+          ))}
+        </div>
+        <div className="rounded-xl border px-4 py-3" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+          <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Current course structure</p>
+          <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{weeks.length} week{weeks.length === 1 ? '' : 's'} · {currentModuleCount} module{currentModuleCount === 1 ? '' : 's'} · duplicate module names will update existing content instead of creating extra copies.</p>
+        </div>
         <textarea value={outline} onChange={e => setOutline(e.target.value)} rows={5} maxLength={12000}
-          placeholder="Example: Teach AWS fundamentals, IAM, networking, EC2, containers, observability, cost control, security, and a production deployment exercise."
-          className="w-full rounded-xl px-3 py-2.5 text-sm text-white resize-y focus:outline-none" style={inputStyle} />
+          placeholder={mode === 'quests-only'
+            ? 'Example: Recreate all duplicate AWS quests, keep the existing modules, improve scenario quality, and make each quest look like the AI Training experience.'
+            : mode === 'modify'
+              ? 'Example: Improve the AWS course by removing duplicate modules, expanding security and observability, and rewriting weak quests.'
+              : 'Example: Teach AWS fundamentals, IAM, networking, EC2, containers, observability, cost control, security, and a production deployment exercise.'}
+          className="w-full rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none" style={inputStyle} />
         <button onClick={generate} disabled={busy || outline.trim().length < 20}
           className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
-          {busy && !plan ? 'Researching resources and building course…' : 'Generate Full Course Preview'}
+          {busy && !plan ? 'Researching resources and building course…' : mode === 'quests-only' ? 'Generate Quest Refresh Preview' : mode === 'modify' ? 'Generate Course Update Preview' : 'Generate Full Course Preview'}
         </button>
-        {plan && <div className="space-y-3 rounded-xl p-4 border border-white/10" style={{ background: 'rgba(0,0,0,0.16)' }}>
-          <p className="text-xs text-cyan-300">Preview: {plan.weeks.length} week{plan.weeks.length === 1 ? '' : 's'} · review before adding</p>
+        {plan && <div className="space-y-3 rounded-xl p-4 border" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.16)', borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.10)' }}>
+          <p className={`text-xs ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>Preview: {plan.weeks.length} week{plan.weeks.length === 1 ? '' : 's'} · {activeMode.label.toLowerCase()} · review before applying</p>
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="rounded-lg border border-cyan-400/20 bg-cyan-400/5 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-300">Learning map</p>
-              <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{plan.learningMap}</p>
+            <div className="rounded-lg border p-3" style={{ borderColor: isLight ? 'rgba(8,145,178,0.20)' : 'rgba(34,211,238,0.20)', background: isLight ? 'rgba(236,254,255,0.95)' : 'rgba(34,211,238,0.05)' }}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>Learning map</p>
+              <p className={`mt-2 whitespace-pre-wrap text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{plan.learningMap}</p>
             </div>
-            <div className="rounded-lg border border-violet-400/20 bg-violet-400/5 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-violet-300">Course diagram</p>
-              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] leading-relaxed text-slate-300">{plan.diagram}</pre>
+            <div className="rounded-lg border p-3" style={{ borderColor: isLight ? 'rgba(124,58,237,0.20)' : 'rgba(196,181,253,0.20)', background: isLight ? 'rgba(245,243,255,0.95)' : 'rgba(167,139,250,0.05)' }}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>Course diagram</p>
+              <pre className={`mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{plan.diagram}</pre>
             </div>
           </div>
           {plan.weeks.map((week, weekIndex) => <div key={weekIndex}>
-            <p className="text-sm font-semibold text-white">Week {weeks.length + weekIndex + 1}: {week.title}</p>
-            <ul className="mt-1 pl-4 list-disc text-xs text-slate-400 space-y-1">
-              {week.modules.map((module, moduleIndex) => <li key={moduleIndex}><span className="text-slate-300">{module.title}</span> · {module.topics.length} topics · {module.topics.reduce((count, topic) => count + (topic.resources?.length || 0), 0)} resources · {module.topics.length} quests</li>)}
+            <p className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Week {weeks.length + weekIndex + 1}: {week.title}</p>
+            <ul className={`mt-1 pl-4 list-disc text-xs space-y-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+              {week.modules.map((module, moduleIndex) => <li key={moduleIndex}><span className={isLight ? 'text-slate-800' : 'text-slate-300'}>{module.title}</span> · {module.topics.length} topics · {module.topics.reduce((count, topic) => count + (topic.resources?.length || 0), 0)} resources · {module.topics.length} quests</li>)}
             </ul>
           </div>)}
           <button onClick={addPlan} disabled={busy} className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'rgba(16,185,129,0.7)' }}>
-            {busy ? 'Creating course content…' : 'Create Full Course Content'}
+            {busy ? 'Applying builder changes…' : mode === 'quests-only' ? 'Apply Quest Refresh' : mode === 'modify' ? 'Apply Course Updates' : 'Create Full Course Content'}
           </button>
         </div>}
-        {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
-        <p className="text-[10px] text-slate-600">The builder searches public web results for candidate resources and uses the configured model to structure the course. Review technical accuracy, licensing, and links before publishing.</p>
+        {error && <p role="alert" className={`text-xs ${isLight ? 'text-red-600' : 'text-red-300'}`}>{error}</p>}
+        <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>The builder searches public web results for candidate resources and uses the configured model to structure the course. Review technical accuracy, licensing, and links before publishing.</p>
       </div>}
     </div>
   );
@@ -637,6 +790,12 @@ function AICourseOutlinePanel({ course, weeks, onCreated }) {
 export default function CourseEditor() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const auth = getAuth();
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const isAdmin = auth?.role === 'ADMIN';
+  const backPath = isAdmin ? '/admin' : '/courses';
+  const backLabel = isAdmin ? 'Admin Panel' : 'Course Hub';
 
   const [course, setCourse]   = useState(null);
   const [weeks, setWeeks]     = useState([]);
@@ -686,27 +845,41 @@ export default function CourseEditor() {
   if (error) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
       <p className="text-red-400">{error}</p>
-      <button onClick={() => navigate('/admin')} className="text-cyan-400 text-sm">← Admin Panel</button>
+      <button onClick={() => navigate(backPath)} className="text-cyan-400 text-sm">← {backLabel}</button>
     </div>
   );
 
   const accent = course?.accentColor || '#06b6d4';
+  const editorVars = {
+    '--course-editor-card-bg': isLight ? 'rgba(255,255,255,0.96)' : 'rgba(3,10,20,0.7)',
+    '--course-editor-card-border': isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.07)',
+    '--course-editor-input-bg': isLight ? 'rgba(248,250,252,0.98)' : 'rgba(255,255,255,0.05)',
+    '--course-editor-input-border': isLight ? 'rgba(148,163,184,0.35)' : 'rgba(255,255,255,0.10)',
+    '--course-editor-input-text': isLight ? '#0f172a' : '#e2e8f0',
+    '--course-editor-focus-border': 'rgba(6,182,212,0.5)',
+  };
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24" style={{ background: isLight ? 'linear-gradient(160deg, #f8fafc 0%, #eef6ff 52%, #f8fafc 100%)' : undefined, ...editorVars }}>
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5" style={{ background: 'rgba(3,10,20,0.92)' }}>
+      <header className="sticky top-0 z-40 backdrop-blur-md border-b" style={{ background: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(3,10,20,0.92)', borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-4xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate('/admin')} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
-            <ArrowLeft size={14} /> Admin Panel
+          <button onClick={() => navigate(backPath)} className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
+            <ArrowLeft size={14} /> {backLabel}
           </button>
-          <span className="text-slate-700">/</span>
-          <span className="text-xs font-bold text-white font-orbitron">{course?.title}</span>
-          <span className="text-[10px] text-slate-600 ml-1">· Course Editor</span>
+          <span className={isLight ? 'text-slate-400' : 'text-slate-700'}>/</span>
+          <span className={`text-xs font-bold font-orbitron ${isLight ? 'text-slate-900' : 'text-white'}`}>{course?.title}</span>
+          <span className={`text-[10px] ml-1 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>· Course Editor</span>
           <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => navigate(backPath)}
+              className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1 transition-colors border ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.35)' : 'rgba(255,255,255,0.08)' }}>
+              <X size={11} /> Cancel
+            </button>
             <a href={slug === 'devops-loop' ? '/devops-loop' : slug === 'ai-quest' ? '/ai-quest' : `/c/${slug}`}
               target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[11px] text-slate-600 hover:text-cyan-400 border border-white/8 rounded-lg px-2.5 py-1 transition-colors">
+              className={`flex items-center gap-1.5 text-[11px] rounded-lg px-2.5 py-1 transition-colors border ${isLight ? 'text-slate-600 hover:text-cyan-700' : 'text-slate-600 hover:text-cyan-400'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.35)' : 'rgba(255,255,255,0.08)' }}>
               <ExternalLink size={11} /> Preview
             </a>
           </div>
@@ -715,17 +888,18 @@ export default function CourseEditor() {
 
       <div className="max-w-4xl mx-auto px-4 pt-8">
         {/* Course info */}
-        {course && <CourseInfoPanel course={course} onUpdate={c => setCourse(c)} />}
+        {course && <CourseInfoPanel course={course} onUpdate={c => setCourse(c)} isLight={isLight} />}
 
         {/* Help session */}
-        {course && <HelpSessionPanel course={course} onUpdate={c => setCourse(c)} />}
+        {course && <HelpSessionPanel course={course} onUpdate={c => setCourse(c)} isLight={isLight} />}
 
-        {course && <AICourseOutlinePanel course={course} weeks={weeks} onCreated={created => setWeeks(p => [...p, ...created])} />}
+        {course && <AICourseOutlinePanel course={course} weeks={weeks} onCreated={created => setWeeks(created)} isLight={isLight} />}
 
         {/* Weeks */}
         <div className="flex items-center gap-3 mb-6">
-          <h2 className="font-orbitron text-lg font-bold text-white">Learning Path</h2>
-          <span className="text-[10px] px-2 py-0.5 rounded font-bold text-slate-500 border border-white/8">
+          <h2 className={`font-orbitron text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Learning Path</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded font-bold"
+            style={{ color: isLight ? '#475569' : '#64748b', border: isLight ? '1px solid rgba(148,163,184,0.35)' : '1px solid rgba(255,255,255,0.08)' }}>
             {weeks.length} week{weeks.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -794,6 +968,8 @@ function uid() { return Math.random().toString(36).slice(2); }
 
 function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
   const [activeTab, setActiveTab] = useState('quiz');
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
 
   // Extract solution request from learnTopics (stored as first entry with isSolutionRequest flag)
   const initSR = Array.isArray(initialData?.learnTopics)
@@ -863,18 +1039,18 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
 
   const tabBtn = (id, label) => (
     <button onClick={() => setActiveTab(id)}
-      className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === id ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
-      style={activeTab === id ? { background: 'rgba(6,182,212,0.2)', border: '1px solid rgba(6,182,212,0.35)' } : { border: '1px solid transparent' }}>
+      className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === id ? 'text-white' : (isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300')}`}
+      style={activeTab === id ? { background: 'rgba(6,182,212,0.2)', border: '1px solid rgba(6,182,212,0.35)' } : { border: isLight ? '1px solid rgba(148,163,184,0.18)' : '1px solid transparent', background: isLight ? 'rgba(248,250,252,0.72)' : 'transparent' }}>
       {label}
     </button>
   );
 
   return (
-    <div className="rounded-2xl border border-cyan-500/20" style={{ background: 'rgba(6,182,212,0.04)' }}>
+    <div className="rounded-2xl border border-cyan-500/20" style={{ background: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(6,182,212,0.04)', boxShadow: isLight ? '0 12px 28px rgba(15,23,42,0.06)' : 'none' }}>
       {/* Title bar + tabs */}
-      <div className="flex items-center gap-3 px-5 pt-4 pb-3 border-b border-white/6">
+      <div className="flex items-center gap-3 px-5 pt-4 pb-3 border-b" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.06)' }}>
         <div className="flex-1 min-w-0">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Quest Title *</label>
+          <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Quest Title *</label>
           <input value={q.title} onChange={f('title')} placeholder="e.g. SSL Handshake Failure"
             className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
         </div>
@@ -889,8 +1065,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
         <div className="p-5 space-y-5">
           {/* Solution Request */}
           <div>
-            <p className="text-xs font-bold text-white mb-0.5">Solution Request <span className="text-slate-600 font-normal">(optional)</span></p>
-            <p className="text-[10px] text-slate-600 mb-2">Business scenario shown as a pinned context box in the Learn view. Describe the real-world mission the learner is solving.</p>
+            <p className={`text-xs font-bold mb-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>Solution Request <span className={isLight ? 'text-slate-500 font-normal' : 'text-slate-600 font-normal'}>(optional)</span></p>
+            <p className={`text-[10px] mb-2 ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Business scenario shown as a pinned context box in the Learn view. Describe the real-world mission the learner is solving.</p>
             <textarea value={q.solutionRequest} onChange={e => setQ(p => ({ ...p, solutionRequest: e.target.value }))} rows={3}
               placeholder="e.g. The security team noticed expired SSL certificates causing login failures. Help the team diagnose the root cause before the scheduled maintenance window."
               className="w-full rounded-xl px-3 py-2.5 text-xs resize-none focus:outline-none" style={inputStyle} />
@@ -900,8 +1076,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <p className="text-xs font-bold text-white">Learn Slides</p>
-                <p className="text-[10px] text-slate-600">Each slide is one screen in the Learn view. The scenario question is always shown as the first content pane.</p>
+                <p className={`text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Learn Slides</p>
+                <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Each slide is one screen in the Learn view. The scenario question is always shown as the first content pane.</p>
               </div>
               <button onClick={addTopic}
                 className="flex items-center gap-1.5 text-[11px] font-bold text-cyan-400 border border-cyan-500/30 px-3 py-1.5 rounded-lg hover:bg-cyan-500/10 transition-all">
@@ -910,11 +1086,11 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
             </div>
             <div className="space-y-2">
               {q.learnTopics.length === 0 && (
-                <p className="text-[11px] text-slate-700 italic">No extra slides — learners will only see the scenario text.</p>
+                <p className={`text-[11px] italic ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>No extra slides — learners will only see the scenario text.</p>
               )}
               {q.learnTopics.map((t, i) => (
                 <div key={t._id || i} className="flex gap-2 items-start">
-                  <span className="text-[10px] font-bold text-slate-600 w-5 mt-2.5 flex-shrink-0">S{i + 2}</span>
+                  <span className={`text-[10px] font-bold w-5 mt-2.5 flex-shrink-0 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>S{i + 2}</span>
                   <textarea value={t.content} onChange={e => updateTopic(i, e.target.value)} rows={2}
                     placeholder={`Slide ${i + 2} content — concept, step, or explanation…`}
                     className="flex-1 rounded-xl px-3 py-2 text-xs resize-none focus:outline-none" style={inputStyle} />
@@ -928,8 +1104,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
           <div>
             <div className="flex items-center justify-between mb-2">
               <div>
-                <p className="text-xs font-bold text-white">Resources</p>
-                <p className="text-[10px] text-slate-600">Only direct playable YouTube, playlist, Google Drive file, or MP4/WebM video URLs are accepted for inline embeds.</p>
+                <p className={`text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Resources</p>
+                <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Only direct playable YouTube, playlist, Google Drive file, or MP4/WebM video URLs are accepted for inline embeds.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => autoFindVideos(q.title || 'this topic')}
@@ -945,7 +1121,7 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
             </div>
             <div className="space-y-2">
               {q.learnResources.length === 0 && (
-                <p className="text-[11px] text-slate-700 italic">No resources yet.</p>
+                <p className={`text-[11px] italic ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>No resources yet.</p>
               )}
               {q.learnResources.map((r, i) => (
                 <div key={r._id || i} className="flex gap-2 items-center">
@@ -970,32 +1146,32 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
         <div className="p-5">
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="sm:col-span-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Scenario / Question *</label>
+              <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Scenario / Question *</label>
               <textarea value={q.scenario} onChange={f('scenario')} rows={3}
                 placeholder="You are a system administrator and a user reports that they cannot connect to the VPN. Which SSL command would you run first?"
                 className="w-full rounded-xl px-3 py-2 text-sm resize-none focus:outline-none" style={inputStyle} />
             </div>
             {['A','B','C','D'].map(letter => (
               <div key={letter}>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Option {letter} *</label>
+                <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Option {letter} *</label>
                 <input value={q[`option${letter}`]} onChange={f(`option${letter}`)} placeholder={`Answer ${letter}`}
                   className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
               </div>
             ))}
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Correct Answer *</label>
+              <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Correct Answer *</label>
               <select value={q.correct} onChange={f('correct')}
                 className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle}>
                 {CORRECT_OPTIONS.map(o => <option key={o} value={o}>Option {o}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">XP Value</label>
+              <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>XP Value</label>
               <input type="number" value={q.xp} onChange={f('xp')} min={1} max={100}
                 className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
             </div>
             <div className="sm:col-span-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Expert Explanation *</label>
+              <label className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Expert Explanation *</label>
               <textarea value={q.explanation} onChange={f('explanation')} rows={3}
                 placeholder="Explain why this answer is correct, referencing official documentation or best practices..."
                 className="w-full rounded-xl px-3 py-2 text-sm resize-none focus:outline-none" style={inputStyle} />
@@ -1005,8 +1181,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
       )}
 
       {/* Footer */}
-      <div className="flex gap-2 justify-end px-5 pb-4 pt-2 border-t border-white/6">
-        <button onClick={onCancel} className="text-xs text-slate-500 hover:text-slate-300 px-3 py-1.5 rounded-lg">Cancel</button>
+      <div className="flex gap-2 justify-end px-5 pb-4 pt-2 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.06)' }}>
+        <button onClick={onCancel} className={`text-xs px-3 py-1.5 rounded-lg ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}>Cancel</button>
         <button onClick={save} disabled={saving}
           className="text-xs font-bold text-white px-5 py-1.5 rounded-xl disabled:opacity-40"
           style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
@@ -1018,6 +1194,8 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
 }
 
 function QuestEditorPanel({ course, weeks, accent }) {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const [quests, setQuests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [addingQuest, setAddingQuest] = useState(false);
@@ -1025,11 +1203,12 @@ function QuestEditorPanel({ course, weeks, accent }) {
 
   useEffect(() => {
     if (!course?.id) return;
+    setLoading(true);
     api.get(`/courses-api/${course.id}/quests`)
       .then(d => setQuests(Array.isArray(d) ? d : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [course?.id]);
+  }, [course?.id, weeks]);
 
   const addQuest = (q) => { setQuests(p => [...p, q]); setAddingQuest(false); };
   const updateQuest = (updated) => { setQuests(p => p.map(q => q.id === updated.id ? updated : q)); setEditingId(null); };
@@ -1042,11 +1221,11 @@ function QuestEditorPanel({ course, weeks, accent }) {
   const accentBg = { background: accent + '15', border: `1px solid ${accent}30`, color: accent };
 
   return (
-    <div className="mt-12 pt-8 border-t border-white/8">
+    <div className="mt-12 pt-8 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <h2 className="font-orbitron text-lg font-bold text-white">Quests</h2>
-          <span className="text-[10px] px-2 py-0.5 rounded font-bold border border-white/8 text-slate-500">
+          <h2 className={`font-orbitron text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Quests</h2>
+          <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${isLight ? 'text-slate-600' : 'text-slate-500'}`} style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
             {quests.length} quest{quests.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -1059,7 +1238,7 @@ function QuestEditorPanel({ course, weeks, accent }) {
         )}
       </div>
 
-      <p className="text-xs text-slate-600 mb-5">
+      <p className={`text-xs mb-5 ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>
         Scenario-based questions that learners answer to earn XP. Each quest has 4 options (A–D), one correct answer, and an expert explanation.
       </p>
 
@@ -1072,9 +1251,9 @@ function QuestEditorPanel({ course, weeks, accent }) {
       <div className="space-y-3">
         {loading && <div className="py-8 flex justify-center"><div className="w-5 h-5 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin"/></div>}
         {!loading && quests.length === 0 && !addingQuest && (
-          <div className="rounded-2xl p-10 text-center border border-dashed border-white/10">
-            <p className="text-slate-600 mb-2">No quests yet</p>
-            <p className="text-slate-700 text-sm">Add scenario-based quests for learners to complete</p>
+          <div className="rounded-2xl p-10 text-center border border-dashed" style={{ borderColor: isLight ? 'rgba(148,163,184,0.24)' : 'rgba(255,255,255,0.10)', background: isLight ? 'rgba(255,255,255,0.72)' : 'transparent' }}>
+            <p className={isLight ? 'text-slate-600 mb-2' : 'text-slate-600 mb-2'}>No quests yet</p>
+            <p className={isLight ? 'text-slate-500 text-sm' : 'text-slate-700 text-sm'}>Add scenario-based quests for learners to complete</p>
           </div>
         )}
         {quests.map((q, i) => (
@@ -1082,12 +1261,12 @@ function QuestEditorPanel({ course, weeks, accent }) {
             {editingId === q.id ? (
               <QuestForm initialData={q} courseId={course.id} weeks={weeks} onSave={updateQuest} onCancel={() => setEditingId(null)} />
             ) : (
-              <div className="rounded-xl border border-white/7 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="rounded-xl border overflow-hidden" style={{ background: isLight ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.20)' : 'rgba(255,255,255,0.07)', boxShadow: isLight ? '0 10px 24px rgba(15,23,42,0.04)' : 'none' }}>
                 <div className="flex items-center gap-3 px-4 py-3">
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded font-orbitron flex-shrink-0" style={accentBg}>Q{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{q.title}</p>
-                    <p className="text-xs text-slate-500 truncate mt-0.5">{q.scenario.slice(0, 90)}…</p>
+                    <p className={`text-sm font-semibold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{q.title}</p>
+                    <p className={`text-xs truncate mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{q.scenario.slice(0, 90)}…</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {(q.moduleId || (Array.isArray(q.learnTopics) && q.learnTopics.length > 0) || (Array.isArray(q.learnResources) && q.learnResources.length > 0)) && (
@@ -1095,9 +1274,9 @@ function QuestEditorPanel({ course, weeks, accent }) {
                         📖 {Array.isArray(q.learnTopics) ? q.learnTopics.length : 0}s {Array.isArray(q.learnResources) ? q.learnResources.length : 0}r
                       </span>
                     )}
-                    <span className="text-[10px] text-slate-600">✓ {q.correct} · {q.xp} XP</span>
+                    <span className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>✓ {q.correct} · {q.xp} XP</span>
                   </div>
-                  <button onClick={() => setEditingId(q.id)} className="text-slate-600 hover:text-slate-300 flex-shrink-0 ml-2"><Edit2 size={13} /></button>
+                  <button onClick={() => setEditingId(q.id)} className={`flex-shrink-0 ml-2 ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-600 hover:text-slate-300'}`}><Edit2 size={13} /></button>
                   <button onClick={() => deleteQuest(q.id)} className="text-slate-700 hover:text-red-400 flex-shrink-0"><Trash2 size={13} /></button>
                 </div>
               </div>

@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { getQuest } from '../data/index.js';
 import { SOLUTION_CENTER, VIDEO_LINKS, QUEST_MORE_VIDEOS } from '../data/solutionCenter.js';
-import SolutionCenterOverview from '../components/SolutionCenterOverview.jsx';
 
 // ── Architecture Diagram SVG Component ──────────────────────────────────────
 const COL_X = [0, 78, 192, 312, 430, 548, 665];  // indexed by col (1-6)
@@ -186,8 +185,6 @@ export default function SolutionCenter() {
   const quest = getQuest(questId);
   const data = SOLUTION_CENTER[questId];
 
-  const seenKey = 'ai-quest-sc-seen';
-  const [showOverview, setShowOverview] = useState(() => !localStorage.getItem(seenKey));
   const [step, setStep] = useState(0);
   const [videoInfo, setVideoInfo] = useState(null); // { label, url, embedUrl }
 
@@ -236,15 +233,6 @@ export default function SolutionCenter() {
 
   return (
     <>
-      {showOverview && (
-        <SolutionCenterOverview
-          onContinue={(dontShow) => {
-            if (dontShow) localStorage.setItem(seenKey, '1');
-            setShowOverview(false);
-          }}
-        />
-      )}
-
       <div
         className="fixed inset-0 flex flex-col select-none"
         style={{ background: 'linear-gradient(160deg, #020b14 0%, #030d1c 100%)' }}

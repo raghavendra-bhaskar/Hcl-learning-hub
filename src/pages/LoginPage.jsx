@@ -4,6 +4,7 @@ import { OktaAuth } from '@okta/okta-auth-js';
 import { Eye, EyeOff } from 'lucide-react';
 import { api, storeToken, clearToken } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
+import HCLSoftwareWordmark from '../components/HCLSoftwareWordmark.jsx';
 
 const AUTH_KEY = 'hcl-quest-auth';
 
@@ -136,10 +137,13 @@ export default function LoginPage() {
             style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #7c3aed 100%)', boxShadow: '0 0 48px rgba(6,182,212,0.45), 0 0 80px rgba(124,58,237,0.2)' }}>
             <span className="font-orbitron font-black text-xl text-white tracking-tighter">HCL</span>
           </div>
-          <h1 className="font-orbitron text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent mb-2">
-            Software Learning Hub
-          </h1>
-          <p className="text-slate-500 text-sm">HCL Software · Gamified Learning Across all Technology Tracks</p>
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <HCLSoftwareWordmark textClassName="text-4xl text-white" />
+            <h1 className="font-orbitron text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 bg-clip-text text-transparent">
+              Learning Hub
+            </h1>
+          </div>
+          <p className="text-slate-400 text-sm">HCL Software · Gamified Learning Across all Technology Tracks</p>
         </div>
 
         {/* Main card */}

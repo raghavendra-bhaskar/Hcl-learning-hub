@@ -8,7 +8,8 @@ import AITutor from '../components/AITutor.jsx';
 export default function DevOpsQuiz() {
   const { questId } = useParams();
   const navigate = useNavigate();
-  const { completeDevOpsQuest } = useAppStore();
+  const { completeDevOpsQuest, theme } = useAppStore();
+  const isLight = theme === 'light';
   const quest = getDevOpsQuest(questId);
 
   const [current, setCurrent] = useState(0);
@@ -63,29 +64,29 @@ export default function DevOpsQuiz() {
   const isWrong = revealed && selected !== question.correct;
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
       {/* Header */}
       <header
         className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5"
-        style={{ background: 'rgba(3,10,20,0.88)' }}
+        style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}
       >
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-3">
           <button
             onClick={() => navigate(`/devops-loop/quest/${questId}`)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+            className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
           >
             <ArrowLeft size={14} />
             Exit
           </button>
           <div className="flex-1 mx-4">
-            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isLight ? 'rgba(148,163,184,0.2)' : 'rgba(255,255,255,0.08)' }}>
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #f97316, #ef4444)' }}
               />
             </div>
           </div>
-          <span className="text-xs text-slate-400 shrink-0">{current + 1}/{quest.questions.length}</span>
+          <span className={`text-xs shrink-0 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{current + 1}/{quest.questions.length}</span>
         </div>
       </header>
 
@@ -96,9 +97,9 @@ export default function DevOpsQuiz() {
           <span className="text-2xl">{quest.icon}</span>
           <div>
             <p className="text-orange-400 text-xs font-bold">{quest.subtitle}</p>
-            <p className="text-white text-sm font-semibold">{quest.title}</p>
+            <p className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{quest.title}</p>
           </div>
-          <div className="ml-auto flex items-center gap-1.5 text-yellow-400 text-xs font-bold">
+          <div className={`ml-auto flex items-center gap-1.5 text-xs font-bold ${isLight ? 'text-slate-700' : 'text-yellow-400'}`}>
             <Zap size={13} />
             {quest.xp} XP
           </div>
@@ -107,35 +108,35 @@ export default function DevOpsQuiz() {
         {/* Scenario */}
         <div
           className="rounded-2xl p-5 mb-6"
-          style={{ background: 'rgba(249,115,22,0.07)', border: '1px solid rgba(249,115,22,0.2)' }}
+          style={{ background: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(249,115,22,0.07)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(249,115,22,0.2)' }}
         >
-          <p className="text-slate-300 text-sm leading-relaxed">{question.scenario}</p>
+          <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{question.scenario}</p>
         </div>
 
         {/* Question */}
-        <h2 className="text-white font-bold text-lg mb-5">{question.question}</h2>
+        <h2 className={`font-bold text-lg mb-5 ${isLight ? 'text-slate-900' : 'text-white'}`}>{question.question}</h2>
 
         {/* Options */}
         <div className="space-y-3 mb-6">
           {question.options.map((opt, idx) => {
             let borderColor = 'rgba(255,255,255,0.08)';
-            let bg = 'rgba(255,255,255,0.02)';
-            let textColor = '#94a3b8';
+            let bg = isLight ? 'rgba(255,255,255,0.82)' : 'rgba(255,255,255,0.02)';
+            let textColor = isLight ? '#334155' : '#94a3b8';
 
             if (selected === idx && !revealed) {
               borderColor = 'rgba(249,115,22,0.5)';
               bg = 'rgba(249,115,22,0.1)';
-              textColor = '#fed7aa';
+              textColor = isLight ? '#9a3412' : '#fed7aa';
             }
             if (revealed && idx === question.correct) {
               borderColor = 'rgba(16,185,129,0.5)';
               bg = 'rgba(16,185,129,0.1)';
-              textColor = '#6ee7b7';
+              textColor = isLight ? '#065f46' : '#6ee7b7';
             }
             if (revealed && selected === idx && idx !== question.correct) {
               borderColor = 'rgba(239,68,68,0.5)';
               bg = 'rgba(239,68,68,0.1)';
-              textColor = '#fca5a5';
+              textColor = isLight ? '#991b1b' : '#fca5a5';
             }
 
             return (
@@ -146,7 +147,7 @@ export default function DevOpsQuiz() {
                 className="w-full text-left px-5 py-4 rounded-xl text-sm font-medium transition-all"
                 style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor, cursor: revealed ? 'default' : 'pointer' }}
               >
-                <span className="font-bold mr-3" style={{ color: textColor === '#94a3b8' ? '#475569' : textColor }}>
+                <span className="font-bold mr-3" style={{ color: (textColor === '#94a3b8' || textColor === '#334155') ? '#475569' : textColor }}>
                   {String.fromCharCode(65 + idx)}.
                 </span>
                 {opt}
@@ -164,10 +165,10 @@ export default function DevOpsQuiz() {
               border: `1px solid ${isCorrect ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
             }}
           >
-            <p className="font-bold text-sm mb-2" style={{ color: isCorrect ? '#6ee7b7' : '#fca5a5' }}>
+            <p className="font-bold text-sm mb-2" style={{ color: isCorrect ? (isLight ? '#065f46' : '#6ee7b7') : (isLight ? '#991b1b' : '#fca5a5') }}>
               {isCorrect ? '✅ Correct!' : '❌ Incorrect'}
             </p>
-            <p className="text-slate-400 text-xs leading-relaxed">{question.explanation}</p>
+            <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-400'}`}>{question.explanation}</p>
           </div>
         )}
 

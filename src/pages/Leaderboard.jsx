@@ -12,30 +12,31 @@ const RANK_ICONS = ['🥇', '🥈', '🥉'];
 
 export default function Leaderboard() {
   const navigate = useNavigate();
-  const { leaderboard, playerName, totalXP, earnedBadges, completedQuests, levelInfo, avatar, resetProgress } = useAppStore();
+  const { leaderboard, playerName, totalXP, earnedBadges, completedQuests, levelInfo, avatar, resetProgress, theme } = useAppStore();
+  const isLight = theme === 'light';
 
   const completedCount = Object.keys(completedQuests).length;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ background: isLight ? 'linear-gradient(160deg, #fffbeb 0%, #f8fafc 60%, #fff7ed 100%)' : undefined }}>
       <Header />
       <div className="max-w-4xl mx-auto px-4 py-10">
         <div className="flex items-center gap-4 mb-10">
-          <button onClick={() => navigate('/paths')} className="text-slate-500 hover:text-slate-300 transition-colors">
+          <button onClick={() => navigate('/paths')} className={`transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}>
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="font-orbitron text-4xl font-black bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
+            <h1 className={`font-orbitron text-4xl font-black bg-clip-text text-transparent ${isLight ? 'bg-gradient-to-r from-yellow-600 to-orange-600' : 'bg-gradient-to-r from-yellow-400 to-orange-400'}`}>
               Leaderboard
             </h1>
-            <p className="text-slate-400 text-sm mt-1">Team AI Quest Rankings</p>
+            <p className={`text-sm mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Team AI Quest Rankings</p>
           </div>
           <div className="ml-auto text-4xl animate-float">🏆</div>
         </div>
 
         {/* Player card */}
         {playerName && (
-          <div className="glass-card rounded-2xl p-6 mb-8 border border-cyan-500/20 neon-blue">
+          <div className="glass-card rounded-2xl p-6 mb-8 border" style={{ borderColor: isLight ? 'rgba(8,145,178,0.25)' : 'rgba(6,182,212,0.2)', boxShadow: isLight ? '0 4px 20px rgba(8,145,178,0.10)' : undefined }}>
             <div className="flex items-center gap-4 mb-5">
               {avatar
                 ? <AvatarDisplay avatar={avatar} size="md" />
@@ -47,7 +48,7 @@ export default function Leaderboard() {
               }
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-bold text-xl text-white">{playerName}</h2>
+                  <h2 className={`font-bold text-xl ${isLight ? 'text-slate-900' : 'text-white'}`}>{playerName}</h2>
                   <span className="text-lg">{levelInfo.icon}</span>
                   <button
                     onClick={() => navigate('/avatar')}
@@ -70,23 +71,23 @@ export default function Leaderboard() {
 
             <XPBar xp={totalXP} />
 
-            <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-white/5">
+            <div className={`grid grid-cols-3 gap-4 mt-5 pt-5 border-t ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
               <div className="text-center">
-                <p className="text-2xl font-bold text-white">{completedCount}</p>
+                <p className={`text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{completedCount}</p>
                 <p className="text-xs text-slate-500">Quests Done</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-white">{earnedBadges.length}</p>
+                <p className={`text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{earnedBadges.length}</p>
                 <p className="text-xs text-slate-500">Badges</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-white">{Math.round((completedCount / QUESTS.length) * 100)}%</p>
+                <p className={`text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{Math.round((completedCount / QUESTS.length) * 100)}%</p>
                 <p className="text-xs text-slate-500">Completion</p>
               </div>
             </div>
 
             {earnedBadges.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-white/5">
+              <div className={`mt-4 pt-4 border-t ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
                 <p className="text-xs text-slate-500 mb-2">Earned Badges</p>
                 <div className="flex gap-2 flex-wrap">
                   {earnedBadges.map(badge => (
@@ -105,12 +106,12 @@ export default function Leaderboard() {
         )}
 
         {/* Leaderboard table */}
-        <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
-          <div className="px-6 py-4 border-b border-white/5 flex items-center gap-2">
+        <div className="glass-card rounded-2xl overflow-hidden border" style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
+          <div className={`px-6 py-4 border-b flex items-center gap-2 ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
             <Medal size={16} className="text-yellow-400" />
-            <h2 className="font-semibold text-white">Team Rankings</h2>
+            <h2 className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Team Rankings</h2>
           </div>
-          <div className="divide-y divide-white/5">
+          <div className={`divide-y ${isLight ? 'divide-slate-200' : 'divide-white/5'}`}>
             {leaderboard.map((member, idx) => (
               <div
                 key={member.id}
@@ -145,7 +146,7 @@ export default function Leaderboard() {
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <p className={`font-semibold truncate ${member.isYou ? 'text-cyan-300' : 'text-white'}`}>
+                  <p className={`font-semibold truncate ${member.isYou ? (isLight ? 'text-cyan-700' : 'text-cyan-300') : (isLight ? 'text-slate-900' : 'text-white')}`}>
                     {member.name}
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">

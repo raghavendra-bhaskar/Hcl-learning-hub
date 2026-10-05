@@ -9,7 +9,8 @@ import AITutor from '../components/AITutor.jsx';
 export default function Quiz() {
   const { questId } = useParams();
   const navigate = useNavigate();
-  useAppStore();
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
 
   const quest = getQuest(questId);
   const path = quest ? getPath(quest.pathId) : null;
@@ -67,14 +68,20 @@ export default function Quiz() {
   const progressPct = ((currentQ) / quest.questions.length) * 100;
 
   const getOptionStyle = (idx) => {
-    if (selected === null) return 'border-white/10 hover:border-cyan-500/40 hover:bg-white/5 cursor-pointer';
-    if (idx === question.correct) return 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300';
-    if (idx === selected && idx !== question.correct) return 'border-red-500/60 bg-red-500/10 text-red-300';
-    return 'border-white/5 opacity-50';
+    if (selected === null) return isLight
+      ? 'border-slate-200 hover:border-cyan-500/50 hover:bg-cyan-50 cursor-pointer text-slate-800'
+      : 'border-white/10 hover:border-cyan-500/40 hover:bg-white/5 cursor-pointer';
+    if (idx === question.correct) return isLight
+      ? 'border-emerald-500/60 bg-emerald-50 text-emerald-800'
+      : 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300';
+    if (idx === selected && idx !== question.correct) return isLight
+      ? 'border-red-500/60 bg-red-50 text-red-800'
+      : 'border-red-500/60 bg-red-500/10 text-red-300';
+    return isLight ? 'border-slate-100 opacity-50' : 'border-white/5 opacity-50';
   };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #f5f0ff 100%)' : undefined }}>
       <Header />
       <div className="max-w-3xl mx-auto px-4 py-8">
         <AITutor courseSlug="ai-quest" />
@@ -82,7 +89,7 @@ export default function Quiz() {
         <div className="flex items-center justify-between mb-6">
           <button
             onClick={() => navigate(`/quest/${questId}`)}
-            className="flex items-center gap-1.5 text-slate-500 hover:text-slate-300 transition-colors text-sm"
+            className={`flex items-center gap-1.5 transition-colors text-sm ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
           >
             <ArrowLeft size={14} />
             Exit Quest
@@ -97,7 +104,7 @@ export default function Quiz() {
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 bg-white/10 rounded-full mb-8 overflow-hidden">
+        <div className={`h-1.5 rounded-full mb-8 overflow-hidden ${isLight ? 'bg-slate-200' : 'bg-white/10'}`}>
           <div
             className={`h-full bg-gradient-to-r ${path?.gradient || 'from-cyan-400 to-violet-400'} rounded-full transition-all duration-500`}
             style={{ width: `${progressPct}%` }}
@@ -116,19 +123,19 @@ export default function Quiz() {
           <span className="text-2xl">{quest.icon}</span>
           <div>
             <p className="text-xs text-slate-500">{quest.subtitle}</p>
-            <p className="text-sm font-medium text-slate-300">{quest.title}</p>
+            <p className={`text-sm font-medium ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{quest.title}</p>
           </div>
         </div>
 
         {/* Scenario box */}
-        <div className="glass-card rounded-2xl p-5 mb-4 border border-cyan-500/10 bg-gradient-to-br from-cyan-950/30 to-transparent">
-          <p className="text-xs font-semibold text-cyan-400 uppercase tracking-widest mb-2">Scenario</p>
-          <p className="text-slate-300 leading-relaxed text-sm">{question.scenario}</p>
+        <div className="glass-card rounded-2xl p-5 mb-4 border" style={{ borderColor: isLight ? 'rgba(8,145,178,0.2)' : 'rgba(6,182,212,0.1)', background: isLight ? 'rgba(240,249,255,0.8)' : undefined }}>
+          <p className={`text-xs font-semibold uppercase tracking-widest mb-2 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}>Scenario</p>
+          <p className={`leading-relaxed text-sm ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{question.scenario}</p>
         </div>
 
         {/* Question */}
         <div className="mb-6">
-          <h2 className="text-lg font-semibold text-white leading-relaxed mb-5">
+          <h2 className={`text-lg font-semibold leading-relaxed mb-5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
             {question.question}
           </h2>
 
@@ -144,7 +151,7 @@ export default function Quiz() {
                     ? 'bg-emerald-500 text-white'
                     : selected === idx && idx !== question.correct
                     ? 'bg-red-500 text-white'
-                    : 'bg-white/10 text-slate-300'
+                    : (isLight ? 'bg-slate-100 text-slate-600' : 'bg-white/10 text-slate-300')
                 }`}>
                   {selected !== null && idx === question.correct
                     ? <CheckCircle size={14} />
@@ -171,11 +178,11 @@ export default function Quiz() {
                 ? <CheckCircle size={18} className="text-emerald-400" />
                 : <XCircle size={18} className="text-orange-400" />
               }
-              <span className={`font-semibold text-sm ${isCorrect ? 'text-emerald-300' : 'text-orange-300'}`}>
+              <span className={`font-semibold text-sm ${isCorrect ? (isLight ? 'text-emerald-700' : 'text-emerald-300') : (isLight ? 'text-orange-700' : 'text-orange-300')}`}>
                 {isCorrect ? `Correct! +${question.xpReward} XP` : 'Not quite — here\'s why:'}
               </span>
             </div>
-            <p className="text-slate-300 text-sm leading-relaxed">{question.explanation}</p>
+            <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{question.explanation}</p>
           </div>
         )}
 
@@ -201,7 +208,7 @@ export default function Quiz() {
                   i === currentQ ? 'w-6 bg-cyan-400'
                   : answered?.correct ? 'w-3 bg-emerald-400'
                   : answered ? 'w-3 bg-red-400'
-                  : 'w-3 bg-white/15'
+                  : (isLight ? 'w-3 bg-slate-300' : 'w-3 bg-white/15')
                 }`}
               />
             );

@@ -184,13 +184,19 @@ cd ~/software/hcl-learning-hub
 bash deploy/start.sh        # PostgreSQL + API + UI, one command
 bash deploy/stop.sh         # stops UI + API (data intact)
 bash deploy/sync.sh         # backup DB -> git pull -> deps -> migrate -> restart
+bash deploy/sync.sh --version 1.0.1   # same sync, but tag this rollout with a product version
+bash deploy/sync.sh --code-only  # git pull -> deps -> Prisma client -> restart; no DB work
+bash deploy/rollback.sh     # roll back to the previous recorded version + backup
+bash deploy/uninstall.sh    # stop and remove the source deployment from this VM
 ```
 
 | Script | Options |
 |---|---|
 | `start.sh` | `--foreground` to run attached to the terminal |
 | `stop.sh` | `--with-db` to stop PostgreSQL too |
-| `sync.sh` | `--restore <dump>`, `--no-restart`, `--backup-only` |
+| `sync.sh` | `--version <label>`, `--code-only`, `--restore <dump>`, `--no-restart`, `--backup-only` |
+| `rollback.sh` | `--to-version <label>`, `--restore <dump>`, `--no-restore`, `--no-restart`, `--yes` |
+| `uninstall.sh` | `--no-backup`, `--purge-db`, `--purge-backups`, `--yes` |
 
 `sync.sh` is what you run after any further development. It **always takes a
 database backup first** into `backups/` (keeping the 10 most recent), then stops
@@ -198,13 +204,62 @@ the Hub, pulls the branch, reinstalls dependencies, regenerates the Prisma
 client, applies new migrations and starts everything again. Local edits are
 stashed automatically rather than blocking the pull.
 
+Each sync can now be tagged with your own rollout number using
+`--version <label>`. Release metadata is written into `releases/`:
+
+- `releases/current-release.env`
+- `releases/previous-release.env`
+- `releases/release-<timestamp>-<commit>.env`
+
+That metadata is what `deploy/rollback.sh` uses to jump back to the previous
+source version.
+
+For a **code-only rollout** on a VM where `pg_dump` is unavailable or the
+database is managed separately, run `bash deploy/sync.sh --code-only`. It pulls
+GitHub changes, refreshes dependencies, regenerates the Prisma client, and
+restarts the application. It deliberately does not back up, migrate, or restore
+the database.
+
 Logs and state live in the install directory:
 
 ```bash
 tail -f logs/hub.log        # combined API + UI output
 cat .deploy-credentials     # admin password, DB password (mode 600)
 ls backups/                 # pre-sync database dumps
+ls releases/                # rollout version metadata used by rollback.sh
 ```
+
+### VM sync and versioned rollout steps
+
+For your VM `blmycldtl596461.nonprod.hclpnp.com`, the normal source upgrade flow is:
+
+```bash
+cd ~/software/hcl-learning-hub
+git status
+bash deploy/sync.sh --version 1.0.1
+```
+
+What happens during that sync:
+
+1. A new database dump is created in `backups/`.
+2. `backups/latest.dump` is refreshed to point to the newest dump copy.
+3. The current app is stopped.
+4. The latest Git code is pulled.
+5. Dependencies and Prisma client are refreshed.
+6. Migrations run.
+7. The app restarts on the upgraded code.
+8. Rollout metadata is written into `releases/`.
+
+If you want a rollback later:
+
+```bash
+cd ~/software/hcl-learning-hub
+bash deploy/rollback.sh                 # go to previous recorded release
+bash deploy/rollback.sh --to-version 1.0.1
+```
+
+`rollback.sh` takes a fresh **safety backup first**, then checks out the earlier
+commit and restores the matching pre-sync dump unless you pass `--no-restore`.
 
 ### Database backup and restore
 
@@ -225,6 +280,9 @@ cd ~/software/hcl-learning-hub
 bash deploy/sync.sh --backup-only      # -> backups/hcl-hub-<timestamp>.dump
 ```
 
+`deploy/sync.sh` also refreshes `backups/latest.dump` every time it creates a
+new backup, so the most recent dump is always easy to find.
+
 That is safe while the Hub is running — `pg_dump` takes a consistent snapshot
 and does not lock the application out.
 
@@ -243,10 +301,72 @@ Restore a dump (this **overwrites** current data):
 
 ```bash
 bash deploy/sync.sh --restore backups/hcl-hub-20260928-140000.dump
+bash deploy/sync.sh --restore latest
 ```
 
 `--no-owner --no-acl` on dump and `--clean --if-exists` on restore are what let a
 dump taken on one VM load cleanly onto another where roles may differ.
+
+The files in `scripts/` such as `scripts/backup.dump` and `scripts/backup1.dump`
+are static dump files kept in the repository for install/restore scenarios. New
+operational backups created on the VM are written under `backups/`, not back into
+`scripts/`.
+
+### Rollback and uninstall
+
+Rollback script:
+
+```bash
+cd ~/software/hcl-learning-hub
+bash deploy/rollback.sh
+bash deploy/rollback.sh --to-version 1.0.1
+bash deploy/rollback.sh --to-version 1.0.1 --no-restore
+```
+
+Uninstall script:
+
+```bash
+cd ~/software/hcl-learning-hub
+bash deploy/uninstall.sh
+bash deploy/uninstall.sh --purge-db --purge-backups --yes
+```
+
+`uninstall.sh` stops the application first and, by default, takes one final
+backup before removing the source deployment.
+
+### Kubernetes or not?
+
+Not every deployment of this project runs on Kubernetes.
+
+- `deploy/` scripts = **source deployment on a VM**, not Kubernetes
+- `hcl-learning-hub-setup.sh` and `k8s/` = **k3s / Kubernetes deployment path**
+- `packaging/` = offline container bundle path
+
+So if you install with `deploy/install.sh` on the VM, that VM is running the Hub
+directly from source with PostgreSQL as a service. It is **not** using k3s pods.
+
+If you want to check whether a host is running the Kubernetes flavor:
+
+```bash
+k3s kubectl get ns hcl-learning-hub
+k3s kubectl get deploy,sts,svc,pods -n hcl-learning-hub
+k3s kubectl get pods -n hcl-learning-hub -o wide
+```
+
+Expected main workloads in k3s mode are:
+
+- `deployment/web`
+- `deployment/api`
+- `statefulset/postgres`
+
+There is also a helper validator:
+
+```bash
+bash scripts/validate.sh
+```
+
+That script auto-detects whether the host is running `k3s`, `podman`, `docker`,
+or no container runtime, and prints the current pod/container state.
 
 ### Automatic backups from a Windows laptop
 

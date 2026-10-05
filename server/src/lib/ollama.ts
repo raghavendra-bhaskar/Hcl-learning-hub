@@ -11,14 +11,27 @@ export function normalizeEndpoint(value: string): string {
   return endpoint.origin;
 }
 
-export async function ollamaRequest(endpoint: string, path: '/api/tags' | '/api/ps' | '/api/chat', body?: unknown) {
-  const response = await fetch(`${normalizeEndpoint(endpoint)}${path}`, {
-    method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(body ? 120_000 : 10_000),
-    redirect: 'error',
-  });
+export async function ollamaRequest(
+  endpoint: string,
+  path: '/api/tags' | '/api/ps' | '/api/chat',
+  body?: unknown,
+  requestOptions?: { timeoutMs?: number },
+) {
+  let response: Response;
+  try {
+    response = await fetch(`${normalizeEndpoint(endpoint)}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(requestOptions?.timeoutMs ?? (body ? 300_000 : 10_000)),
+      redirect: 'error',
+    });
+  } catch (error) {
+    if ((error as Error).name === 'TimeoutError') {
+      throw new Error('Ollama request timed out. Check connectivity, choose a smaller/faster model, or shorten the prompt.');
+    }
+    throw new Error(`Ollama request failed. Check that the backend server can reach the configured endpoint and that the Ollama server is running. ${(error as Error).message || ''}`.trim());
+  }
   if (!response.ok) {
     await response.body?.cancel();
     throw new Error(`Ollama returned HTTP ${response.status}. Check the endpoint and installed model.`);
@@ -31,7 +44,7 @@ export async function ollamaRequest(endpoint: string, path: '/api/tags' | '/api/
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > 2_000_000) {
+    if (size > 4_000_000) {
       await reader.cancel();
       throw new Error('Ollama response exceeded the size limit.');
     }

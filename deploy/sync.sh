@@ -14,7 +14,9 @@
 #
 # Usage:
 #   bash deploy/sync.sh
+#   bash deploy/sync.sh --code-only       # pull code, refresh deps, regenerate Prisma, restart
 #   bash deploy/sync.sh --restore backups/hcl-hub-20260928-120000.dump
+#   bash deploy/sync.sh --version 1.0.1   # tag this sync with a product version label
 #   bash deploy/sync.sh --no-restart      # leave the Hub stopped
 #   bash deploy/sync.sh --backup-only     # just take a dump and exit
 # ============================================================
@@ -31,19 +33,56 @@ fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
 
+resolve_restore_file() {
+  local requested="$1"
+  local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
+  local latest=""
+
+  if [ -n "$requested" ] && [ -f "$requested" ]; then
+    printf '%s\n' "$requested"
+    return 0
+  fi
+
+  if [ -n "$requested" ] && [ "$requested" != "latest" ]; then
+    for dir in "${dirs[@]}"; do
+      if [ -f "$dir/$requested" ]; then
+        printf '%s\n' "$dir/$requested"
+        return 0
+      fi
+    done
+  fi
+
+  latest="$({
+    ls -1t "$INSTALL_DIR"/backups/*.dump 2>/dev/null || true
+    ls -1t "$INSTALL_DIR"/scripts/*.dump 2>/dev/null || true
+    ls -1t /tmp/*.dump 2>/dev/null || true
+  } | head -1)"
+
+  [ -n "$latest" ] || return 1
+  printf '%s\n' "$latest"
+}
+
 RESTORE_FILE=""
 NO_RESTART=false
 BACKUP_ONLY=false
+CODE_ONLY=false
+VERSION_LABEL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --restore)     RESTORE_FILE="$2"; shift 2 ;;
+    --version)     VERSION_LABEL="$2"; shift 2 ;;
     --no-restart)  NO_RESTART=true; shift ;;
     --backup-only) BACKUP_ONLY=true; shift ;;
+    --code-only)   CODE_ONLY=true; shift ;;
     -h|--help)     sed -n '2,21p' "$0"; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
+
+if [ "$CODE_ONLY" = true ] && { [ "$BACKUP_ONLY" = true ] || [ -n "$RESTORE_FILE" ]; }; then
+  fail "--code-only cannot be combined with --backup-only or --restore"
+fi
 
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
@@ -58,27 +97,40 @@ if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 cd "$INSTALL_DIR"
 
 CREDS="$INSTALL_DIR/.deploy-credentials"
-[ -f "$CREDS" ] || fail "Missing $CREDS — run deploy/install.sh first"
-DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
-[ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+
+if [ "$CODE_ONLY" = false ]; then
+  [ -f "$CREDS" ] || fail "Missing $CREDS — run deploy/install.sh first"
+  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
+  [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+fi
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$INSTALL_DIR/backups"
 BACKUP_FILE="$BACKUP_DIR/hcl-hub-${TIMESTAMP}.dump"
-mkdir -p "$BACKUP_DIR"
+LATEST_BACKUP_FILE="$BACKUP_DIR/latest.dump"
+RELEASES_DIR="$INSTALL_DIR/releases"
+CURRENT_RELEASE_FILE="$RELEASES_DIR/current-release.env"
+PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
+if [ "$CODE_ONLY" = false ]; then
+  mkdir -p "$BACKUP_DIR"
+  mkdir -p "$RELEASES_DIR"
+  banner "Sync — step 1/7: Back up the current database"
 
-banner "Sync — step 1/7: Back up the current database"
+  if PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+       --format=custom --no-owner --no-acl -f "$BACKUP_FILE" 2>/dev/null; then
+    ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+    cp -f "$BACKUP_FILE" "$LATEST_BACKUP_FILE"
+    ok "Latest backup pointer updated: $LATEST_BACKUP_FILE"
+  else
+    fail "pg_dump failed. Is PostgreSQL running? Nothing has been changed. Use --code-only to deploy code without a database backup."
+  fi
 
-if PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-     --format=custom --no-owner --no-acl -f "$BACKUP_FILE" 2>/dev/null; then
-  ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+  # Keep the 10 most recent backups.
+  ls -1t "$BACKUP_DIR"/hcl-hub-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
+  ok "Retaining the 10 most recent backups"
 else
-  fail "pg_dump failed. Is PostgreSQL running? Nothing has been changed."
+  banner "Code-only sync: database backup, migration and restore are skipped"
 fi
-
-# Keep the 10 most recent backups.
-ls -1t "$BACKUP_DIR"/hcl-hub-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
-ok "Retaining the 10 most recent backups"
 
 if [ "$BACKUP_ONLY" = true ]; then
   ok "--backup-only: done. The Hub was not touched."
@@ -116,10 +168,16 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 
 BEFORE="$(git rev-parse --short HEAD)"
+BEFORE_FULL="$(git rev-parse HEAD)"
 git fetch origin "$GIT_BRANCH" || fail "git fetch failed (token expired or no network?)"
 git checkout "$GIT_BRANCH" >/dev/null 2>&1 || true
 git pull --ff-only origin "$GIT_BRANCH" || fail "git pull failed — resolve manually, then re-run"
 AFTER="$(git rev-parse --short HEAD)"
+AFTER_FULL="$(git rev-parse HEAD)"
+PACKAGE_VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo '0.0.0')"
+DEFAULT_VERSION_LABEL="${PACKAGE_VERSION}-${TIMESTAMP}-${AFTER}"
+PRODUCT_VERSION="${VERSION_LABEL:-$DEFAULT_VERSION_LABEL}"
+RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-${AFTER}.env"
 
 if [ "$BEFORE" = "$AFTER" ]; then
   ok "Already up to date ($AFTER)"
@@ -127,6 +185,23 @@ else
   ok "Updated ${BEFORE} -> ${AFTER}"
   git --no-pager log --oneline "${BEFORE}..${AFTER}" | head -20 || true
 fi
+
+mkdir -p "$RELEASES_DIR"
+[ -f "$CURRENT_RELEASE_FILE" ] && cp -f "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
+cat > "$RELEASE_FILE" <<EOF
+RELEASE_TIMESTAMP=${TIMESTAMP}
+PRODUCT_VERSION=${PRODUCT_VERSION}
+GIT_BRANCH=${GIT_BRANCH}
+PREVIOUS_COMMIT=${BEFORE_FULL}
+CURRENT_COMMIT=${AFTER_FULL}
+PREVIOUS_SHORT_COMMIT=${BEFORE}
+CURRENT_SHORT_COMMIT=${AFTER}
+PRE_SYNC_BACKUP=${BACKUP_FILE}
+RESTORE_SOURCE=${RESTORE_FILE}
+SYNC_MODE=$([ "$CODE_ONLY" = true ] && echo code-only || echo full)
+EOF
+cp -f "$RELEASE_FILE" "$CURRENT_RELEASE_FILE"
+ok "Release metadata recorded: ${PRODUCT_VERSION}"
 
 banner "Sync — step 4/7: Dependencies"
 npm install --no-fund --no-audit
@@ -136,13 +211,19 @@ ok "Dependencies up to date"
 banner "Sync — step 5/7: Prisma client and migrations"
 npm run prisma:generate --prefix server >/dev/null
 ok "Prisma client regenerated"
-npm run prisma:deploy --prefix server \
-  || warn "migrate deploy reported an issue — check above"
-ok "Migrations applied"
+if [ "$CODE_ONLY" = false ]; then
+  npm run prisma:deploy --prefix server \
+    || warn "migrate deploy reported an issue — check above"
+  ok "Migrations applied"
+else
+  info "--code-only: database migrations skipped"
+fi
 
 banner "Sync — step 6/7: Optional restore"
-if [ -n "$RESTORE_FILE" ]; then
-  [ -f "$RESTORE_FILE" ] || fail "Restore file not found: $RESTORE_FILE"
+if [ "$CODE_ONLY" = true ]; then
+  info "--code-only: database restore skipped"
+elif [ -n "$RESTORE_FILE" ]; then
+  RESTORE_FILE="$(resolve_restore_file "$RESTORE_FILE")" || fail "Restore file not found: $RESTORE_FILE"
   info "Restoring $RESTORE_FILE (this overwrites current data)..."
   MAGIC="$(head -c 5 "$RESTORE_FILE" | tr -d '\0' || true)"
   RESTORE_LOG="$INSTALL_DIR/restore-${TIMESTAMP}.log"
@@ -170,4 +251,9 @@ fi
 bash "$SCRIPT_DIR/start.sh"
 
 echo ""
-ok "Sync complete. Pre-sync backup: $BACKUP_FILE"
+if [ "$CODE_ONLY" = true ]; then
+  ok "Code-only sync complete. No database backup or migration was run."
+else
+  ok "Sync complete. Version: $PRODUCT_VERSION"
+  ok "Pre-sync backup: $BACKUP_FILE"
+fi

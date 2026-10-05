@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, SkipForward, Sparkles, Zap } from 'lucide-react';
 
-export default function QuestLaunchSequence({ quest, module = 'ai', cta = 'Enter Quest', onComplete }) {
+export default function QuestLaunchSequence({ quest, module = 'ai', cta = 'Enter Quest', onComplete, autoAdvance = false }) {
   const [ready, setReady] = useState(false);
   const isDevOps = module === 'devops';
   const isDb = module === 'db';
@@ -20,6 +20,12 @@ export default function QuestLaunchSequence({ quest, module = 'ai', cta = 'Enter
       window.removeEventListener('keydown', onKey);
     };
   }, [onComplete, ready]);
+
+  useEffect(() => {
+    if (!ready || !autoAdvance) return;
+    const timer = setTimeout(() => onComplete(), 320);
+    return () => clearTimeout(timer);
+  }, [autoAdvance, onComplete, ready]);
 
   return (
     <div className={`quest-launch quest-launch-${accent}`} role="dialog" aria-label={`Launching ${quest.title}`}>
@@ -93,7 +99,7 @@ export default function QuestLaunchSequence({ quest, module = 'ai', cta = 'Enter
           className={`quest-launch-enter ${ready ? 'is-ready' : ''}`}
         >
           {ready ? <Sparkles size={17} /> : null}
-          {ready ? cta : 'Preparing Mission'}
+          {ready ? (autoAdvance ? 'Opening Module' : cta) : 'Preparing Mission'}
           {ready ? <ArrowRight size={17} /> : null}
         </button>
       </div>

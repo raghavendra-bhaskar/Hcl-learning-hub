@@ -7,10 +7,12 @@ const defaultState = {
   playerName: '',
   avatar: null,
   tutorialShown: false,
+  theme: 'dark',
   totalXP: 0,
   completedQuests: {},
   earnedBadges: [],
   devopsCompletedQuests: {},
+  courseCompletedQuests: {},
   devopsTotalXP: 0,
   dbCourses: [],        // not persisted — loaded fresh each session
   teamMembers: [
@@ -43,6 +45,13 @@ export const useStore = () => {
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  useEffect(() => {
+    try {
+      document.documentElement.dataset.theme = state.theme === 'light' ? 'light' : 'dark';
+      document.body.dataset.theme = state.theme === 'light' ? 'light' : 'dark';
+    } catch {}
+  }, [state.theme]);
 
   const setPlayerName = useCallback((name) => {
     setState(s => ({ ...s, playerName: name }));
@@ -86,6 +95,32 @@ export const useStore = () => {
     });
   }, []);
 
+  const completeCourseQuest = useCallback((courseSlug, questId, score, xpEarned, meta = {}) => {
+    if (!courseSlug || !questId) return;
+    setState(s => {
+      const courseState = s.courseCompletedQuests[courseSlug] || {};
+      const existing = courseState[questId];
+      if (existing && existing.score >= score) return s;
+      const xpDiff = xpEarned - (existing?.xpEarned || 0);
+      return {
+        ...s,
+        totalXP: s.totalXP + xpDiff,
+        courseCompletedQuests: {
+          ...s.courseCompletedQuests,
+          [courseSlug]: {
+            ...courseState,
+            [questId]: {
+              score,
+              xpEarned,
+              completedAt: Date.now(),
+              title: meta.title || '',
+            },
+          },
+        },
+      };
+    });
+  }, []);
+
   const resetProgress = useCallback(() => {
     setState({ ...defaultState, teamMembers: defaultState.teamMembers });
     localStorage.removeItem(STORAGE_KEY);
@@ -93,6 +128,10 @@ export const useStore = () => {
 
   const setDbCourses = useCallback((courses) => {
     setState(s => ({ ...s, dbCourses: courses }));
+  }, []);
+
+  const setTheme = useCallback((theme) => {
+    setState(s => ({ ...s, theme: theme === 'light' ? 'light' : 'dark' }));
   }, []);
 
   const levelInfo = getLevelInfo(state.totalXP);
@@ -104,5 +143,5 @@ export const useStore = () => {
       : null,
   ].filter(Boolean).sort((a, b) => b.xp - a.xp);
 
-  return { ...state, levelInfo, leaderboard, setPlayerName, setAvatar, markTutorialShown, completeQuest, completeDevOpsQuest, resetProgress, setDbCourses };
+  return { ...state, levelInfo, leaderboard, setPlayerName, setAvatar, markTutorialShown, completeQuest, completeDevOpsQuest, completeCourseQuest, resetProgress, setDbCourses, setTheme };
 };

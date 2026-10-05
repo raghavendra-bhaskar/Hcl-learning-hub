@@ -119,31 +119,30 @@ export default function HelpButton() {
       {/* ── Floating Help Button ── */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-16 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full font-bold text-sm text-white shadow-lg transition-all hover:scale-105 active:scale-95"
+        className="group fixed bottom-5 right-4 z-50 flex items-center justify-center gap-2 h-10 w-10 hover:w-40 px-3 overflow-hidden rounded-full text-white shadow-lg transition-all duration-300 ease-out active:scale-95"
         style={{
           background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-          boxShadow: '0 0 20px rgba(124,58,237,0.5), 0 4px 16px rgba(0,0,0,0.4)',
+          boxShadow: '0 0 14px rgba(124,58,237,0.45), 0 3px 10px rgba(0,0,0,0.3)',
           border: '1px solid rgba(167,139,250,0.4)',
         }}
         title="Help Session"
       >
-        <MessageCircleQuestion size={18} />
-        <span>Help Session</span>
+        <MessageCircleQuestion size={17} className="shrink-0" />
+        <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold opacity-0 transition-all duration-300 group-hover:max-w-[7rem] group-hover:opacity-100">
+          Help Session
+        </span>
       </button>
 
-      {/* ── Modal ── */}
+      {/* ── Docked Panel ── */}
       {open && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
-        >
+        <>
+          <button className="fixed inset-0 z-[99]" onClick={() => setOpen(false)} aria-label="Close help panel" />
           <div
-            className="relative w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl p-6 sm:p-8 text-center"
+            className="fixed right-4 bottom-16 z-[100] w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-2xl p-4 text-center"
             style={{
               background: 'linear-gradient(160deg, #0b1220 0%, #0d1a2e 100%)',
               border: '1.5px solid rgba(124,58,237,0.5)',
-              boxShadow: '0 0 60px rgba(124,58,237,0.2), 0 20px 60px rgba(0,0,0,0.6)',
+              boxShadow: '0 18px 44px rgba(0,0,0,0.52), 0 0 28px rgba(124,58,237,0.14)',
             }}
           >
             {/* Close */}
@@ -178,15 +177,15 @@ export default function HelpButton() {
             </div>
 
             {/* Icon */}
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-3"
               style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(79,70,229,0.3))', border: '1px solid rgba(167,139,250,0.4)' }}>
-              <MessageCircleQuestion size={32} style={{ color: '#a78bfa' }} />
+              <MessageCircleQuestion size={20} style={{ color: '#a78bfa' }} />
             </div>
 
-            <h2 className="font-orbitron text-xl font-bold text-white mb-2">Need Help?</h2>
+            <h2 className="font-orbitron text-base font-bold text-white mb-2">Need Help?</h2>
             <AITutor mode={selectedIsCourse ? 'course' : 'help'} courseSlug={selectedIsCourse ? dbCourseSlug : undefined}
               title={selectedIsCourse ? `${selectedTitle} AI Help` : 'AI Help'} onNavigate={() => setOpen(false)} />
-            <p className="text-slate-400 text-sm leading-relaxed mb-5">
+            <p className="text-slate-400 text-xs leading-relaxed mb-4">
               {selectedIsDevOps
                 ? 'Questions about DevOps Loop installation, quests, or curriculum? Reach out via the DevOps Loop Support Google Space.'
                 : selectedIsAIQuest
@@ -213,7 +212,7 @@ export default function HelpButton() {
             )}
 
             {/* Moderator card */}
-            <div className="flex items-center gap-4 rounded-xl p-4 mb-5 text-left"
+            <div className="flex items-center gap-4 rounded-xl p-4 mb-4 text-left"
               style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)' }}>
               <div className="w-11 h-11 rounded-full flex items-center justify-center text-lg font-black flex-shrink-0 text-white"
                 style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', border: '2px solid rgba(167,139,250,0.5)' }}>
@@ -229,7 +228,7 @@ export default function HelpButton() {
 
             {/* Google Space button */}
             <button onClick={() => window.open(space.url, '_blank', 'noopener,noreferrer')}
-              className="flex flex-col items-center justify-center gap-1 w-full py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:opacity-90 active:scale-95"
+              className="flex flex-col items-center justify-center gap-1 w-full py-3 rounded-xl font-bold text-sm text-white transition-all hover:opacity-90 active:scale-95"
               style={{ background: `linear-gradient(135deg, ${space.color}, ${space.color}cc)`, boxShadow: `0 0 18px ${space.glow}` }}>
               <div className="flex items-center gap-2">
                 <span className="text-base leading-none">💬</span>
@@ -242,7 +241,7 @@ export default function HelpButton() {
               Google Chat will open in a new tab — sign in with your HCL account.
             </p>
           </div>
-        </div>
+        </>
       )}
     </>
   );

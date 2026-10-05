@@ -11,7 +11,8 @@ import { getQuestLab } from '../data/externalLinks.js';
 export default function QuestDetail() {
   const { questId } = useParams();
   const navigate = useNavigate();
-  const { completedQuests } = useAppStore();
+  const { completedQuests, theme } = useAppStore();
+  const isLight = theme === 'light';
   const [showBrief, setShowBrief] = useState(false);
 
   const quest = getQuest(questId);
@@ -31,38 +32,38 @@ export default function QuestDetail() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #f5f0ff 100%)' : undefined }}>
       <Header />
       <div className="max-w-3xl mx-auto px-4 py-10">
         <button
           onClick={() => navigate('/paths')}
-          className="flex items-center gap-2 text-slate-400 hover:text-slate-200 mb-8 transition-colors"
+          className={`flex items-center gap-2 mb-8 transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'}`}
         >
           <ArrowLeft size={16} />
           Back to Learning Paths
         </button>
 
         {/* Quest header */}
-        <div className="glass-card rounded-3xl p-8 mb-6 border border-white/5">
+        <div className="glass-card rounded-3xl p-8 mb-6 border" style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
           <div className="flex items-start gap-5 mb-6">
             <div className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${path?.gradient || 'from-cyan-500 to-blue-600'} flex items-center justify-center text-4xl shadow-xl shrink-0`}>
               {quest.icon}
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">{quest.subtitle}</p>
-              <h1 className="font-orbitron text-3xl font-bold text-white mb-2">{quest.title}</h1>
-              <p className="text-slate-400 leading-relaxed">{quest.description}</p>
+              <h1 className={`font-orbitron text-3xl font-bold mb-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>{quest.title}</h1>
+              <p className={`leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{quest.description}</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-4 py-5 border-y border-white/5">
+          <div className={`flex flex-wrap gap-4 py-5 border-y ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
             <div className="flex items-center gap-2">
               <span className="text-slate-500 text-sm">Difficulty</span>
               <span className={`font-semibold text-sm ${quest.difficultyColor}`}>{quest.difficulty}</span>
             </div>
             <div className="flex items-center gap-2">
               <Clock size={14} className="text-slate-500" />
-              <span className="text-sm text-slate-300">{quest.timeEstimate}</span>
+              <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{quest.timeEstimate}</span>
             </div>
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-yellow-400" />
@@ -70,7 +71,7 @@ export default function QuestDetail() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-slate-500 text-sm">Questions</span>
-              <span className="text-sm text-slate-300">{quest.questions.length}</span>
+              <span className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{quest.questions.length}</span>
             </div>
           </div>
 
@@ -81,7 +82,7 @@ export default function QuestDetail() {
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-0.5">Completion Reward</p>
-              <p className="font-semibold text-white">{quest.badge.name} Badge</p>
+              <p className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{quest.badge.name} Badge</p>
               <p className="text-xs text-slate-400">Earn by completing all questions</p>
             </div>
             {completed && (
@@ -94,19 +95,19 @@ export default function QuestDetail() {
         </div>
 
         {/* What you will learn */}
-        <div className="glass-card rounded-2xl p-6 mb-6 border border-white/5">
-          <h2 className="font-semibold text-white mb-4">What You Will Learn</h2>
+        <div className="glass-card rounded-2xl p-6 mb-6 border" style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
+          <h2 className={`font-semibold mb-4 ${isLight ? 'text-slate-900' : 'text-white'}`}>What You Will Learn</h2>
           <div className="space-y-3">
             {quest.questions.map((q, i) => (
               <div key={q.id} className="flex items-start gap-3">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
                   completed
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'bg-white/5 text-slate-400 border border-white/10'
+                    : (isLight ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-white/5 text-slate-400 border border-white/10')
                 }`}>
                   {i + 1}
                 </div>
-                <p className="text-sm text-slate-400 leading-relaxed">{q.question}</p>
+                <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{q.question}</p>
               </div>
             ))}
           </div>
@@ -143,7 +144,7 @@ export default function QuestDetail() {
             </button>
             <button
               onClick={() => setShowBrief(true)}
-              className="flex items-center justify-center gap-2 py-3 glass-card rounded-2xl font-medium text-slate-300 border border-white/10 hover:border-cyan-500/30 hover:text-white transition-all text-sm"
+              className={`flex items-center justify-center gap-2 py-3 glass-card rounded-2xl font-medium border transition-all text-sm ${isLight ? 'text-slate-700 border-slate-200 hover:border-cyan-500/40 hover:text-slate-900' : 'text-slate-300 border-white/10 hover:border-cyan-500/30 hover:text-white'}`}
             >
               <BookOpen size={15} className="text-cyan-400" />
               View Story Brief (NPC Dialog)
@@ -153,7 +154,7 @@ export default function QuestDetail() {
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => navigate(`/solution/${questId}`)}
-              className="flex items-center justify-center gap-2 py-4 glass-card rounded-2xl font-bold text-white border border-cyan-500/20 hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all"
+              className={`flex items-center justify-center gap-2 py-4 glass-card rounded-2xl font-bold border transition-all ${isLight ? 'text-cyan-700 border-cyan-500/30 hover:border-cyan-500/50 hover:bg-cyan-50' : 'text-white border-cyan-500/20 hover:border-cyan-500/40 hover:bg-cyan-500/5'}`}
             >
               <BookOpen size={18} className="text-cyan-400" />
               Learn Again

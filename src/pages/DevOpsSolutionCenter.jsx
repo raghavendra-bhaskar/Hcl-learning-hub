@@ -7,7 +7,6 @@ import {
   DEVOPS_VIDEO_LINKS,
   DEVOPS_QUEST_MORE_VIDEOS,
 } from '../data/devopsSolutionCenter.js';
-import SolutionCenterOverview from '../components/SolutionCenterOverview.jsx';
 import { getEmbedUrl, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 
 function getYouTubeSearchEmbedUrl(url) {
@@ -238,9 +237,6 @@ function Tab({ num, label, active, first, last }) {
   );
 }
 
-// ── Overview modal (orange-themed wrapper around shared SolutionCenterOverview) ─
-const SEEN_KEY = 'devops-loop-sc-seen';
-
 // ── Main DevOpsSolutionCenter Page ───────────────────────────────────────────
 export default function DevOpsSolutionCenter() {
   const { questId } = useParams();
@@ -248,7 +244,6 @@ export default function DevOpsSolutionCenter() {
   const quest = getDevOpsQuest(questId);
   const data  = DEVOPS_SOLUTION_CENTER[questId];
 
-  const [showOverview, setShowOverview] = useState(() => !localStorage.getItem(SEEN_KEY));
   const [step,      setStep]      = useState(0);
   const [videoInfo, setVideoInfo] = useState(null);
 
@@ -300,15 +295,6 @@ export default function DevOpsSolutionCenter() {
 
   return (
     <>
-      {showOverview && (
-        <SolutionCenterOverview
-          onContinue={(dontShow) => {
-            if (dontShow) localStorage.setItem(SEEN_KEY, '1');
-            setShowOverview(false);
-          }}
-        />
-      )}
-
       <div className="fixed inset-0 flex flex-col select-none"
         style={{ background: 'linear-gradient(160deg, #0a0300 0%, #0d0502 100%)' }}>
 

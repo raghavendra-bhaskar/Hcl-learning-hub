@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Check, X, Zap, Trophy } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Check, X, Zap, Trophy, Moon, Sun } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
 import AvatarDisplay from '../components/AvatarDisplay.jsx';
@@ -10,10 +10,21 @@ const OPT_LABELS = { A: 'A', B: 'B', C: 'C', D: 'D' };
 const OPT_KEYS   = ['A', 'B', 'C', 'D'];
 const OPT_FIELDS = { A: 'optionA', B: 'optionB', C: 'optionC', D: 'optionD' };
 
+function cleanDisplayTitle(value, fallback = '') {
+  return String(value || fallback)
+    .replace(/^week\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^module\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^[A-Z]\.[\s-]*/i, '')
+    .replace(/\s+learning path$/i, '')
+    .replace(/\s+learn and practice$/i, '')
+    .trim() || fallback;
+}
+
 export default function CourseQuizPage() {
   const { slug, questId } = useParams();
   const navigate  = useNavigate();
-  const { playerName, avatar } = useAppStore();
+  const { theme, setTheme, playerName, avatar, completeCourseQuest } = useAppStore();
+  const isLight = theme === 'light';
 
   const [course, setCourse]     = useState(null);
   const [quest, setQuest]       = useState(null);
@@ -65,38 +76,49 @@ export default function CourseQuizPage() {
   const questIndex  = allQuests.findIndex(q => q.id === questId);
   const nextQuest   = questIndex >= 0 && questIndex < allQuests.length - 1 ? allQuests[questIndex + 1] : null;
   const isLast      = questIndex === allQuests.length - 1;
+  const displayQuestTitle = cleanDisplayTitle(quest.title, quest.title || `Quest ${questIndex + 1}`);
 
   const handleSubmit = () => {
     if (!selected) return;
     setSubmitted(true);
-    if (selected === quest.correct) setXpAwarded(quest.xp || 10);
+    if (selected === quest.correct) {
+      const earned = quest.xp || 10;
+      setXpAwarded(earned);
+      completeCourseQuest(slug, quest.id, 1, earned, { title: quest.title });
+    }
   };
 
   const optionStyle = (letter) => {
     if (!submitted) {
       return selected === letter
-        ? { background: accent + '22', border: `2px solid ${accent}`, color: '#e2e8f0' }
-        : { background: 'rgba(255,255,255,0.03)', border: '2px solid rgba(255,255,255,0.08)', color: '#94a3b8' };
+        ? { background: accent + '22', border: `2px solid ${accent}`, color: isLight ? '#0f172a' : '#e2e8f0' }
+        : { background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.03)', border: isLight ? '2px solid rgba(100,116,139,0.16)' : '2px solid rgba(255,255,255,0.08)', color: isLight ? '#334155' : '#94a3b8' };
     }
     if (letter === quest.correct)
-      return { background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.6)', color: '#6ee7b7' };
+      return { background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.6)', color: isLight ? '#065f46' : '#6ee7b7' };
     if (letter === selected && letter !== quest.correct)
-      return { background: 'rgba(239,68,68,0.12)', border: '2px solid rgba(239,68,68,0.5)', color: '#fca5a5' };
-    return { background: 'rgba(255,255,255,0.02)', border: '2px solid rgba(255,255,255,0.05)', color: '#475569' };
+      return { background: 'rgba(239,68,68,0.12)', border: '2px solid rgba(239,68,68,0.5)', color: isLight ? '#991b1b' : '#fca5a5' };
+    return { background: isLight ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.02)', border: isLight ? '2px solid rgba(100,116,139,0.14)' : '2px solid rgba(255,255,255,0.05)', color: isLight ? '#475569' : '#475569' };
   };
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-24" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5" style={{ background: 'rgba(3,10,20,0.88)' }}>
+      <header className="sticky top-0 z-40 backdrop-blur-md border-b" style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-3xl mx-auto px-4 h-14 flex items-center gap-3">
           <button onClick={() => navigate(`/c/${slug}/quests`)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
+            className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <ArrowLeft size={14} /> Quests
           </button>
-          <span className="text-slate-700">/</span>
-          <span className="text-xs font-semibold text-slate-300 truncate">{quest.title}</span>
+          <span className="text-slate-500">/</span>
+          <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{displayQuestTitle}</span>
           <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => setTheme(isLight ? 'dark' : 'light')}
+              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}
+              style={{ border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.03)' }}
+              title={isLight ? 'Dark mode' : 'Light mode'}>
+              {isLight ? <Moon size={13} /> : <Sun size={13} />}
+            </button>
             <span className="text-[11px] text-slate-500">
               {questIndex + 1} / {allQuests.length}
             </span>
@@ -108,7 +130,7 @@ export default function CourseQuizPage() {
       </header>
 
       {/* Progress bar */}
-      <div className="w-full h-1" style={{ background: 'rgba(255,255,255,0.05)' }}>
+      <div className="w-full h-1" style={{ background: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="h-full transition-all duration-500"
           style={{ width: `${((questIndex + 1) / allQuests.length) * 100}%`, background: `linear-gradient(90deg, ${accent}, ${accent}cc)` }} />
       </div>
@@ -121,15 +143,15 @@ export default function CourseQuizPage() {
             Quest {questIndex + 1} · {course.title}
           </span>
         </div>
-        <h1 className="text-xl font-bold text-white mb-8">{quest.title}</h1>
+        <h1 className={`text-xl font-bold mb-8 ${isLight ? 'text-slate-900' : 'text-white'}`}>{displayQuestTitle}</h1>
 
         {/* Scenario card */}
         <div className="rounded-2xl p-6 mb-8 border"
-          style={{ background: accent + '06', border: `1px solid ${accent}25` }}>
+          style={{ background: isLight ? 'rgba(255,255,255,0.82)' : accent + '06', border: isLight ? '1px solid rgba(100,116,139,0.14)' : `1px solid ${accent}25` }}>
           <p className="text-sm font-bold uppercase tracking-widest mb-3" style={{ color: accent }}>
             📋 Scenario
           </p>
-          <p className="text-slate-200 leading-relaxed">{quest.scenario}</p>
+          <p className={`leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{quest.scenario}</p>
         </div>
 
         {/* Answer options */}
@@ -144,7 +166,7 @@ export default function CourseQuizPage() {
             >
               <div className="flex items-center gap-4">
                 <span className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0"
-                  style={{ background: 'rgba(255,255,255,0.08)' }}>
+                  style={{ background: isLight ? 'rgba(15,23,42,0.08)' : 'rgba(255,255,255,0.08)', color: isLight ? '#0f172a' : undefined }}>
                   {letter}
                 </span>
                 <span className="flex-1 text-sm leading-relaxed">{quest[OPT_FIELDS[letter]]}</span>
@@ -183,23 +205,23 @@ export default function CourseQuizPage() {
                   </span>
                 )}
                 {isWrong && (
-                  <span className="ml-auto text-sm text-slate-500">
+                  <span className={`ml-auto text-sm ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>
                     Correct: Option {quest.correct}
                   </span>
                 )}
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">Expert Explanation</p>
-                <p className="text-sm text-slate-300 leading-relaxed">{quest.explanation}</p>
+                <p className={`text-[11px] font-bold uppercase tracking-widest mb-1.5 ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>Expert Explanation</p>
+                <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{quest.explanation}</p>
               </div>
             </div>
 
             {/* Commander feedback */}
             {playerName && (
-              <div className="flex items-center gap-3 glass-card rounded-xl p-4">
+              <div className="flex items-center gap-3 glass-card rounded-xl p-4" style={isLight ? { background: 'rgba(255,255,255,0.82)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
                 {avatar && <AvatarDisplay avatar={avatar} size="sm" />}
                 <div className="flex-1">
-                  <p className="text-xs text-slate-400">
+                  <p className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
                     {isCorrect
                       ? `Mission accomplished, ${playerName}! +${xpAwarded} XP added to your score.`
                       : `Don't give up, ${playerName}! Review the explanation and try the next quest.`}
@@ -211,7 +233,8 @@ export default function CourseQuizPage() {
             {/* Navigation */}
             <div className="flex gap-3">
               <button onClick={() => navigate(`/c/${slug}/quests`)}
-                className="flex-1 py-3.5 rounded-xl font-bold text-sm text-slate-300 hover:text-white glass-card transition-all">
+                className={`flex-1 py-3.5 rounded-xl font-bold text-sm glass-card transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
+                style={isLight ? { background: 'rgba(255,255,255,0.82)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
                 ← All Quests
               </button>
               {nextQuest ? (

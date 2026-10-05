@@ -3,13 +3,25 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, Target, Play } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { canEmbedResource, getEmbedUrl, isNativeVideoResource, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
+import { useAppStore } from '../App.jsx';
 
 // Resource types that can be embedded inline
 const EMBEDDABLE = ['youtube', 'video', 'playlist'];
 
+function cleanDisplayTitle(value, fallback = '') {
+  return String(value || fallback)
+    .replace(/^week\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^module\s*\d+\s*[:\-–—]?\s*/i, '')
+    .replace(/^[A-Z]\.[\s-]*/i, '')
+    .replace(/\s+learning path$/i, '')
+    .replace(/\s+learn and practice$/i, '')
+    .trim() || fallback;
+}
+
 export default function CourseLearnPage() {
   const { slug, questId } = useParams();
   const navigate = useNavigate();
+  const { theme } = useAppStore();
 
   const [course, setCourse]     = useState(null);
   const [quest, setQuest]       = useState(null);
@@ -67,8 +79,10 @@ export default function CourseLearnPage() {
   );
 
   const accent    = course.accentColor || '#06b6d4';
+  const isLight   = theme === 'light';
   const accentBg  = { background: accent + '18', border: `1px solid ${accent}30`, color: accent };
   const accentBtn = { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 4px 20px ${accent}40` };
+  const displayQuestTitle = cleanDisplayTitle(quest.title, quest.title || 'Learning Quest');
 
   // Extract solution request (stored as learnTopic with isSolutionRequest flag)
   const allTopicsRaw = Array.isArray(quest?.learnTopics) ? quest.learnTopics : [];
@@ -98,6 +112,7 @@ export default function CourseLearnPage() {
     || null;
   const frameEmbedUrl = frameResource ? getEmbedUrl(frameResource) : null;
   const frameUseNativeVideo = frameResource ? isNativeVideoResource(frameResource) : false;
+  const frameResolvedUrl = frameResource ? resolvePlayableUrl(frameResource) : '';
 
   // YouTube search URL for current step
   const ytSearchQuery = encodeURIComponent(`${course.title} ${quest.title} ${slide > 0 ? topics[slide - 1]?.content?.slice(0, 40) || '' : ''}`).trim();
@@ -108,17 +123,17 @@ export default function CourseLearnPage() {
   const nextQuest  = questIndex >= 0 && questIndex < allQuests.length - 1 ? allQuests[questIndex + 1] : null;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" style={{ background: isLight ? 'linear-gradient(160deg, #f8fafc 0%, #f1f5f9 55%, #eef2ff 100%)' : undefined }}>
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5 flex-shrink-0"
-        style={{ background: 'rgba(3,10,20,0.92)' }}>
+        style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(3,10,20,0.92)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
           <button onClick={() => navigate(`/c/${slug}/quests`)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors">
+            className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <ArrowLeft size={14} /> Quests
           </button>
-          <span className="text-slate-700">/</span>
-          <span className="text-xs font-semibold text-slate-300 truncate">{quest.title}</span>
+          <span className={isLight ? 'text-slate-300' : 'text-slate-700'}>/</span>
+          <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-slate-300'}`}>{quest.title}</span>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={() => navigate(`/c/${slug}/quiz/${questId}`)}
               className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
@@ -130,7 +145,7 @@ export default function CourseLearnPage() {
       </header>
 
       {/* Progress bar */}
-      <div className="w-full h-1 flex-shrink-0" style={{ background: 'rgba(255,255,255,0.05)' }}>
+      <div className="w-full h-1 flex-shrink-0" style={{ background: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="h-full transition-all duration-500"
           style={{ width: `${((slide + 1) / totalSlides) * 100}%`, background: `linear-gradient(90deg, ${accent}, ${accent}cc)` }} />
       </div>
@@ -144,16 +159,16 @@ export default function CourseLearnPage() {
             {/* Quest label */}
             <div className="mb-3">
               <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: accent }}>
-                📖 Learn · {course.title}
+                📖 Learn
               </span>
-              <h2 className="text-base font-bold text-white mt-1 leading-tight">{quest.title}</h2>
+              <h2 className={`text-base font-bold mt-1 leading-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>{displayQuestTitle}</h2>
             </div>
 
             {/* Solution Request pinned box */}
             {solutionRequest && (
-              <div className="mb-4 rounded-xl px-3 py-2.5 text-xs" style={{ background: accent + '10', border: `1px solid ${accent}25` }}>
+              <div className="mb-4 rounded-xl px-3 py-2.5 text-xs" style={{ background: isLight ? 'rgba(255,255,255,0.78)' : accent + '10', border: isLight ? '1px solid rgba(100,116,139,0.16)' : `1px solid ${accent}25` }}>
                 <p className="text-[9px] font-bold uppercase tracking-widest mb-1" style={{ color: accent }}>Solution Request</p>
-                <p className="text-slate-400 leading-relaxed">{solutionRequest}</p>
+                <p className={`leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{solutionRequest}</p>
               </div>
             )}
 
@@ -161,8 +176,8 @@ export default function CourseLearnPage() {
             <div className="space-y-1.5">
               {slides.map((s, i) => (
                 <button key={i} onClick={() => setSlide(i)}
-                  className={`w-full text-left rounded-xl px-3 py-2.5 text-xs transition-all ${slide === i ? 'font-bold' : 'text-slate-500 hover:text-slate-300'}`}
-                  style={slide === i ? { ...accentBg, fontWeight: 700 } : { background: 'rgba(255,255,255,0.02)' }}>
+                  className={`w-full text-left rounded-xl px-3 py-2.5 text-xs transition-all ${slide === i ? 'font-bold' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
+                  style={slide === i ? { ...accentBg, fontWeight: 700 } : { background: isLight ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid transparent' }}>
                   <span className="text-[10px] font-bold uppercase tracking-widest block mb-0.5 opacity-60">{s.label}</span>
                   <span className="line-clamp-2 leading-snug">{s.content.slice(0, 70)}{s.content.length > 70 ? '…' : ''}</span>
                 </button>
@@ -172,10 +187,10 @@ export default function CourseLearnPage() {
             {/* Resources sidebar */}
             {resources.length > 0 && (
               <div className="mt-6">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">Resources</p>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mb-2 ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>Resources</p>
                 <div className="space-y-1.5">
                   {slideResources.length === 0 && (
-                    <p className="text-[11px] text-slate-700 italic px-1 py-2">No resources for this step.</p>
+                    <p className={`text-[11px] italic px-1 py-2 ${isLight ? 'text-slate-600' : 'text-slate-700'}`}>No resources for this step.</p>
                   )}
                   {slideResources.map(r => {
                     const embeddable = EMBEDDABLE.includes(r.type) && canEmbedResource(r);
@@ -183,8 +198,10 @@ export default function CourseLearnPage() {
                     return (
                       <button key={r.id}
                         onClick={() => embeddable ? setActiveResource(r) : window.open(resolvePlayableUrl(r), '_blank', 'noopener,noreferrer')}
-                        className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                        style={isSelected ? { background: accent + '14', border: `1px solid ${accent}35`, color: '#fff' } : undefined}>
+                        className={`w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                        style={isSelected
+                          ? { background: accent + '14', border: `1px solid ${accent}35`, color: isLight ? '#0f172a' : '#fff' }
+                          : { background: isLight ? 'rgba(255,255,255,0.78)' : 'transparent', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid transparent' }}>
                         <span className="flex-shrink-0">
                           {r.type === 'youtube' || r.type === 'playlist' ? '▶' : r.type === 'video' ? '🎬' : r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}
                         </span>
@@ -202,30 +219,30 @@ export default function CourseLearnPage() {
           <div className="flex-1 min-w-0 flex flex-col gap-4">
             {/* Slide content card */}
             <div className="glass-card rounded-2xl p-6 flex-shrink-0"
-              style={{ borderColor: accent + '20', background: accent + '05' }}>
+              style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.8)' : accent + '05' }}>
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full" style={accentBg}>
                   {current.label}
                 </span>
-                <span className="text-[10px] text-slate-600">{slide + 1} / {totalSlides}</span>
+                <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{slide + 1} / {totalSlides}</span>
                 {/* YouTube search for this step */}
                 <a href={ytSearchUrl} target="_blank" rel="noopener noreferrer"
-                  className="ml-auto flex items-center gap-1 text-[10px] text-slate-600 hover:text-red-400 transition-colors"
+                  className={`ml-auto flex items-center gap-1 text-[10px] transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-600 hover:text-red-400'}`}
                   title="Find related videos on YouTube">
                   <span className="text-[11px]">▶</span> Find Videos
                 </a>
               </div>
-              <p className="text-slate-200 leading-relaxed text-sm whitespace-pre-wrap">{current.content}</p>
+              <p className={`leading-relaxed text-sm whitespace-pre-wrap ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{current.content}</p>
             </div>
 
             {/* Inline resources for this slide */}
             {slideResources.length > 0 && (
               <div className="glass-card rounded-2xl overflow-hidden flex-1 min-h-[360px]"
-                style={{ borderColor: accent + '20', background: 'rgba(3,10,20,0.7)' }}>
-                <div className="px-4 py-3 flex items-center gap-2 border-b border-white/8"
-                  style={{ background: accent + '08' }}>
+                style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(3,10,20,0.7)' }}>
+                <div className="px-4 py-3 flex items-center gap-2 border-b"
+                  style={{ background: isLight ? 'rgba(15,23,42,0.04)' : accent + '08', borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
                   <span className="text-sm">{frameResource ? (frameUseNativeVideo ? '🎬' : '▶') : '📚'}</span>
-                  <span className="text-xs font-semibold text-slate-200 truncate">{frameResource ? frameResource.label : 'Step Resources'}</span>
+                  <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>{frameResource ? frameResource.label : 'Step Resources'}</span>
                 </div>
 
                 {frameResource ? (
@@ -237,35 +254,50 @@ export default function CourseLearnPage() {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen title={frameResource.label} />
                     </div>
-                  ) : null
+                  ) : (
+                    <div className="p-6 flex flex-col items-center justify-center gap-4 min-h-[320px] text-center">
+                      <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>This resource cannot be embedded inside the page.</p>
+                      <a
+                        href={frameResolvedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isLight ? 'text-white' : 'text-white'}`}
+                        style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
+                        <Play size={14} /> Open resource in new tab
+                      </a>
+                    </div>
+                  )
                 ) : (
                   <div className="p-5 space-y-3">
                     {slideResources.map(r => (
                       <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm text-slate-300 hover:text-white hover:border-white/20 transition-all">
+                        className={`flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white hover:border-white/20'}`}
+                        style={isLight ? { background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
                         <span>{r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}</span>
                         {r.label}
-                        <span className="ml-auto text-xs text-slate-600">↗</span>
+                        <span className={`ml-auto text-xs ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>↗</span>
                       </a>
                     ))}
                   </div>
                 )}
 
                 {slideResources.length > 1 && (
-                  <div className="px-4 py-3 border-t border-white/8 flex flex-wrap gap-2">
+                  <div className="px-4 py-3 border-t flex flex-wrap gap-2" style={{ borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
                     {slideResources.map(r => {
                       const embeddable = canEmbedResource(r);
                       const selected = frameResource?.id === r.id;
                       return embeddable ? (
                         <button key={r.id} onClick={() => setActiveResource(r)}
                           className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                          style={selected ? { background: accent + '20', color: accent, border: `1px solid ${accent}40` } : { background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          style={selected
+                            ? { background: accent + '20', color: isLight ? '#0f172a' : accent, border: `1px solid ${accent}40` }
+                            : { background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
                           {r.label}
                         </button>
                       ) : (
                         <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
                           className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                          style={{ background: 'rgba(255,255,255,0.04)', color: '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          style={{ background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
                           {r.label} ↗
                         </a>
                       );
@@ -277,9 +309,9 @@ export default function CourseLearnPage() {
 
             {/* No module linked */}
             {!module && slides.length <= 1 && (
-              <div className="glass-card rounded-2xl p-8 text-center">
-                <p className="text-slate-600 text-sm">No learning content is linked to this quest yet.</p>
-                <p className="text-slate-700 text-xs mt-1">The admin can link a module to this quest in the Course Editor.</p>
+              <div className="glass-card rounded-2xl p-8 text-center" style={isLight ? { background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
+                <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>No learning content is linked to this quest yet.</p>
+                <p className={`text-xs mt-1 ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>The admin can link a module to this quest in the Course Editor.</p>
               </div>
             )}
           </div>
@@ -288,15 +320,15 @@ export default function CourseLearnPage() {
 
       {/* ── Bottom navigation bar ──────────────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-white/8"
-        style={{ background: 'rgba(3,10,20,0.96)', backdropFilter: 'blur(12px)' }}>
+        style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(3,10,20,0.96)', backdropFilter: 'blur(12px)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.08)' }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
           {/* Learn / Practice toggle */}
-          <div className="flex rounded-xl overflow-hidden border border-white/10 flex-shrink-0">
-            <div className="px-4 py-2 text-xs font-bold text-white" style={{ background: accent + '22', color: accent }}>
+          <div className="flex rounded-xl overflow-hidden flex-shrink-0" style={{ border: isLight ? '1px solid rgba(100,116,139,0.16)' : '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="px-4 py-2 text-xs font-bold" style={{ background: accent + '22', color: isLight ? '#0f172a' : accent }}>
               📖 Learn
             </div>
             <button onClick={() => navigate(`/c/${slug}/quiz/${questId}`)}
-              className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-white hover:bg-white/5 transition-all">
+              className={`px-4 py-2 text-xs font-bold transition-all ${isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}>
               🎯 Practice
             </button>
           </div>
@@ -305,13 +337,13 @@ export default function CourseLearnPage() {
 
           {/* Prev / slide counter / Next */}
           <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/8 disabled:opacity-30 transition-all">
+            className={`w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 transition-all ${isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70' : 'text-slate-500 hover:text-white hover:bg-white/8'}`}>
             <ChevronLeft size={16} />
           </button>
-          <span className="text-xs text-slate-500 tabular-nums">{slide + 1} / {totalSlides}</span>
+          <span className={`text-xs tabular-nums ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{slide + 1} / {totalSlides}</span>
           {slide < totalSlides - 1 ? (
             <button onClick={() => setSlide(s => Math.min(totalSlides - 1, s + 1))}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/8 transition-all">
+              className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isLight ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70' : 'text-slate-400 hover:text-white hover:bg-white/8'}`}>
               <ChevronRight size={16} />
             </button>
           ) : (

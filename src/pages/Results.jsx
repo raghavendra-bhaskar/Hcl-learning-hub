@@ -24,7 +24,8 @@ export default function Results() {
   const { questId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { completeQuest, completedQuests, totalXP } = useAppStore();
+  const { completeQuest, completedQuests, totalXP, theme } = useAppStore();
+  const isLight = theme === 'light';
   const savedRef = useRef(false);
 
   const quest = getQuest(questId);
@@ -56,22 +57,22 @@ export default function Results() {
     : { label: 'Keep Practicing!', icon: '💪', color: 'from-blue-400 to-violet-400' };
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #f5f0ff 100%)' : undefined }}>
       <Header />
       <Firework show={isGood} />
       <div className="max-w-2xl mx-auto px-4 py-10">
 
         {/* Score card */}
-        <div className="glass-card rounded-3xl p-8 mb-6 text-center border border-white/5 animate-scale-in">
+        <div className="glass-card rounded-3xl p-8 mb-6 text-center border animate-scale-in" style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
           <div className="text-6xl mb-3">{grade.icon}</div>
-          <h1 className="font-orbitron text-3xl font-black mb-1 bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+          <h1 className={`font-orbitron text-3xl font-black mb-1 bg-clip-text text-transparent ${isLight ? 'bg-gradient-to-r from-cyan-700 to-violet-700' : 'bg-gradient-to-r from-cyan-400 to-violet-400'}`}>
             {grade.label}
           </h1>
-          <p className="text-slate-400 mb-6 text-sm">{quest.title} — {quest.subtitle}</p>
+          <p className={`mb-6 text-sm ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{quest.title} — {quest.subtitle}</p>
 
           <div className="relative w-36 h-36 mx-auto mb-6">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke={isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.05)'} strokeWidth="8" />
               <circle
                 cx="50" cy="50" r="42" fill="none"
                 stroke="url(#scoreGrad)" strokeWidth="8"
@@ -88,7 +89,7 @@ export default function Results() {
               </defs>
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="font-orbitron text-3xl font-black text-white">{pct}%</span>
+              <span className={`font-orbitron text-3xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{pct}%</span>
               <span className="text-xs text-slate-400">{correctCount}/{totalQ}</span>
             </div>
           </div>
@@ -101,14 +102,14 @@ export default function Results() {
               </div>
               <p className="text-xs text-slate-500">XP Earned</p>
             </div>
-            <div className="w-px bg-white/10" />
+            <div className={`w-px ${isLight ? 'bg-slate-200' : 'bg-white/10'}`} />
             <div className="text-center">
-              <div className="text-xl font-bold text-white mb-0.5">{correctCount}</div>
+              <div className={`text-xl font-bold mb-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>{correctCount}</div>
               <p className="text-xs text-slate-500">Correct</p>
             </div>
-            <div className="w-px bg-white/10" />
+            <div className={`w-px ${isLight ? 'bg-slate-200' : 'bg-white/10'}`} />
             <div className="text-center">
-              <div className="text-xl font-bold text-white mb-0.5">{totalQ - correctCount}</div>
+              <div className={`text-xl font-bold mb-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>{totalQ - correctCount}</div>
               <p className="text-xs text-slate-500">Missed</p>
             </div>
           </div>
@@ -121,7 +122,7 @@ export default function Results() {
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-0.5">{isGood ? 'Badge Unlocked!' : 'Badge — Score 67%+ to unlock'}</p>
-            <p className="font-semibold text-white">{quest.badge.name}</p>
+            <p className={`font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{quest.badge.name}</p>
             <p className="text-xs text-slate-400">{quest.title}</p>
           </div>
           {isGood && (
@@ -132,8 +133,8 @@ export default function Results() {
         </div>
 
         {/* Question review */}
-        <div className="glass-card rounded-2xl p-6 mb-6 border border-white/5 animate-slide-up">
-          <h2 className="font-semibold text-white mb-4">Question Review</h2>
+        <div className="glass-card rounded-2xl p-6 mb-6 border animate-slide-up" style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)' }}>
+          <h2 className={`font-semibold mb-4 ${isLight ? 'text-slate-900' : 'text-white'}`}>Question Review</h2>
           <div className="space-y-4">
             {quest.questions.map((q, i) => {
               const answer = answers.find(a => a.questionId === q.id);
@@ -144,7 +145,7 @@ export default function Results() {
                     <span className={`text-sm font-bold shrink-0 ${wasCorrect ? 'text-emerald-400' : 'text-red-400'}`}>
                       {wasCorrect ? '✓' : '✗'}
                     </span>
-                    <p className="text-sm text-white font-medium leading-snug">{q.question}</p>
+                    <p className={`text-sm font-medium leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>{q.question}</p>
                   </div>
                   {!wasCorrect && (
                     <div className="ml-4">
@@ -171,14 +172,14 @@ export default function Results() {
         <div className="grid grid-cols-3 gap-3">
           <button
             onClick={() => navigate(`/quiz/${questId}`)}
-            className="flex flex-col items-center gap-2 py-4 glass-card rounded-xl border border-white/5 hover:border-white/10 transition-all text-sm text-slate-300"
+            className={`flex flex-col items-center gap-2 py-4 glass-card rounded-xl border transition-all text-sm ${isLight ? 'text-slate-700 border-slate-200 hover:border-slate-300' : 'text-slate-300 border-white/5 hover:border-white/10'}`}
           >
             <RotateCcw size={18} />
             Replay
           </button>
           <button
             onClick={() => navigate('/paths')}
-            className="flex flex-col items-center gap-2 py-4 glass-card rounded-xl border border-white/5 hover:border-white/10 transition-all text-sm text-slate-300"
+            className={`flex flex-col items-center gap-2 py-4 glass-card rounded-xl border transition-all text-sm ${isLight ? 'text-slate-700 border-slate-200 hover:border-slate-300' : 'text-slate-300 border-white/5 hover:border-white/10'}`}
           >
             <Map size={18} />
             All Quests

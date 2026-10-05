@@ -5,18 +5,21 @@ import { LEARNING_PATHS, QUESTS } from '../data/index.js';
 import Header from '../components/Header.jsx';
 
 function QuestCard({ quest, isCompleted, onClick }) {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const score = isCompleted?.score;
   return (
     <div
       onClick={onClick}
-      className="quest-card glass-card glass-card-hover rounded-2xl p-5 border border-white/5 group"
+      className="quest-card glass-card glass-card-hover rounded-2xl p-5 border group"
+      style={{ borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.05)', boxShadow: isLight ? '0 2px 12px rgba(0,0,0,0.07)' : 'none' }}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="text-3xl">{quest.icon}</div>
           <div>
             <p className="text-xs text-slate-500 mb-0.5">{quest.subtitle}</p>
-            <h3 className="font-semibold text-white text-sm leading-tight">{quest.title}</h3>
+            <h3 className={`font-semibold text-sm leading-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>{quest.title}</h3>
           </div>
         </div>
         {isCompleted ? (
@@ -26,7 +29,7 @@ function QuestCard({ quest, isCompleted, onClick }) {
         )}
       </div>
 
-      <p className="text-slate-500 text-xs leading-relaxed mb-4 line-clamp-2">{quest.description}</p>
+      <p className={`text-xs leading-relaxed mb-4 line-clamp-2 ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>{quest.description}</p>
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -48,10 +51,10 @@ function QuestCard({ quest, isCompleted, onClick }) {
       </div>
 
       {isCompleted && (
-        <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2">
+        <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
           <span className="text-xs text-slate-500">Badge:</span>
           <span className="text-sm">{quest.badge.icon}</span>
-          <span className="text-xs text-slate-400">{quest.badge.name}</span>
+          <span className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{quest.badge.name}</span>
         </div>
       )}
     </div>
@@ -60,7 +63,8 @@ function QuestCard({ quest, isCompleted, onClick }) {
 
 function PathSection({ path }) {
   const navigate = useNavigate();
-  const { completedQuests } = useAppStore();
+  const { completedQuests, theme } = useAppStore();
+  const isLight = theme === 'light';
   const pathQuests = path.quests.map(id => QUESTS.find(q => q.id === id)).filter(Boolean);
   const completedCount = pathQuests.filter(q => completedQuests[q.id]).length;
 
@@ -71,8 +75,8 @@ function PathSection({ path }) {
           {path.icon}
         </div>
         <div>
-          <h2 className="font-orbitron font-bold text-xl text-white">{path.title}</h2>
-          <p className="text-slate-400 text-sm">{path.description}</p>
+          <h2 className={`font-orbitron font-bold text-xl ${isLight ? 'text-slate-900' : 'text-white'}`}>{path.title}</h2>
+          <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{path.description}</p>
         </div>
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <span className="text-sm text-slate-400">{completedCount}/{pathQuests.length}</span>
@@ -102,18 +106,19 @@ function PathSection({ path }) {
 }
 
 export default function Paths() {
-  const { completedQuests } = useAppStore();
+  const { completedQuests, theme } = useAppStore();
+  const isLight = theme === 'light';
   const totalCompleted = Object.keys(completedQuests).length;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #f5f0ff 100%)' : undefined }}>
       <Header />
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="mb-10">
-          <h1 className="font-orbitron text-4xl font-black mb-2 bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+          <h1 className={`font-orbitron text-3xl md:text-4xl font-black mb-2 bg-clip-text text-transparent ${isLight ? 'bg-gradient-to-r from-cyan-700 to-violet-700' : 'bg-gradient-to-r from-cyan-400 to-violet-400'}`}>
             Learning Paths
           </h1>
-          <p className="text-slate-400">
+          <p className={isLight ? 'text-slate-700' : 'text-slate-400'}>
             {totalCompleted}/{QUESTS.length} quests completed across 5 AI learning paths
           </p>
         </div>

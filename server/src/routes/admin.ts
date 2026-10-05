@@ -5,6 +5,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma.js';
+import { createDatabaseBackup } from '../lib/dbBackup.js';
+import { getDeploymentStatus, getRollbackPreview, getUpgradePreview, startRollback, startUpgrade } from '../lib/deployment.js';
 import { requireRole } from '../middleware/requireRole.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +28,53 @@ function writeOidcConfig(data: Record<string, unknown>): void {
 export const adminRouter = Router();
 
 adminRouter.use(requireRole('ADMIN'));
+
+adminRouter.post('/db-backups', async (req, res) => {
+  try {
+    const rawLabel = typeof req.body?.label === 'string' ? req.body.label : 'manual-admin';
+    const backup = await createDatabaseBackup({ label: rawLabel });
+    res.status(201).json({ ok: true, backup });
+  } catch (error) {
+    console.error('[admin] db backup failed:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Database backup failed' });
+  }
+});
+
+adminRouter.get('/deployment/status', async (_req, res) => {
+  res.json(getDeploymentStatus('2'));
+});
+
+adminRouter.get('/deployment/upgrade-preview', async (_req, res) => {
+  res.json(await getUpgradePreview('2'));
+});
+
+adminRouter.get('/deployment/rollback-preview', async (req, res) => {
+  const version = typeof req.query?.version === 'string' ? req.query.version : undefined;
+  res.json(await getRollbackPreview(version, '2'));
+});
+
+adminRouter.post('/deployment/upgrade', async (req, res) => {
+  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '2';
+  const result = startUpgrade(version);
+  await prisma.setting.upsert({
+    where: { key: 'deployment.currentVersion' },
+    create: { key: 'deployment.currentVersion', value: version },
+    update: { value: version },
+  });
+  res.status(202).json(result);
+});
+
+adminRouter.post('/deployment/rollback', async (req, res) => {
+  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '';
+  if (!version) return res.status(400).json({ error: 'Rollback version is required.' });
+  const result = startRollback(version);
+  await prisma.setting.upsert({
+    where: { key: 'deployment.currentVersion' },
+    create: { key: 'deployment.currentVersion', value: version },
+    update: { value: version },
+  });
+  res.status(202).json(result);
+});
 
 adminRouter.get('/users', async (_req, res) => {
   const users = await (prisma.user as any).findMany({
@@ -152,6 +201,10 @@ const createLocalUserSchema = z.object({
   role:     z.enum(['ADMIN', 'MANAGER', 'USER']).default('USER'),
 });
 
+const transferOktaUsersSchema = z.object({
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
 adminRouter.post('/local-users', async (req, res) => {
   const parsed = createLocalUserSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -166,10 +219,43 @@ adminRouter.post('/local-users', async (req, res) => {
   res.status(201).json(safe);
 });
 
+adminRouter.post('/local-users/transfer-okta', async (req, res) => {
+  const parsed = transferOktaUsersSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const oktaUsers = await prisma.user.findMany({
+    where: { oktaSub: { not: null } },
+    select: { id: true, email: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+
+  if (oktaUsers.length === 0) {
+    return res.json({ transferred: 0, users: [] });
+  }
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  await prisma.$transaction(oktaUsers.map((user) => prisma.user.update({
+    where: { id: user.id },
+    data: {
+      isLocalUser: true,
+      passwordHash,
+      oktaSub: null,
+    },
+  })));
+
+  res.json({
+    transferred: oktaUsers.length,
+    users: oktaUsers.map((user) => ({ id: user.id, email: user.email, name: user.name })),
+  });
+});
+
 adminRouter.patch('/local-users/:id/password', async (req, res) => {
   const { password } = req.body as { password?: string };
   if (!password || password.length < 6)
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user.isLocalUser) return res.status(400).json({ error: 'Not a local user' });
   const hash = await bcrypt.hash(password, 10);
   await prisma.user.update({ where: { id: req.params.id }, data: { passwordHash: hash } });
   res.json({ ok: true });

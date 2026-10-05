@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
+import { useAppStore } from '../App.jsx';
 import LearnerTracker from './LearnerTracker.jsx';
 import AIProviderTab from '../components/AIProviderTab.jsx';
 
@@ -87,9 +88,9 @@ function RoleSelect({ userId, currentRole, onUpdated }) {
   );
 }
 
-function UserRow({ user, onUpdated, onDelete, allManagers }) {
+function UserRow({ user, onUpdated, onDelete, allManagers, isLight = false }) {
   const initials = (user.name || user.email || '?')
-    .split(' ').slice(0, 2).map(p => p[0]?.toUpperCase()).join('');
+    .split(' ').slice(0, 2).map(p => p[0]?.toUpperCase()).join('');  
 
   return (
     <tr className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
@@ -102,8 +103,8 @@ function UserRow({ user, onUpdated, onDelete, allManagers }) {
             {initials}
           </div>
           <div>
-            <p className="text-sm font-medium text-white">{user.name}</p>
-            <p className="text-[11px] text-slate-500">{user.email}</p>
+            <p className={`text-sm font-medium ${isLight ? 'text-slate-900' : 'text-white'}`}>{user.name}</p>
+            <p className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{user.email}</p>
           </div>
         </div>
       </td>
@@ -118,7 +119,7 @@ function UserRow({ user, onUpdated, onDelete, allManagers }) {
           onSaved={(newMgrs) => onUpdated({ ...user, assignedManagers: newMgrs.map(m => ({ manager: m })) })}
         />
       </td>
-      <td className="px-4 py-3 text-[11px] text-slate-600">
+      <td className={`px-4 py-3 text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>
         {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
       </td>
       <td className="px-4 py-3">
@@ -273,13 +274,19 @@ function ManagerAssign({ userId, assignedManagers, allManagers, onSaved }) {
 }
 
 // ── Shared style helpers ─────────────────────────────────────────────────────
-const cardStyle  = { background: 'rgba(3,10,20,0.6)', border: '1px solid rgba(255,255,255,0.06)' };
-const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' };
+const getCardStyle  = (L) => L
+  ? { background: '#ffffff', border: '1px solid rgba(100,116,139,0.20)', boxShadow: '0 2px 14px rgba(0,0,0,0.07)' }
+  : { background: 'rgba(3,10,20,0.60)', border: '1px solid rgba(255,255,255,0.06)' };
+const getInputStyle = (L) => L
+  ? { background: '#f1f5f9', border: '1px solid rgba(100,116,139,0.28)', color: '#0f172a' }
+  : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' };
+const getOnBlur  = (L) => (e) => (e.target.style.border = L ? '1px solid rgba(100,116,139,0.28)' : '1px solid rgba(255,255,255,0.08)');
 const onFocus    = (e) => (e.target.style.border = '1px solid rgba(6,182,212,0.4)');
-const onBlur     = (e) => (e.target.style.border = '1px solid rgba(255,255,255,0.08)');
 
 // ── Okta Users tab ───────────────────────────────────────────────────────────
 function OktaUsersTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const [users, setUsers]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -287,6 +294,7 @@ function OktaUsersTab() {
   const [filterRole, setFilterRole] = useState('ALL');
   const [syncing, setSyncing]   = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const [transferringOkta, setTransferringOkta] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true); setError('');
@@ -317,13 +325,35 @@ function OktaUsersTab() {
     finally { setSyncing(false); }
   };
 
+  const transferOktaUsers = async () => {
+    const password = window.prompt('Enter a password for the transferred local users (minimum 6 characters).');
+    if (password == null) return;
+    if (password.trim().length < 6) {
+      alert('Password must be at least 6 characters');
+      return;
+    }
+    setTransferringOkta(true);
+    try {
+      const result = await api.post('/admin/local-users/transfer-okta', { password: password.trim() });
+      const d = await api.get('/admin/users');
+      if (Array.isArray(d)) setUsers(d);
+      alert(`${result?.transferred || 0} Okta user(s) transferred to local accounts.`);
+    } catch (err) {
+      alert(err?.message || 'Transfer failed');
+    } finally {
+      setTransferringOkta(false);
+    }
+  };
+
   const allManagers = users.filter(u => u.role === 'MANAGER');
+  const oktaUserCount = users.filter(u => !!u.oktaSub).length;
 
   const handleDelete = async (id, name) => {
     if (!confirm(`Delete user "${name}"? This will remove all their progress data and cannot be undone.`)) return;
     try { await api.delete(`/admin/users/${id}`); setUsers(prev => prev.filter(u => u.id !== id)); }
     catch (err) { alert(err?.message || 'Failed to delete user'); }
   };
+
   const filtered = users.filter(u => {
     const ms = !search || u.name?.toLowerCase().includes(search.toLowerCase()) || u.email?.toLowerCase().includes(search.toLowerCase());
     return ms && (filterRole === 'ALL' || u.role === filterRole);
@@ -337,20 +367,20 @@ function OktaUsersTab() {
         {[['Learners','USER','#67e8f9'],['Managers','MANAGER','#fbbf24'],['Admins','ADMIN','#f87171']].map(([label,role,color]) => (
           <button key={role} onClick={() => setFilterRole(p => p === role ? 'ALL' : role)}
             className="rounded-xl p-4 text-left hover:scale-[1.02] transition-all"
-            style={{ background: filterRole===role ? `${color}22` : 'rgba(255,255,255,0.03)', border: `1px solid ${filterRole===role ? color+'55' : 'rgba(255,255,255,0.06)'}` }}>
+            style={{ background: filterRole===role ? `${color}22` : (isLight ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.03)'), border: `1px solid ${filterRole===role ? color+'55' : (isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.06)')}`, boxShadow: isLight ? '0 1px 6px rgba(0,0,0,0.06)' : 'none' }}>
             <p className="text-2xl font-black" style={{color}}>{counts[role]}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{label}</p>
+            <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{label}</p>
           </button>
         ))}
       </div>
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email…"
-          className="flex-1 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-          style={inputStyle} onFocus={onFocus} onBlur={onBlur} />
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 focus:outline-none ${isLight ? 'text-slate-900' : 'text-white'}`}
+          style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
         <div className="flex gap-2 flex-wrap">
           {['ALL',...ROLE_ORDER].map(r => (
             <button key={r} onClick={() => setFilterRole(r)} className="px-3 py-2 rounded-xl text-xs font-bold transition-all"
-              style={{ background: filterRole===r?'rgba(6,182,212,0.2)':'rgba(255,255,255,0.04)', border: filterRole===r?'1px solid rgba(6,182,212,0.4)':'1px solid rgba(255,255,255,0.08)', color: filterRole===r?'#67e8f9':'#64748b' }}>
+              style={{ background: filterRole===r?'rgba(6,182,212,0.2)':(isLight?'rgba(255,255,255,0.8)':'rgba(255,255,255,0.04)'), border: filterRole===r?'1px solid rgba(6,182,212,0.4)':(isLight?'1px solid rgba(100,116,139,0.2)':'1px solid rgba(255,255,255,0.08)'), color: filterRole===r?'#0891b2':(isLight?'#475569':'#64748b') }}>
               {r==='ALL'?'All':ROLE_LABELS[r]}
             </button>
           ))}
@@ -360,8 +390,14 @@ function OktaUsersTab() {
             title="Sync manager assignments from Okta Management API (requires API token in Authentication Realm)">
             {syncing ? '⏳ Syncing…' : '⟳ Sync Managers from Okta'}
           </button>
+          <button onClick={transferOktaUsers} disabled={transferringOkta || oktaUserCount === 0}
+            className="px-3 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5"
+            style={{ background:'rgba(124,58,237,0.12)', border:'1px solid rgba(124,58,237,0.3)', color:'#8b5cf6' }}
+            title="Convert every Okta-sourced user into a local account using one admin-provided password">
+            {transferringOkta ? '⏳ Transferring…' : `⇄ Transfer Okta to Local${oktaUserCount ? ` (${oktaUserCount})` : ''}`}
+          </button>
           <button onClick={() => { setLoading(true); setUsers([]); setTimeout(() => window.location.reload(), 10); }}
-            className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-300" style={inputStyle} title="Refresh">↻</button>
+            className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-300" style={getInputStyle(isLight)} title="Refresh">↻</button>
         </div>
       </div>
       {syncResult && (
@@ -385,22 +421,24 @@ function OktaUsersTab() {
           )}
         </div>
       )}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
-        {loading ? <div className="flex items-center justify-center py-20 gap-3"><div className="w-6 h-6 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin"/><span className="text-slate-500 text-sm">Loading…</span></div>
+      <div className="rounded-2xl overflow-hidden" style={getCardStyle(isLight)}>
+        {loading ? <div className="flex items-center justify-center py-20 gap-3"><div className="w-6 h-6 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin"/><span className={`text-sm ${isLight?'text-slate-500':'text-slate-500'}`}>Loading…</span></div>
          : error   ? <div className="py-20 text-center"><p className="text-red-400 text-sm mb-3">⚠ {error}</p></div>
-         : filtered.length===0 ? <div className="py-20 text-center text-slate-600 text-sm">No users match.</div>
+         : filtered.length===0 ? <div className={`py-20 text-center text-sm ${isLight?'text-slate-500':'text-slate-600'}`}>No users match.</div>
          : <div className="overflow-x-auto"><table className="w-full">
-              <thead><tr className="border-b border-white/5">{['User','Role','Manager','Joined','Source',''].map(h => <th key={h} className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-slate-600">{h}</th>)}</tr></thead>
-              <tbody>{filtered.map(u => <UserRow key={u.id} user={u} onUpdated={handleUpdated} onDelete={handleDelete} allManagers={allManagers}/>)}</tbody>
+              <thead><tr className={`border-b ${isLight?'border-slate-200':'border-white/5'}`}>{['User','Role','Manager','Joined','Source',''].map(h => <th key={h} className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest ${isLight?'text-slate-500':'text-slate-600'}`}>{h}</th>)}</tr></thead>
+              <tbody>{filtered.map(u => <UserRow key={u.id} user={u} onUpdated={handleUpdated} onDelete={handleDelete} allManagers={allManagers} isLight={isLight}/>)}</tbody>
            </table></div>}
       </div>
-      <p className="text-center text-slate-700 text-xs mt-3">{filtered.length} of {users.length} users · Click any role badge to change it</p>
+      <p className={`text-center text-xs mt-3 ${isLight?'text-slate-500':'text-slate-700'}`}>{filtered.length} of {users.length} users · Click any role badge to change it</p>
     </>
   );
 }
 
 // ── Local Users tab ──────────────────────────────────────────────────────────
 function LocalUsersTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const [localUsers, setLocalUsers] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [form, setForm]             = useState({ name:'', email:'', password:'', role:'USER' });
@@ -438,12 +476,27 @@ function LocalUsersTab() {
     catch(err) { alert(err?.message || 'Failed to delete'); }
   };
 
+  const handleResetPassword = async (user) => {
+    const password = window.prompt(`Enter a new password for ${user.name || user.email} (minimum 6 characters).`);
+    if (password == null) return;
+    if (password.trim().length < 6) {
+      alert('Password must be at least 6 characters');
+      return;
+    }
+    try {
+      await api.patch(`/admin/local-users/${user.id}/password`, { password: password.trim() });
+      setMsg({ text: `Password reset for ${user.email}`, ok: true });
+    } catch (err) {
+      setMsg({ text: err?.message || 'Failed to reset password', ok: false });
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Create form */}
-      <div className="rounded-2xl p-6" style={cardStyle}>
-        <h3 className="font-bold text-white mb-1">Create Local User</h3>
-        <p className="text-slate-500 text-xs mb-5">Accounts not linked to Okta — authenticated with email + password.</p>
+      <div className="rounded-2xl p-6" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>Create Local User</h3>
+        <p className={`text-xs mb-5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Accounts not linked to Okta — authenticated with email + password.</p>
         <form onSubmit={handleCreate} className="space-y-3">
           {[['Name','text','name','Full name'],['Email','email','email','user@example.com'],['Password','password','password','Min 6 characters']].map(([label,type,field,ph]) => (
             <div key={field}>
@@ -451,14 +504,14 @@ function LocalUsersTab() {
               <input type={type} value={form[field]} placeholder={ph}
                 onChange={e => setForm(f => ({...f,[field]:e.target.value}))}
                 className="w-full rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-                style={inputStyle} onFocus={onFocus} onBlur={onBlur}/>
+                style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
             </div>
           ))}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Role</label>
             <select value={form.role} onChange={e => setForm(f => ({...f,role:e.target.value}))}
               className="w-full rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
-              style={inputStyle}>
+              style={getInputStyle(isLight)}>
               {ROLE_ORDER.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
           </div>
@@ -472,7 +525,7 @@ function LocalUsersTab() {
       </div>
 
       {/* Local users list */}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+      <div className="rounded-2xl overflow-hidden" style={getCardStyle(isLight)}>
         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Local Accounts</span>
           <span className="text-[10px] text-slate-600">{localUsers.length} users</span>
@@ -487,10 +540,11 @@ function LocalUsersTab() {
                   {(u.name||u.email)[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{u.name}</p>
-                  <p className="text-[11px] text-slate-500 truncate">{u.email}</p>
+                  <p className={`text-sm font-medium truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{u.name}</p>
+                  <p className={`text-[11px] truncate ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{u.email}</p>
                 </div>
                 <RoleBadge role={u.role}/>
+                <button onClick={() => handleResetPassword(u)} className="text-[10px] font-bold px-2 py-1 rounded-lg transition-colors" style={{ background: 'rgba(6,182,212,0.12)', color: '#0891b2', border: '1px solid rgba(6,182,212,0.24)' }} title="Reset password">Reset Password</button>
                 <button onClick={() => handleDelete(u.id, u.name)} className="text-slate-600 hover:text-red-400 text-xs transition-colors ml-2" title="Delete">✕</button>
               </div>
             ))}
@@ -507,8 +561,11 @@ const PLATFORM_ROUTES = { 'devops-loop': '/devops-loop', 'ai-quest': '/ai-quest'
 const courseRoute = (slug) => PLATFORM_ROUTES[slug] || `/c/${slug}`;
 
 function CoursesTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const navigate = useNavigate();
   const [courses, setCourses]   = useState([]);
+  const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [creating, setCreating] = useState(false);
   const [form, setForm]         = useState({ title:'', slug:'', tagline:'', emoji:'📚', accentColor:'#06b6d4' });
@@ -518,16 +575,22 @@ function CoursesTab() {
   const [editForm, setEditForm]   = useState({});
   const [dragId, setDragId]       = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
+  const [moderatorCourseId, setModeratorCourseId] = useState(null);
+  const [moderatorSelection, setModeratorSelection] = useState([]);
+  const [moderatorSaving, setModeratorSaving] = useState(false);
+  const [backuping, setBackuping] = useState(false);
+  const [backupResult, setBackupResult] = useState(null);
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const d = await api.get('/courses-api');
+      const [d, userList] = await Promise.all([api.get('/courses-api'), api.get('/admin/users')]);
       const sorted = Array.isArray(d)
         ? [...d].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         : [];
       setCourses(sorted);
+      setUsers(Array.isArray(userList) ? userList : []);
     }
     catch (e) {
       const msg = e?.message || 'Failed to load courses';
@@ -556,8 +619,25 @@ function CoursesTab() {
 
   const deleteCourse = async (id, title) => {
     if (!confirm(`Delete course "${title}" and ALL its content?`)) return;
-    try { await api.delete(`/courses-api/${id}`); setCourses(p => p.filter(c => c.id !== id)); }
+    try {
+      const result = await api.delete(`/courses-api/${id}`);
+      setCourses(p => p.filter(c => c.id !== id));
+      if (result?.backup) setBackupResult(result.backup);
+    }
     catch (e) { alert(e?.message || 'Delete failed'); }
+  };
+
+  const takeDatabaseBackup = async () => {
+    setBackuping(true);
+    setBackupResult(null);
+    try {
+      const result = await api.post('/admin/db-backups', { label: 'manual-admin' });
+      setBackupResult(result?.backup || null);
+    } catch (e) {
+      alert(e?.message || 'Backup failed');
+    } finally {
+      setBackuping(false);
+    }
   };
 
   const toggleStatus = async (c) => {
@@ -598,37 +678,88 @@ function CoursesTab() {
   const weekCount = c => c._count?.weeks ?? c.weeks?.length ?? 0;
   const modCount  = c => c.weeks?.reduce((a, w) => a + (w.modules?.length || 0), 0) ?? 0;
 
+  const openModerators = async (course) => {
+    setModeratorCourseId(course.id);
+    setModeratorSelection(course.moderatorIds || []);
+    try {
+      const data = await api.get(`/courses-api/${course.slug}/moderators`);
+      setModeratorSelection(data.moderatorIds || []);
+    } catch (e) {
+      alert(e?.message || 'Failed to load moderators');
+    }
+  };
+
+  const saveModerators = async (course) => {
+    setModeratorSaving(true);
+    try {
+      const data = await api.put(`/courses-api/${course.slug}/moderators`, { moderatorIds: moderatorSelection });
+      setCourses(prev => prev.map(item => item.id === course.id ? { ...item, moderatorIds: data.moderatorIds || [] } : item));
+      setModeratorCourseId(null);
+    } catch (e) {
+      alert(e?.message || 'Failed to save moderators');
+    } finally {
+      setModeratorSaving(false);
+    }
+  };
+
+  const toggleModerator = (userId) => {
+    setModeratorSelection(prev => prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]);
+  };
+
+  const selectedModeratorNames = (course) => {
+    const ids = course.moderatorIds || [];
+    return users.filter(user => ids.includes(user.id)).map(user => user.name || user.email);
+  };
+
   return (
     <>
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="font-orbitron text-sm font-bold text-white">Manage Courses</h3>
-          <p className="text-[11px] text-slate-600 mt-0.5">Create and edit courses visible in the Course Hub</p>
+          <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Manage Courses</h3>
+          <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Create and edit courses visible in the Course Hub</p>
         </div>
-        <button onClick={() => { setCreating(v => !v); setError(''); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white"
-          style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
-          {creating ? 'Cancel' : '+ New Course'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={takeDatabaseBackup} disabled={backuping}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+            style={{ background: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.05)', border: isLight ? '1px solid rgba(100,116,139,0.22)' : '1px solid rgba(255,255,255,0.10)', color: isLight ? '#0f172a' : '#e2e8f0' }}>
+            {backuping ? 'Backing up…' : 'DB Backup'}
+          </button>
+          <button onClick={() => { setCreating(v => !v); setError(''); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white"
+            style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
+            {creating ? 'Cancel' : '+ New Course'}
+          </button>
+        </div>
       </div>
 
+      {backupResult && (
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3 mb-4 text-sm"
+          style={{ background: isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.25)' }}>
+          <span className="text-emerald-500">✓</span>
+          <div className="flex-1 min-w-0">
+            <p className={`font-semibold ${isLight ? 'text-slate-900' : 'text-emerald-300'}`}>Database backup created</p>
+            <p className={`text-[11px] truncate ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{backupResult.fileName}</p>
+          </div>
+        </div>
+      )}
+
       {creating && (
-        <form onSubmit={handleCreate} className="rounded-2xl p-5 mb-6 space-y-4" style={cardStyle}>
-          <h4 className="text-sm font-bold text-white mb-3">New Course</h4>
+        <form onSubmit={handleCreate} className="rounded-2xl p-5 mb-6 space-y-4" style={getCardStyle(isLight)}>
+          <h4 className={`text-sm font-bold mb-3 ${isLight ? 'text-slate-900' : 'text-white'}`}>New Course</h4>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Title *</label>
               <input value={form.title}
                 onChange={e => setForm(p => ({ ...p, title: e.target.value, slug: autoSlug(e.target.value) }))}
                 placeholder="IBM Cloud Security" required
-                className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={inputStyle} />
+                className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)} />
             </div>
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Slug (URL) *</label>
               <input value={form.slug}
                 onChange={e => setForm(p => ({ ...p, slug: autoSlug(e.target.value) }))}
                 placeholder="ibm-cloud-security" required
-                className="w-full rounded-xl px-3 py-2 text-sm font-mono text-white focus:outline-none" style={inputStyle} />
+                className="w-full rounded-xl px-3 py-2 text-sm font-mono text-white focus:outline-none" style={getInputStyle(isLight)} />
               <p className="text-[10px] text-slate-700 mt-0.5">URL: /c/{form.slug || 'slug'}</p>
             </div>
             <div>
@@ -636,13 +767,13 @@ function CoursesTab() {
               <input value={form.tagline}
                 onChange={e => setForm(p => ({ ...p, tagline: e.target.value }))}
                 placeholder="Short subtitle"
-                className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={inputStyle} />
+                className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)} />
             </div>
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Emoji</label>
               <input value={form.emoji} maxLength={4}
                 onChange={e => setForm(p => ({ ...p, emoji: e.target.value }))}
-                className="w-full rounded-xl px-3 py-2 text-2xl text-center text-white focus:outline-none" style={inputStyle} />
+                className="w-full rounded-xl px-3 py-2 text-2xl text-center text-white focus:outline-none" style={getInputStyle(isLight)} />
             </div>
           </div>
           <div>
@@ -674,7 +805,7 @@ function CoursesTab() {
           <button onClick={load} className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 rounded-lg px-2 py-1">Retry</button>
         </div>
       )}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+      <div className="rounded-2xl overflow-hidden" style={getCardStyle(isLight)}>
         {loading
           ? <div className="py-12 flex justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin"/></div>
           : courses.length === 0 && !error
@@ -695,17 +826,17 @@ function CoursesTab() {
                           <div className="sm:col-span-2">
                             <label className="text-[10px] text-slate-600 block mb-1">Title</label>
                             <input value={editForm.title} onChange={e => setEditForm(p => ({...p, title: e.target.value}))}
-                              className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={inputStyle} />
+                              className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)} />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-600 block mb-1">Emoji</label>
                             <input value={editForm.emoji} maxLength={4} onChange={e => setEditForm(p => ({...p, emoji: e.target.value}))}
-                              className="w-full rounded-xl px-3 py-2 text-2xl text-center text-white focus:outline-none" style={inputStyle} />
+                              className="w-full rounded-xl px-3 py-2 text-2xl text-center text-white focus:outline-none" style={getInputStyle(isLight)} />
                           </div>
                           <div className="sm:col-span-2">
                             <label className="text-[10px] text-slate-600 block mb-1">Tagline</label>
                             <input value={editForm.tagline} onChange={e => setEditForm(p => ({...p, tagline: e.target.value}))}
-                              className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={inputStyle} />
+                              className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)} />
                           </div>
                           <div>
                             <label className="text-[10px] text-slate-600 block mb-1">Accent Color</label>
@@ -720,7 +851,7 @@ function CoursesTab() {
                           <div className="sm:col-span-3">
                             <label className="text-[10px] text-slate-600 block mb-1">Description</label>
                             <textarea value={editForm.description} rows={2} onChange={e => setEditForm(p => ({...p, description: e.target.value}))}
-                              className="w-full rounded-xl px-3 py-2 text-sm text-white resize-none focus:outline-none" style={inputStyle} />
+                              className="w-full rounded-xl px-3 py-2 text-sm text-white resize-none focus:outline-none" style={getInputStyle(isLight)} />
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -735,7 +866,7 @@ function CoursesTab() {
                         <span className="text-slate-600 cursor-grab text-sm select-none">⠿</span>
                         <span className="text-xl">{c.emoji || '📚'}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate">{c.title}</p>
+                          <p className={`text-sm font-semibold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{c.title}</p>
                           <div className="flex items-center gap-2 mt-0.5">
                             <code className="text-[10px] text-slate-600">{courseRoute(c.slug)}</code>
                             <span className="text-slate-700">·</span>
@@ -753,6 +884,10 @@ function CoursesTab() {
                             className="text-[10px] px-2.5 py-1 rounded-lg text-slate-500 hover:text-slate-200 border border-white/8 hover:border-white/20 transition-all">
                             ✎ Info
                           </button>
+                          <button onClick={() => openModerators(c)}
+                            className="text-[10px] px-2.5 py-1 rounded-lg text-cyan-300 hover:text-cyan-100 border border-cyan-500/20 hover:border-cyan-400/40 transition-all">
+                            Moderators
+                          </button>
                           <button onClick={() => navigate(`/admin/courses/${c.slug}/edit`)}
                             className="text-[10px] px-3 py-1 rounded-lg font-bold text-white"
                             style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
@@ -762,6 +897,40 @@ function CoursesTab() {
                             className="text-slate-700 hover:text-red-400 transition-colors px-1 py-1 rounded hover:bg-red-500/10">
                             ✕
                           </button>
+                        </div>
+                      </div>
+                    )}
+                    {moderatorCourseId === c.id && (
+                      <div className="px-4 pb-4 pt-1 border-t border-white/5" style={{ background: 'rgba(34,211,238,0.03)' }}>
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <div>
+                            <p className={`text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Course Moderators</p>
+                            <p className="text-[11px] text-slate-500">Assigned users can edit only this course.</p>
+                          </div>
+                          <div className="text-[11px] text-slate-500">{moderatorSelection.length} selected</div>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                          {users.map(user => {
+                            const checked = moderatorSelection.includes(user.id);
+                            return (
+                              <label key={user.id} className={`flex items-start gap-3 rounded-xl px-3 py-2 border cursor-pointer transition-all ${checked ? 'border-cyan-400/40 bg-cyan-500/10' : 'border-white/8 hover:border-white/16'}`}>
+                                <input type="checkbox" checked={checked} onChange={() => toggleModerator(user.id)} className="mt-0.5 accent-cyan-400" />
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-semibold text-white truncate">{user.name || user.email}</span>
+                                  <span className="block text-[10px] text-slate-500 truncate">{user.email} · {user.role}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center justify-between gap-3 mt-3">
+                          <p className="text-[11px] text-slate-500 truncate">Current: {selectedModeratorNames({ moderatorIds: moderatorSelection }).join(', ') || 'No moderators assigned'}</p>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button onClick={() => setModeratorCourseId(null)} className="px-3 py-1.5 rounded-xl text-xs text-slate-500 hover:text-slate-300">Cancel</button>
+                            <button onClick={() => saveModerators(c)} disabled={moderatorSaving} className="px-4 py-1.5 rounded-xl text-xs font-bold text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
+                              {moderatorSaving ? 'Saving…' : 'Save Moderators'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -778,6 +947,8 @@ function CoursesTab() {
 const EMPTY_CONFIG = { enabled:true, realmName:'', description:'', issuer:'', clientId:'', clientSecret:'', scopes:'openid profile email groups', jwksUri:'', authorizationEndpoint:'', tokenEndpoint:'', userinfoEndpoint:'', endSessionEndpoint:'', managerClaim:'manager', managerIdClaim:'managerId', oktaApiToken:'' };
 
 function AuthRealmTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const [cfg, setCfg]           = useState(EMPTY_CONFIG);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
@@ -817,7 +988,7 @@ function AuthRealmTab() {
       <input type={type} value={cfg[field]||''} placeholder={placeholder}
         onChange={e => setCfg(c => ({...c,[field]:e.target.value}))}
         className="w-full rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-        style={inputStyle} onFocus={onFocus} onBlur={onBlur}/>
+        style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
       {hint && <p className="text-[10px] text-slate-600 mt-0.5">{hint}</p>}
     </div>
   );
@@ -827,8 +998,8 @@ function AuthRealmTab() {
   return (
     <form onSubmit={save} className="max-w-2xl space-y-6">
       {/* Realm info */}
-      <div className="rounded-2xl p-6 space-y-4" style={cardStyle}>
-        <h3 className="font-bold text-white text-base">Authentication Realm</h3>
+      <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>Authentication Realm</h3>
         <Field label="Realm Name *" field="realmName" placeholder="HCL Learning Hub"/>
         <Field label="Description" field="description" placeholder="HCL Okta SSO Authentication"/>
         <div className="flex items-center gap-3">
@@ -838,8 +1009,8 @@ function AuthRealmTab() {
       </div>
 
       {/* OpenID Provider */}
-      <div className="rounded-2xl p-6 space-y-4" style={cardStyle}>
-        <h3 className="font-bold text-white text-base">OpenID Provider &amp; Client Identity</h3>
+      <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>OpenID Provider &amp; Client Identity</h3>
         <Field label="Client ID *" field="clientId" placeholder="0oa13io7fhtx5FBLw1d8"/>
         <div>
           <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Client Secret</label>
@@ -847,7 +1018,7 @@ function AuthRealmTab() {
             <input type={showSecret?'text':'password'} value={cfg.clientSecret||''} placeholder="Leave blank for PKCE (recommended)"
               onChange={e => setCfg(c => ({...c,clientSecret:e.target.value}))}
               className="w-full rounded-xl px-3 py-2.5 pr-20 text-sm text-white placeholder-slate-600 focus:outline-none"
-              style={inputStyle} onFocus={onFocus} onBlur={onBlur}/>
+              style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
             <button type="button" onClick={() => setShowSecret(s => !s)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 hover:text-slate-300">
               {showSecret?'HIDE':'SHOW'}
@@ -861,7 +1032,7 @@ function AuthRealmTab() {
             <input type="url" value={cfg.issuer||''} placeholder="https://hcl-software.oktapreview.com/oauth2/default"
               onChange={e => setCfg(c => ({...c,issuer:e.target.value}))}
               className="flex-1 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-              style={inputStyle} onFocus={onFocus} onBlur={onBlur}/>
+              style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
             <button type="button" onClick={discover} disabled={discovering}
               className="px-4 py-2 rounded-xl font-bold text-sm transition-all"
               style={{ background:'rgba(6,182,212,0.2)', border:'1px solid rgba(6,182,212,0.4)', color:'#67e8f9', minWidth:'100px' }}>
@@ -873,8 +1044,8 @@ function AuthRealmTab() {
       </div>
 
       {/* OpenID Endpoints */}
-      <div className="rounded-2xl p-6 space-y-4" style={cardStyle}>
-        <h3 className="font-bold text-white text-base">OpenID Endpoints <span className="text-[10px] font-normal text-slate-500 ml-1">(auto-filled by Discover)</span></h3>
+      <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>OpenID Endpoints <span className="text-[10px] font-normal text-slate-500 ml-1">(auto-filled by Discover)</span></h3>
         <Field label="JWKS URI *"               field="jwksUri"               placeholder="https://…/v1/keys"/>
         <Field label="Authorization Endpoint *"  field="authorizationEndpoint" placeholder="https://…/v1/authorize"/>
         <Field label="Token Endpoint *"          field="tokenEndpoint"          placeholder="https://…/v1/token"/>
@@ -883,23 +1054,23 @@ function AuthRealmTab() {
       </div>
 
       {/* Manager claims */}
-      <div className="rounded-2xl p-6 space-y-4" style={cardStyle}>
-        <h3 className="font-bold text-white text-base">Manager Claim Mapping</h3>
+      <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>Manager Claim Mapping</h3>
         <p className="text-[11px] text-slate-500">If Okta returns manager in the userinfo endpoint these claim names are used. If no claims are found, the Okta Management API (below) is used as fallback.</p>
         <Field label="Manager Email Claim" field="managerClaim"   placeholder="manager"   hint="Userinfo claim that carries the learner's manager email"/>
         <Field label="Manager ID Claim"    field="managerIdClaim" placeholder="managerId" hint="Userinfo claim for manager employee ID or email"/>
       </div>
 
       {/* Okta Management API */}
-      <div className="rounded-2xl p-6 space-y-4" style={cardStyle}>
-        <h3 className="font-bold text-white text-base">Okta Management API <span className="text-[10px] font-normal text-amber-500 ml-1">Required for bulk manager sync</span></h3>
+      <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
+        <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>Okta Management API <span className="text-[10px] font-normal text-amber-500 ml-1">Required for bulk manager sync</span></h3>
         <p className="text-[11px] text-slate-500 leading-relaxed">Generate a Read-Only API token from your Okta Admin Console → Security → API → Tokens. This allows the server to call <code className="text-amber-400">/api/v1/users/&#123;id&#125;/manager</code> to automatically assign managers — even without OIDC claim mapping.</p>
         <div>
           <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Okta API Token</label>
           <input type="password" value={cfg.oktaApiToken||''} placeholder="SSWS 00abc123... (Read-only scope)"
             onChange={e => setCfg(c => ({...c,oktaApiToken:e.target.value}))}
             className="w-full rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none"
-            style={inputStyle} onFocus={onFocus} onBlur={onBlur}/>
+            style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
           <p className="text-[10px] text-slate-600 mt-0.5">Okta Admin → Security → API → Tokens → Create Token. Prefix &quot;SSWS &quot; is added automatically.</p>
         </div>
       </div>
@@ -928,11 +1099,13 @@ const HELP_KEYS = [
 ];
 
 function HelpSettingsTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const [loading, setLoading] = useState(true);
   const [values, setValues] = useState({});
   const [courses, setCourses] = useState([]);
   const [selectedCourseId, setSelectedCourseId] = useState('');
   const [courseDraft, setCourseDraft] = useState({});
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(null);
   const [msg, setMsg]         = useState({ text: '', ok: true });
 
@@ -1024,8 +1197,8 @@ function HelpSettingsTab() {
     <div className="max-w-2xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="font-orbitron text-sm font-bold text-white">Help Session Settings</h3>
-          <p className="text-[11px] text-slate-600 mt-0.5">Instructor contact info and Google Chat Space links shown in the Help Session modal</p>
+          <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Help Session Settings</h3>
+          <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Instructor contact info and Google Chat Space links shown in the Help Session modal</p>
         </div>
         <button onClick={saveAll} disabled={saving === 'all'}
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40"
@@ -1040,8 +1213,8 @@ function HelpSettingsTab() {
       )}
       <div className="space-y-5">
         {sections.map(sec => (
-          <div key={sec.title} className="rounded-2xl p-5 space-y-4" style={cardStyle}>
-            <h4 className="text-xs font-bold text-white">{sec.title}</h4>
+          <div key={sec.title} className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
+            <h4 className={`text-xs font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>{sec.title}</h4>
             {sec.keys.map(({ key, label, placeholder }) => (
               <div key={key}>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">{label}</label>
@@ -1051,7 +1224,7 @@ function HelpSettingsTab() {
                     onChange={e => setValues(p => ({ ...p, [key]: e.target.value }))}
                     placeholder={placeholder}
                     className="flex-1 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-700 focus:outline-none"
-                    style={inputStyle}
+                    style={getInputStyle(isLight)}
                   />
                   <button onClick={() => save(key)} disabled={saving === key}
                     className="px-3 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-40 flex-shrink-0"
@@ -1063,15 +1236,15 @@ function HelpSettingsTab() {
             ))}
           </div>
         ))}
-        <div className="rounded-2xl p-5 space-y-4" style={cardStyle}>
+        <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
           <div>
-            <h4 className="text-xs font-bold text-white">Course Help Sessions</h4>
+            <h4 className={`text-xs font-bold ${isLight ? 'text-slate-800' : 'text-white'}`}>Course Help Sessions</h4>
             <p className="text-[11px] text-slate-600 mt-1">Each course has its own moderator and support space. New courses appear here automatically.</p>
           </div>
           {courses.length ? (
             <>
               <select value={selectedCourseId} onChange={e => selectCourse(e.target.value)}
-                className="w-full rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none" style={inputStyle}>
+                className="w-full rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none" style={getInputStyle(isLight)}>
                 {courses.map(course => <option key={course.id} value={course.id}>{course.emoji || '📚'} {course.title}</option>)}
               </select>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -1084,7 +1257,7 @@ function HelpSettingsTab() {
                 ].map(([key, label, placeholder]) => <label key={key} className={key === 'helpSpaceUrl' || key === 'helpSpaceHint' ? 'sm:col-span-2' : ''}>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">{label}</span>
                   <input value={courseDraft[key] || ''} onChange={courseField(key)} placeholder={placeholder}
-                    className="w-full rounded-xl px-3 py-2 text-sm text-white placeholder-slate-700 focus:outline-none" style={inputStyle} />
+                    className="w-full rounded-xl px-3 py-2 text-sm text-white placeholder-slate-700 focus:outline-none" style={getInputStyle(isLight)} />
                 </label>)}
               </div>
               <button onClick={saveCourse} disabled={saving === `course:${selectedCourseId}`}
@@ -1100,11 +1273,182 @@ function HelpSettingsTab() {
   );
 }
 
+function DeploymentTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const [status, setStatus] = useState(null);
+  const [upgradePreview, setUpgradePreview] = useState(null);
+  const [rollbackPreview, setRollbackPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
+  const [versionDraft, setVersionDraft] = useState('2');
+  const [rollbackVersion, setRollbackVersion] = useState('');
+
+  const loadRollbackPreview = useCallback(async (version) => {
+    if (!version) { setRollbackPreview(null); return; }
+    const data = await api.get(`/admin/deployment/rollback-preview?version=${encodeURIComponent(version)}`);
+    setRollbackPreview(data);
+  }, []);
+
+  const refresh = useCallback(async (preferredRollbackVersion = '') => {
+    setLoading(true);
+    setError('');
+    try {
+      const [nextStatus, nextUpgradePreview] = await Promise.all([
+        api.get('/admin/deployment/status'),
+        api.get('/admin/deployment/upgrade-preview'),
+      ]);
+      setStatus(nextStatus);
+      setUpgradePreview(nextUpgradePreview);
+      setVersionDraft(current => current && current !== '2' ? current : (nextStatus?.currentVersion || '2'));
+      const fallbackRollbackVersion = preferredRollbackVersion
+        || rollbackVersion
+        || nextStatus?.previousRelease?.productVersion
+        || nextStatus?.releases?.find(release => release.productVersion !== nextStatus?.currentVersion)?.productVersion
+        || '';
+      setRollbackVersion(fallbackRollbackVersion);
+      if (fallbackRollbackVersion) await loadRollbackPreview(fallbackRollbackVersion);
+      else setRollbackPreview(null);
+    } catch (e) {
+      setError(e?.message || 'Failed to load deployment details');
+    } finally {
+      setLoading(false);
+    }
+  }, [loadRollbackPreview, rollbackVersion]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const startUpgrade = async () => {
+    if (!versionDraft.trim()) return;
+    if (!window.confirm(`Start upgrade to version ${versionDraft}? The app may briefly restart during deployment.`)) return;
+    try {
+      const result = await api.post('/admin/deployment/upgrade', { version: versionDraft.trim() });
+      setActionMessage(`Upgrade started for version ${versionDraft}. Log file: ${result.logFile}`);
+    } catch (e) {
+      setActionMessage(e?.message || 'Upgrade could not be started');
+    }
+  };
+
+  const startRollback = async () => {
+    if (!rollbackVersion.trim()) return;
+    if (!window.confirm(`Rollback to version ${rollbackVersion}? The app may briefly restart during rollback.`)) return;
+    try {
+      const result = await api.post('/admin/deployment/rollback', { version: rollbackVersion.trim() });
+      setActionMessage(`Rollback started for version ${rollbackVersion}. Log file: ${result.logFile}`);
+    } catch (e) {
+      setActionMessage(e?.message || 'Rollback could not be started');
+    }
+  };
+
+  const releases = status?.releases || [];
+  const repoCommits = upgradePreview?.upgradeSummary?.incomingCommits || [];
+  const rollbackCommits = rollbackPreview?.rollbackSummary?.commitsToRemove || [];
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Deployment Control</h3>
+          <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>View current application version, compare incoming code and backup changes, and trigger upgrade or rollback.</p>
+        </div>
+        <button onClick={() => refresh(rollbackVersion)}
+          className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
+          style={{ background: isLight ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.05)', border: isLight ? '1px solid rgba(100,116,139,0.22)' : '1px solid rgba(255,255,255,0.10)', color: isLight ? '#0f172a' : '#e2e8f0' }}>
+          Refresh Preview
+        </button>
+      </div>
+
+      {error && <div className="rounded-xl px-4 py-3 text-sm text-red-400 border border-red-500/25 bg-red-500/10">{error}</div>}
+      {actionMessage && <div className="rounded-xl px-4 py-3 text-sm border" style={{ background: isLight ? 'rgba(6,182,212,0.08)' : 'rgba(6,182,212,0.10)', borderColor: 'rgba(6,182,212,0.25)', color: isLight ? '#155e75' : '#67e8f9' }}>{actionMessage}</div>}
+
+      {loading ? <div className="py-16 flex justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin" /></div> : <>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Current version</p>
+            <p className={`mt-2 text-3xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{status?.currentVersion || '2'}</p>
+            <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Current commit: {status?.currentRelease?.currentShortCommit || upgradePreview?.git?.currentShortCommit || 'unknown'}</p>
+          </div>
+          <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Repo update status</p>
+            <p className={`mt-2 text-2xl font-black ${upgradePreview?.hasCodeUpdates ? 'text-emerald-400' : isLight ? 'text-slate-900' : 'text-white'}`}>{upgradePreview?.git?.remoteAhead || 0} incoming commit{upgradePreview?.git?.remoteAhead === 1 ? '' : 's'}</p>
+            <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{upgradePreview?.git?.branch ? `Branch ${upgradePreview.git.branch} · remote ${upgradePreview.git.remoteShortCommit || 'unknown'}` : (upgradePreview?.git?.error || 'Git preview unavailable')}</p>
+          </div>
+          <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Latest database backup</p>
+            <p className={`mt-2 text-sm font-bold break-all ${isLight ? 'text-slate-900' : 'text-white'}`}>{status?.latestBackup?.fileName || 'No backup found'}</p>
+            <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{upgradePreview?.hasNewerBackup ? 'Newer backup is available for the next upgrade.' : 'Current release already points to the latest known backup.'}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-5 xl:grid-cols-2">
+          <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Upgrade Preview</h4>
+                <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Checks remote repo commits and the newest DB dump before you upgrade.</p>
+              </div>
+            </div>
+            <label className="block">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Upgrade to version</span>
+              <input value={versionDraft} onChange={e => setVersionDraft(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)} />
+            </label>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.18)', background: isLight ? 'rgba(240,253,244,0.9)' : 'rgba(16,185,129,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-emerald-300'}`}>What this upgrade brings</p>
+              {repoCommits.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{repoCommits.map((commit, index) => <li key={index}>{commit}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No newer repo commits were detected.</p>}
+            </div>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(8,145,178,0.18)' : 'rgba(34,211,238,0.18)', background: isLight ? 'rgba(236,254,255,0.9)' : 'rgba(34,211,238,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-cyan-300'}`}>Backup source for upgrade</p>
+              <p className={`mt-2 text-xs break-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{status?.latestBackup?.filePath || 'No backup dump found.'}</p>
+            </div>
+            <button onClick={startUpgrade}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+              style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
+              Start Upgrade
+            </button>
+          </div>
+
+          <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
+            <div>
+              <h4 className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Rollback Preview</h4>
+              <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Shows which version you return to, which commits will be removed, and which backup will be restored.</p>
+            </div>
+            <label className="block">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rollback target version</span>
+              <select value={rollbackVersion} onChange={async e => { const value = e.target.value; setRollbackVersion(value); await loadRollbackPreview(value); }}
+                className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)}>
+                <option value="">Select a recorded version</option>
+                {releases.filter(release => release.productVersion && release.productVersion !== status?.currentVersion).map(release => (
+                  <option key={release.filePath} value={release.productVersion}>{release.productVersion} · {release.currentShortCommit || release.releaseTimestamp}</option>
+                ))}
+              </select>
+            </label>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.18)', background: isLight ? 'rgba(255,251,235,0.95)' : 'rgba(245,158,11,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-amber-300'}`}>What this rollback removes</p>
+              {rollbackCommits.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{rollbackCommits.map((commit, index) => <li key={index}>{commit}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No commit delta was detected for the selected rollback target.</p>}
+            </div>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.18)', background: isLight ? 'rgba(254,242,242,0.95)' : 'rgba(239,68,68,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-red-300'}`}>Backup restored during rollback</p>
+              <p className={`mt-2 text-xs break-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{rollbackPreview?.restoreBackup?.filePath || 'No restore dump selected yet.'}</p>
+            </div>
+            <button onClick={startRollback} disabled={!rollbackVersion}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg,#f97316,#ef4444)' }}>
+              Start Rollback
+            </button>
+          </div>
+        </div>
+      </>}
+    </div>
+  );
+}
+
 // ── Main AdminPanel ───────────────────────────────────────────────────────────
 const TABS = [
   { id:'okta-users',      label:'Okta Users'           },
   { id:'local-users',     label:'Local Users'           },
   { id:'courses',         label:'Courses'               },
+  { id:'deployment',      label:'Deployment'            },
   { id:'learner-tracker', label:'Learner Tracker'       },
   { id:'help-settings',   label:'Help Settings'         },
   { id:'ai-provider',     label:'AI Provider'           },
@@ -1113,6 +1457,8 @@ const TABS = [
 
 export default function AdminPanel() {
   const auth = getAuth();
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'okta-users';
   const [activeTab, setActiveTab] = useState(TABS.some(t => t.id === initialTab) ? initialTab : 'okta-users');
@@ -1121,24 +1467,24 @@ export default function AdminPanel() {
     <div className="min-h-screen px-4 py-8 max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4 mb-6">
-        <Link to="/courses" className="text-slate-500 hover:text-slate-300 transition-colors text-sm">← Back</Link>
+        <Link to="/courses" className={`transition-colors text-sm ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}>← Back</Link>
         <div>
-          <h1 className="font-orbitron text-2xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+          <h1 className={`font-orbitron text-2xl font-black bg-clip-text text-transparent ${isLight ? 'bg-gradient-to-r from-cyan-700 to-violet-700' : 'bg-gradient-to-r from-cyan-400 to-violet-400'}`}>
             Administration
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            Signed in as <span className="text-cyan-400">{auth?.name}</span>
+          <p className={`text-sm mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
+            Signed in as <span className={isLight ? 'text-cyan-700 font-semibold' : 'text-cyan-400'}>{auth?.name}</span>
             <span className="ml-2 text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full uppercase tracking-widest">Admin</span>
           </p>
         </div>
       </div>
 
       {/* Tab nav */}
-      <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl w-fit max-w-full" style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.06)' }}>
+      <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl w-fit max-w-full" style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.06)', boxShadow: isLight ? '0 1px 6px rgba(0,0,0,0.06)' : 'none' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background: activeTab===t.id?'rgba(6,182,212,0.2)':'transparent', color: activeTab===t.id?'#67e8f9':'#64748b', border: activeTab===t.id?'1px solid rgba(6,182,212,0.35)':'1px solid transparent' }}>
+            style={{ background: activeTab===t.id ? (isLight ? 'rgba(8,145,178,0.15)' : 'rgba(6,182,212,0.2)') : 'transparent', color: activeTab===t.id ? (isLight ? '#0891b2' : '#67e8f9') : (isLight ? '#475569' : '#64748b'), border: activeTab===t.id ? (isLight ? '1px solid rgba(8,145,178,0.35)' : '1px solid rgba(6,182,212,0.35)') : '1px solid transparent' }}>
             {t.label}
           </button>
         ))}
@@ -1148,6 +1494,7 @@ export default function AdminPanel() {
       {activeTab==='okta-users'      && <OktaUsersTab/>}
       {activeTab==='local-users'     && <LocalUsersTab/>}
       {activeTab==='courses'         && <CoursesTab/>}
+      {activeTab==='deployment'      && <DeploymentTab/>}
       {activeTab==='learner-tracker' && <LearnerTracker asTab={true}/>}
       {activeTab==='help-settings'   && <HelpSettingsTab/>}
       {activeTab==='ai-provider'     && <AIProviderTab/>}

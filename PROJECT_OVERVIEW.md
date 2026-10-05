@@ -141,7 +141,9 @@ needs downloading; everything else arrives with the clone.
 | `deploy/install.sh` | Installs Node 20, PostgreSQL (initdb, role, scram auth), clones into `hcl-learning-hub/`, installs both workspaces, writes `server/.env`, generates a FQDN-matching TLS cert, restores `scripts/backup.dump`, runs migrations, opens the firewall |
 | `deploy/start.sh` | One command for PostgreSQL + API + UI. Wraps the root `npm run dev` (which already runs both tiers) as a background process group with `logs/hub.log`, `run/hub.pid` and health checks |
 | `deploy/stop.sh` | Terminates the whole process group, then frees ports 5173/4000; `--with-db` also stops PostgreSQL |
-| `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, reinstalls deps, regenerates the Prisma client, migrates, restarts. `--restore`, `--no-restart`, `--backup-only` |
+| `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, reinstalls deps, regenerates the Prisma client, migrates, restarts. Supports `--version`, `--restore`, `--no-restart`, `--backup-only` |
+| `deploy/rollback.sh` | Rolls the source deployment back to the previous or requested recorded version, takes a fresh safety backup, optionally restores the matching DB dump, and restarts |
+| `deploy/uninstall.sh` | Stops and removes the source deployment from the VM, with optional final backup, DB purge, and backup purge |
 | `deploy/Backup-Remote.ps1` | Windows-side puller: triggers `sync.sh --backup-only` over SSH, downloads the dump via scp, verifies the `PGDMP` header, prunes by age, and can register a daily scheduled task |
 | `deploy/hub.env` | Generated config (FQDN, ports, DB, PostgreSQL service/bin path, git origin) shared by the scripts; git-ignored |
 
@@ -149,6 +151,13 @@ Backup and restore both use the application role `hcluser` (owner of `hclhub`),
 never the `postgres` superuser; the password lives only in `.deploy-credentials`
 on the VM. Dumps are custom-format with `--no-owner --no-acl`, restored with
 `--clean --if-exists`, so they move between VMs with differing roles.
+
+Source-VM syncs now also maintain:
+
+- `backups/latest.dump` as the newest operational backup pointer
+- `releases/current-release.env`
+- `releases/previous-release.env`
+- timestamped `releases/release-*.env` history for versioned rollback
 
 On RHEL without a valid subscription, `install.sh` falls back to the PostgreSQL
 community (PGDG) repository and records the resulting `postgresql-<n>` service
@@ -162,6 +171,34 @@ remote URL and shell history. `install.sh` optionally stores it at `.hub-token`
 `install.sh` also guards against npm/cli#4828: if a lockfile written on another
 OS omits this platform's optional native packages, it detects the broken `vite`
 and reinstalls without the lockfile.
+
+### Is this deployment on Kubernetes?
+
+Not always. This repository supports multiple runtime targets:
+
+- `deploy/` = direct **source deployment on a VM**
+- `k8s/` and `hcl-learning-hub-setup.sh` = **k3s / Kubernetes deployment**
+- `packaging/` = offline container deployment bundle
+
+If you install with `deploy/install.sh`, that host is **not** running the app as
+Kubernetes pods. It runs the UI/API from source and uses PostgreSQL directly.
+
+To check whether a host is using the k3s deployment path:
+
+```bash
+k3s kubectl get ns hcl-learning-hub
+k3s kubectl get deploy,sts,svc,pods -n hcl-learning-hub
+k3s kubectl get pods -n hcl-learning-hub -o wide
+```
+
+Expected main Kubernetes workloads:
+
+- `deployment/web`
+- `deployment/api`
+- `statefulset/postgres`
+
+`scripts/validate.sh` also auto-detects `k3s`, `podman`, `docker`, or unknown
+runtime mode and prints the active pod/container status.
 
 ### Offline bundle (`packaging/`)
 

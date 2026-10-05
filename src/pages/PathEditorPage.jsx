@@ -16,6 +16,36 @@ function fmtDuration(mins) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+function estimateQuestMinutes(xp) {
+  if (!xp) return 10;
+  if (xp < 150) return 8;
+  if (xp < 200) return 10;
+  if (xp < 250) return 12;
+  return 14;
+}
+
+function estimateModuleMinutes(module) {
+  const topicCount = module?.topics?.length || 0;
+  const resourceCount = module?.resources?.length || 0;
+  return Math.max(15, topicCount * 8 + resourceCount * 6);
+}
+
+function estimateScenarioMinutes(week) {
+  const modules = week?.modules || [];
+  const total = modules.reduce((sum, module) => sum + estimateModuleMinutes(module), 0);
+  return total || 30;
+}
+
+function estimateCourseMinutes(course, modules, quests) {
+  const weeks = course?.weeks || [];
+  const weekTotal = weeks.reduce((sum, week) => sum + estimateScenarioMinutes(week), 0);
+  if (weekTotal > 0) return weekTotal;
+  const moduleTotal = (modules || []).reduce((sum, module) => sum + estimateModuleMinutes(module), 0);
+  if (moduleTotal > 0) return moduleTotal;
+  const questTotal = (quests || []).reduce((sum, quest) => sum + estimateQuestMinutes(quest?.xp), 0);
+  return questTotal || 45;
+}
+
 function totalPathMins(items) {
   return (items || []).reduce((s, i) => s + (i.durationMinutes || 0), 0);
 }
@@ -51,7 +81,7 @@ function DurationInput({ value, onChange, accent }) {
     <div className="flex items-center gap-1">
       <Clock size={11} style={{ color: accent || '#06b6d4' }} />
       <input type="number" value={v} onChange={e => setV(e.target.value)} onBlur={save}
-        placeholder="mins" min={0}
+        placeholder="Set min" min={0}
         className="w-16 text-[11px] text-center rounded-lg px-1.5 py-1 focus:outline-none"
         style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
         title="Duration in minutes" />
@@ -92,8 +122,8 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
     }
   };
 
-  const addItem = (type, refId, title, subtitle, emoji, accentColor) => {
-    onAdd({ type, refId, title, subtitle, emoji: emoji || '📚', accentColor: accentColor || '#06b6d4' });
+  const addItem = (type, refId, title, subtitle, emoji, accentColor, durationMinutes) => {
+    onAdd({ type, refId, title, subtitle, emoji: emoji || '📚', accentColor: accentColor || '#06b6d4', durationMinutes });
   };
 
   return (
@@ -142,7 +172,7 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                     {course.tagline && <p className="text-[10px] truncate" style={{ color: accent }}>{course.tagline}</p>}
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button onClick={() => addItem('course', slugKey, course.title, course.tagline, course.emoji, accent)}
+                    <button onClick={() => addItem('course', slugKey, course.title, course.tagline, course.emoji, accent, estimateCourseMinutes(course, allModules, questsCache[course.id] || []))}
                       disabled={alreadyAdded}
                       className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all disabled:opacity-40"
                       style={{ background: alreadyAdded ? 'rgba(255,255,255,0.05)' : `${accent}25`, color: alreadyAdded ? '#475569' : accent, border: `1px solid ${alreadyAdded ? 'rgba(255,255,255,0.08)' : accent + '40'}` }}>
@@ -168,9 +198,9 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                           <span className="text-sm">📋</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-[11px] text-slate-300 truncate">{w.title}</p>
-                            <p className="text-[9px] text-slate-600">Week {w.weekNumber} · {(w.modules || []).length} module{(w.modules || []).length !== 1 ? 's' : ''}</p>
+                            <p className="text-[9px] text-slate-600">Week {w.weekNumber} · {(w.modules || []).length} module{(w.modules || []).length !== 1 ? 's' : ''} · {fmtDuration(estimateScenarioMinutes(w))}</p>
                           </div>
-                          <button onClick={() => addItem('scenario', w.id, w.title, `${course.title} · Week ${w.weekNumber}`, '📋', '#10b981')}
+                          <button onClick={() => addItem('scenario', w.id, w.title, `${course.title} · Week ${w.weekNumber}`, '📋', '#10b981', estimateScenarioMinutes(w))}
                             disabled={scenAdded}
                             className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all disabled:opacity-40"
                             style={{ background: scenAdded ? 'rgba(255,255,255,0.04)' : 'rgba(16,185,129,0.1)', color: scenAdded ? '#475569' : '#10b981', border: `1px solid ${scenAdded ? 'rgba(255,255,255,0.08)' : 'rgba(16,185,129,0.25)'}` }}>
@@ -192,9 +222,9 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                           <span className="text-sm">{m.icon || '📖'}</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-[11px] text-slate-300 truncate">{m.title}</p>
-                            <p className="text-[9px] text-slate-600">{m.weekTitle}</p>
+                            <p className="text-[9px] text-slate-600">{m.weekTitle} · {fmtDuration(estimateModuleMinutes(m))}</p>
                           </div>
-                          <button onClick={() => addItem('module', m.id, m.title, `${course.title} · ${m.weekTitle}`, m.icon, accent)}
+                          <button onClick={() => addItem('module', m.id, m.title, `${course.title} · ${m.weekTitle}`, m.icon, accent, estimateModuleMinutes(m))}
                             disabled={moduleAdded}
                             className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all disabled:opacity-40"
                             style={{ background: moduleAdded ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', color: moduleAdded ? '#475569' : '#94a3b8', border: '1px solid rgba(255,255,255,0.08)' }}>
@@ -224,9 +254,9 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
                             <span className="text-sm">🎯</span>
                             <div className="flex-1 min-w-0">
                               <p className="text-[11px] text-slate-300 truncate">{q.title}</p>
-                              <p className="text-[9px] text-slate-600">{q.xp} XP{q.difficulty ? ` · ${q.difficulty}` : ''}</p>
+                              <p className="text-[9px] text-slate-600">{q.xp} XP{q.difficulty ? ` · ${q.difficulty}` : ''} · {estimateQuestMinutes(q.xp)} min</p>
                             </div>
-                            <button onClick={() => addItem('quest', q.id, q.title, `${course.title} · Quest`, '🎯', '#f59e0b')}
+                            <button onClick={() => addItem('quest', q.id, q.title, `${course.title} · Quest`, '🎯', '#f59e0b', estimateQuestMinutes(q.xp))}
                               disabled={questAdded}
                               className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg transition-all disabled:opacity-40"
                               style={{ background: questAdded ? 'rgba(255,255,255,0.04)' : 'rgba(245,158,11,0.1)', color: questAdded ? '#475569' : '#f59e0b', border: `1px solid ${questAdded ? 'rgba(255,255,255,0.08)' : 'rgba(245,158,11,0.25)'}` }}>
@@ -245,7 +275,7 @@ function CourseBrowser({ onAdd, existingRefIds, onClose }) {
             <p className="text-center text-slate-600 text-xs py-8">No courses found.</p>
           )}
         </div>
-        <div className="px-5 py-3 border-t border-white/6">
+        <div className="px-5 py-3 border-t border-white/6 sticky bottom-0" style={{ background: 'rgba(6,12,28,0.98)' }}>
           <button onClick={onClose}
             className="w-full py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
             style={{ background: 'linear-gradient(135deg,#7c3aed,#06b6d4)' }}>
@@ -357,13 +387,6 @@ export default function PathEditorPage() {
           </button>
           <span className="text-slate-700">/</span>
           <span className="text-xs text-slate-500 truncate max-w-[200px]">{path?.title}</span>
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => navigate('/my-paths')}
-              className="flex items-center gap-1.5 text-xs font-bold text-white px-4 py-2 rounded-xl transition-all hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg,#7c3aed,#06b6d4)' }}>
-              <Check size={13} /> Done
-            </button>
-          </div>
         </div>
       </header>
 
@@ -389,7 +412,7 @@ export default function PathEditorPage() {
         <div className="flex flex-wrap items-center gap-4 mb-8 pb-6 border-b border-white/6">
           <div className="flex items-center gap-1.5 text-xs text-slate-500">
             <Clock size={12} />
-            <span>Total duration: <span className="text-white font-semibold">{fmtDuration(totalMin) || '0m'}</span></span>
+            <span>Learning time: <span className="text-white font-semibold">{fmtDuration(totalMin) || '0m'}</span></span>
           </div>
 
           {/* Visibility toggle */}
@@ -467,6 +490,7 @@ export default function PathEditorPage() {
                           {item.subtitle && (
                             <p className="text-[10px] text-slate-600 truncate mt-0.5">{item.subtitle}</p>
                           )}
+                          <p className="text-[10px] text-slate-500 mt-1">{item.durationMinutes ? `${fmtDuration(item.durationMinutes)} planned` : 'Set learning time'}</p>
                         </div>
                         <DurationInput
                           value={item.durationMinutes}
@@ -543,7 +567,7 @@ export default function PathEditorPage() {
                 <p className="text-xl font-black text-white">{items.filter(i=>i.type==='quest').length}</p>
               </div>
               <div>
-                <p className="text-[10px] text-slate-600">Est. Duration</p>
+                <p className="text-[10px] text-slate-600">Learning Time</p>
                 <p className="text-xl font-black text-white">{fmtDuration(totalMin) || '—'}</p>
               </div>
             </div>
@@ -568,6 +592,14 @@ export default function PathEditorPage() {
           onClose={() => setShowBrowser(false)}
         />
       )}
+
+      <div className="fixed bottom-4 right-4 z-40">
+        <button onClick={() => navigate('/my-paths')}
+          className="flex items-center gap-1.5 text-xs font-bold text-white px-5 py-3 rounded-2xl transition-all hover:opacity-90 shadow-2xl"
+          style={{ background: 'linear-gradient(135deg,#7c3aed,#06b6d4)', border: '1px solid rgba(167,139,250,0.45)' }}>
+          <Check size={13} /> Done
+        </button>
+      </div>
     </div>
   );
 }

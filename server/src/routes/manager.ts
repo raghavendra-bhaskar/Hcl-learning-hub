@@ -36,7 +36,9 @@ async function getAllTreeManagerIds(rootManagerId: string): Promise<string[]> {
 
 type ModBucket = { quests: number; xp: number; lastActivity: string | null };
 
-function buildSummary(u: any) {
+type CourseMeta = { slug: string; title: string; totalQuests: number };
+
+function buildSummary(u: any, trackedCourses: CourseMeta[]) {
   const totalXP  = (u.progress as any[]).reduce((s: number, p: any) => s + p.xpEarned, 0);
   const byModule = (u.progress as any[]).reduce((acc: Record<string, ModBucket>, p: any) => {
     const b = (acc[p.module] ??= { quests: 0, xp: 0, lastActivity: null });
@@ -46,6 +48,33 @@ function buildSummary(u: any) {
     if (!b.lastActivity || ts > b.lastActivity) b.lastActivity = ts;
     return acc;
   }, {} as Record<string, ModBucket>);
+  const courseProgress = trackedCourses.map((course) => {
+    const certs = (u.certifications as any[]).filter((cert: any) => cert.certId === course.slug);
+    const achieved = certs.some((cert: any) => cert.status === 'achieved');
+    const inProgress = certs.some((cert: any) => cert.status === 'in-progress');
+    const assigned = certs.some((cert: any) => cert.status === 'assigned');
+    const completedQuests = (u.progress as any[]).filter((progress: any) => progress.module === course.slug).length;
+    const percentage = achieved
+      ? 100
+      : course.totalQuests > 0
+      ? Math.max(0, Math.min(100, Math.round((completedQuests / course.totalQuests) * 100)))
+      : 0;
+    const status = achieved
+      ? 'completed'
+      : completedQuests > 0 || inProgress
+      ? 'in-progress'
+      : assigned
+      ? 'opted'
+      : 'not-started';
+    return {
+      slug: course.slug,
+      title: course.title,
+      totalQuests: course.totalQuests,
+      completedQuests,
+      percentage,
+      status,
+    };
+  });
   return {
     id:              u.id,
     name:            u.name,
@@ -62,9 +91,21 @@ function buildSummary(u: any) {
       status:     c.status,
       achievedAt: c.achievedAt ? c.achievedAt.toISOString() : null,
     })),
+    courseProgress,
     byModule,
     lastActivity: u.progress[0]?.completedAt?.toISOString() ?? null,
   };
+}
+
+async function getTrackedCourses(): Promise<CourseMeta[]> {
+  const courses = await prisma.course.findMany({
+    select: { slug: true, title: true, _count: { select: { quests: true } } },
+    orderBy: [
+      { order: 'asc' },
+      { title: 'asc' },
+    ],
+  });
+  return courses.map((course: any) => ({ slug: course.slug, title: course.title, totalQuests: course._count?.quests || 0 }));
 }
 
 const LEARNER_INCLUDE = {
@@ -79,6 +120,7 @@ const LEARNER_INCLUDE = {
 managerRouter.get('/all-learners', async (req, res) => {
   const isAdmin   = req.user!.role === 'ADMIN';
   const managerId = req.user!.id;
+  const trackedCourses = await getTrackedCourses();
 
   let whereClause: Record<string, unknown> = {};
   if (!isAdmin) {
@@ -99,7 +141,7 @@ managerRouter.get('/all-learners', async (req, res) => {
     orderBy: { name: 'asc' },
   });
 
-  res.json((learners as any[]).map(buildSummary));
+  res.json((learners as any[]).map((learner: any) => buildSummary(learner, trackedCourses)));
 });
 
 // ── GET /manager/tree ──────────────────────────────────────────────────────────
@@ -108,6 +150,7 @@ managerRouter.get('/tree', async (req, res) => {
   const rootId = req.user!.role === 'ADMIN' && req.query.managerId
     ? String(req.query.managerId)
     : req.user!.id;
+  const trackedCourses = await getTrackedCourses();
 
   type TreeNode = {
     id: string; name: string; email: string; role: string;
@@ -157,7 +200,7 @@ managerRouter.get('/tree', async (req, res) => {
       email:         mgr?.email ?? '',
       role:          mgr?.role  ?? 'MANAGER',
       directReports: await Promise.all(subManagers.map(sm => buildNode(sm.id, new Set(visited)))),
-      learners:      allLearners.map(buildSummary),
+      learners:      allLearners.map((learner: any) => buildSummary(learner, trackedCourses)),
     };
   }
 
