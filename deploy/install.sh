@@ -610,6 +610,7 @@ else
 fi
 
 chmod +x deploy/*.sh 2>/dev/null || true
+chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
 
 banner "Installation complete"
 cat <<SUMMARY

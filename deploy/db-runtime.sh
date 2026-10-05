@@ -1,9 +1,27 @@
 #!/bin/bash
 
+prefer_postgres_client_bin() {
+  local candidate=""
+  if [ -n "${PG_BIN:-}" ] && [ -d "${PG_BIN:-}" ]; then
+    export PATH="$PG_BIN:$PATH"
+    return 0
+  fi
+  while IFS= read -r candidate; do
+    [ -x "$candidate/pg_dump" ] || continue
+    export PG_BIN="$candidate"
+    export PATH="$PG_BIN:$PATH"
+    return 0
+  done < <({
+    ls -d /usr/pgsql-*/bin 2>/dev/null || true
+    ls -d /usr/lib/postgresql/*/bin 2>/dev/null || true
+  } | sort -Vr)
+}
+
 resolve_db_runtime() {
   DB_RUNTIME_KIND="host"
   DB_RUNTIME_ENGINE=""
   DB_RUNTIME_CONTAINER="${DB_CONTAINER_NAME:-hcl-postgres}"
+  prefer_postgres_client_bin
 
   if [ "${EXTERNAL_DB:-false}" = true ]; then
     DB_RUNTIME_KIND="external"

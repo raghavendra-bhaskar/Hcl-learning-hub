@@ -41,6 +41,10 @@ ensure_execute_permissions() {
   done
 }
 
+normalize_permissions() {
+  chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
+}
+
 resolve_restore_file() {
   local requested="$1"
   local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
@@ -74,6 +78,7 @@ RESTORE_FILE=""
 NO_RESTART=false
 BACKUP_ONLY=false
 CODE_ONLY=false
+NO_BACKUP=false
 VERSION_LABEL=""
 
 while [[ $# -gt 0 ]]; do
@@ -83,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --no-restart)  NO_RESTART=true; shift ;;
     --backup-only) BACKUP_ONLY=true; shift ;;
     --code-only)   CODE_ONLY=true; shift ;;
+    --no-backup)   NO_BACKUP=true; shift ;;
     -h|--help)     sed -n '2,21p' "$0"; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
@@ -90,6 +96,9 @@ done
 
 if [ "$CODE_ONLY" = true ] && { [ "$BACKUP_ONLY" = true ] || [ -n "$RESTORE_FILE" ]; }; then
   fail "--code-only cannot be combined with --backup-only or --restore"
+fi
+if [ "$BACKUP_ONLY" = true ] && [ "$NO_BACKUP" = true ]; then
+  fail "--backup-only cannot be combined with --no-backup"
 fi
 
 # shellcheck disable=SC1091
@@ -109,6 +118,7 @@ if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 ensure_execute_permissions
 
 cd "$INSTALL_DIR"
+normalize_permissions
 
 CREDS="$INSTALL_DIR/.deploy-credentials"
 
@@ -126,6 +136,7 @@ LATEST_BACKUP_FILE="$BACKUP_DIR/latest.dump"
 RELEASES_DIR="$INSTALL_DIR/releases"
 CURRENT_RELEASE_FILE="$RELEASES_DIR/current-release.env"
 PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
+RECORDED_BACKUP_FILE="$BACKUP_FILE"
 PINNED_RESTORE_FILE=""
 if [ "$CODE_ONLY" = false ] && [ -n "$RESTORE_FILE" ]; then
   RESTORE_FILE="$(resolve_restore_file "$RESTORE_FILE")" || fail "Restore file not found: $RESTORE_FILE"
@@ -139,26 +150,32 @@ fi
 if [ "$CODE_ONLY" = false ]; then
   mkdir -p "$BACKUP_DIR"
   mkdir -p "$RELEASES_DIR"
-  banner "Sync — step 1/7: Back up the current database"
-  if [ "$DB_RUNTIME_KIND" = "container" ]; then
-    info "Detected containerized PostgreSQL via ${DB_RUNTIME_ENGINE}:${DB_RUNTIME_CONTAINER}"
-  elif [ "$DB_RUNTIME_KIND" = "external" ]; then
-    info "Detected external PostgreSQL at ${DB_HOST}:${DB_PORT}"
+  if [ "$NO_BACKUP" = true ]; then
+    banner "Sync — step 1/7: Safety backup skipped"
+    RECORDED_BACKUP_FILE=""
+    warn "--no-backup given — proceeding without a fresh VM safety backup"
   else
-    info "Detected host PostgreSQL at ${DB_HOST}:${DB_PORT}"
-  fi
+    banner "Sync — step 1/7: Back up the current database"
+    if [ "$DB_RUNTIME_KIND" = "container" ]; then
+      info "Detected containerized PostgreSQL via ${DB_RUNTIME_ENGINE}:${DB_RUNTIME_CONTAINER}"
+    elif [ "$DB_RUNTIME_KIND" = "external" ]; then
+      info "Detected external PostgreSQL at ${DB_HOST}:${DB_PORT}"
+    else
+      info "Detected host PostgreSQL at ${DB_HOST}:${DB_PORT}"
+    fi
 
-  if _db_dump "$BACKUP_FILE"; then
-    ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
-    cp -f "$BACKUP_FILE" "$LATEST_BACKUP_FILE"
-    ok "Latest backup pointer updated: $LATEST_BACKUP_FILE"
-  else
-    fail "pg_dump failed. Fix the PostgreSQL client/auth issue shown above, or use --code-only to deploy code without taking a fresh safety backup."
-  fi
+    if _db_dump "$BACKUP_FILE"; then
+      ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+      cp -f "$BACKUP_FILE" "$LATEST_BACKUP_FILE"
+      ok "Latest backup pointer updated: $LATEST_BACKUP_FILE"
+    else
+      fail "pg_dump failed. Fix the PostgreSQL client/auth issue shown above, or use --no-backup with --restore if you intentionally want to proceed without a fresh VM safety backup."
+    fi
 
-  # Keep the 10 most recent backups.
-  ls -1t "$BACKUP_DIR"/hcl-hub-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
-  ok "Retaining the 10 most recent backups"
+    # Keep the 10 most recent backups.
+    ls -1t "$BACKUP_DIR"/hcl-hub-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
+    ok "Retaining the 10 most recent backups"
+  fi
 else
   banner "Code-only sync: database backup, migration and restore are skipped"
 fi
@@ -203,6 +220,7 @@ BEFORE_FULL="$(git rev-parse HEAD)"
 git fetch origin "$GIT_BRANCH" || fail "git fetch failed (token expired or no network?)"
 git checkout "$GIT_BRANCH" >/dev/null 2>&1 || true
 git pull --ff-only origin "$GIT_BRANCH" || fail "git pull failed — resolve manually, then re-run"
+normalize_permissions
 AFTER="$(git rev-parse --short HEAD)"
 AFTER_FULL="$(git rev-parse HEAD)"
 PACKAGE_VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo '0.0.0')"
@@ -231,7 +249,7 @@ PREVIOUS_COMMIT=${BEFORE_FULL}
 CURRENT_COMMIT=${BEFORE_FULL}
 PREVIOUS_SHORT_COMMIT=${BEFORE}
 CURRENT_SHORT_COMMIT=${BEFORE}
-PRE_SYNC_BACKUP=${BACKUP_FILE}
+PRE_SYNC_BACKUP=${RECORDED_BACKUP_FILE}
 RESTORE_SOURCE=
 SYNC_MODE=baseline
 EOF
@@ -246,7 +264,7 @@ PREVIOUS_COMMIT=${BEFORE_FULL}
 CURRENT_COMMIT=${AFTER_FULL}
 PREVIOUS_SHORT_COMMIT=${BEFORE}
 CURRENT_SHORT_COMMIT=${AFTER}
-PRE_SYNC_BACKUP=${BACKUP_FILE}
+PRE_SYNC_BACKUP=${RECORDED_BACKUP_FILE}
 RESTORE_SOURCE=${RESTORE_FILE}
 SYNC_MODE=$([ "$CODE_ONLY" = true ] && echo code-only || echo full)
 EOF
@@ -288,11 +306,13 @@ fi
 
 banner "Sync — step 7/7: Restart"
 if [ "$NO_RESTART" = true ]; then
+  normalize_permissions
   warn "--no-restart given. Start manually: bash deploy/start.sh"
   exit 0
 fi
 
 bash "$SCRIPT_DIR/start.sh"
+normalize_permissions
 
 echo ""
 if [ "$CODE_ONLY" = true ]; then
