@@ -91,8 +91,12 @@ DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-hclhub}"
 DB_USER="${DB_USER:-hcluser}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-postgres}"
+DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
 # PGDG installs pg_dump/pg_restore outside /usr/bin.
 if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
+# shellcheck disable=SC1091
+if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
 cd "$INSTALL_DIR"
 
@@ -102,6 +106,7 @@ if [ "$CODE_ONLY" = false ]; then
   [ -f "$CREDS" ] || fail "Missing $CREDS — run deploy/install.sh first"
   DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
   [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+  resolve_db_runtime
 fi
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -115,9 +120,15 @@ if [ "$CODE_ONLY" = false ]; then
   mkdir -p "$BACKUP_DIR"
   mkdir -p "$RELEASES_DIR"
   banner "Sync — step 1/7: Back up the current database"
+  if [ "$DB_RUNTIME_KIND" = "container" ]; then
+    info "Detected containerized PostgreSQL via ${DB_RUNTIME_ENGINE}:${DB_RUNTIME_CONTAINER}"
+  elif [ "$DB_RUNTIME_KIND" = "external" ]; then
+    info "Detected external PostgreSQL at ${DB_HOST}:${DB_PORT}"
+  else
+    info "Detected host PostgreSQL at ${DB_HOST}:${DB_PORT}"
+  fi
 
-  if PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-       --format=custom --no-owner --no-acl -f "$BACKUP_FILE" 2>/dev/null; then
+  if _db_dump "$BACKUP_FILE" 2>/dev/null; then
     ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
     cp -f "$BACKUP_FILE" "$LATEST_BACKUP_FILE"
     ok "Latest backup pointer updated: $LATEST_BACKUP_FILE"
@@ -178,6 +189,8 @@ PACKAGE_VERSION="$(node -p "require('./package.json').version" 2>/dev/null || ec
 DEFAULT_VERSION_LABEL="${PACKAGE_VERSION}-${TIMESTAMP}-${AFTER}"
 PRODUCT_VERSION="${VERSION_LABEL:-$DEFAULT_VERSION_LABEL}"
 RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-${AFTER}.env"
+BASELINE_VERSION="${BASELINE_VERSION:-2}"
+BASELINE_RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-baseline-${BEFORE}.env"
 
 if [ "$BEFORE" = "$AFTER" ]; then
   ok "Already up to date ($AFTER)"
@@ -187,7 +200,24 @@ else
 fi
 
 mkdir -p "$RELEASES_DIR"
-[ -f "$CURRENT_RELEASE_FILE" ] && cp -f "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
+if [ -f "$CURRENT_RELEASE_FILE" ]; then
+  cp -f "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
+elif [ "$PRODUCT_VERSION" != "$BASELINE_VERSION" ]; then
+  cat > "$BASELINE_RELEASE_FILE" <<EOF
+RELEASE_TIMESTAMP=${TIMESTAMP}
+PRODUCT_VERSION=${BASELINE_VERSION}
+GIT_BRANCH=${GIT_BRANCH}
+PREVIOUS_COMMIT=${BEFORE_FULL}
+CURRENT_COMMIT=${BEFORE_FULL}
+PREVIOUS_SHORT_COMMIT=${BEFORE}
+CURRENT_SHORT_COMMIT=${BEFORE}
+PRE_SYNC_BACKUP=${BACKUP_FILE}
+RESTORE_SOURCE=
+SYNC_MODE=baseline
+EOF
+  cp -f "$BASELINE_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
+  ok "Baseline release metadata recorded: ${BASELINE_VERSION}"
+fi
 cat > "$RELEASE_FILE" <<EOF
 RELEASE_TIMESTAMP=${TIMESTAMP}
 PRODUCT_VERSION=${PRODUCT_VERSION}
@@ -228,13 +258,7 @@ elif [ -n "$RESTORE_FILE" ]; then
   MAGIC="$(head -c 5 "$RESTORE_FILE" | tr -d '\0' || true)"
   RESTORE_LOG="$INSTALL_DIR/restore-${TIMESTAMP}.log"
   set +e
-  if [ "$MAGIC" = "PGDMP" ]; then
-    PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-      --clean --if-exists --no-owner --no-acl "$RESTORE_FILE" > "$RESTORE_LOG" 2>&1
-  else
-    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-      --set ON_ERROR_STOP=off -f "$RESTORE_FILE" > "$RESTORE_LOG" 2>&1
-  fi
+  _db_restore "$RESTORE_FILE" "$RESTORE_LOG" "$MAGIC"
   RC=$?
   set -e
   [ $RC -eq 0 ] && ok "Restore complete" || warn "Restore exited $RC — see $RESTORE_LOG"

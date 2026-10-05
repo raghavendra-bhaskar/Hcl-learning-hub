@@ -14,6 +14,7 @@ const CURRENT_RELEASE_FILE = join(RELEASES_DIR, 'current-release.env');
 const PREVIOUS_RELEASE_FILE = join(RELEASES_DIR, 'previous-release.env');
 const UPGRADE_SCRIPT = join(DEPLOY_DIR, 'upgrade.sh');
 const ROLLBACK_SCRIPT = join(DEPLOY_DIR, 'rollback.sh');
+const BASELINE_VERSION = '2';
 
 type RunResult = { stdout: string; stderr: string; code: number };
 
@@ -194,10 +195,13 @@ async function getCommitRange(fromCommit: string, toCommit: string) {
   }
 }
 
-export function getDeploymentStatus(fallbackVersion = '2') {
+export function getDeploymentStatus(fallbackVersion = BASELINE_VERSION) {
   const currentRelease = readReleaseFile(CURRENT_RELEASE_FILE);
   const previousRelease = readReleaseFile(PREVIOUS_RELEASE_FILE);
   const releases = getReleaseFiles().map(filePath => readReleaseFile(filePath)).filter(Boolean) as ReleaseInfo[];
+  if (previousRelease && !releases.some(release => release.filePath === previousRelease.filePath || (release.productVersion === previousRelease.productVersion && release.currentCommit === previousRelease.currentCommit))) {
+    releases.push(previousRelease);
+  }
   const latestBackup = findLatestBackup();
   const currentVersion = currentRelease?.productVersion || fallbackVersion;
   return {
@@ -220,7 +224,7 @@ export function getDeploymentStatus(fallbackVersion = '2') {
   };
 }
 
-export async function getUpgradePreview(fallbackVersion = '2') {
+export async function getUpgradePreview(fallbackVersion = BASELINE_VERSION) {
   const status = getDeploymentStatus(fallbackVersion);
   const git = await getGitSummary();
   const latestBackup = status.latestBackup;
@@ -241,7 +245,7 @@ export async function getUpgradePreview(fallbackVersion = '2') {
   };
 }
 
-export async function getRollbackPreview(targetVersion: string | undefined, fallbackVersion = '2') {
+export async function getRollbackPreview(targetVersion: string | undefined, fallbackVersion = BASELINE_VERSION) {
   const status = getDeploymentStatus(fallbackVersion);
   const targetRelease = targetVersion
     ? status.releases.find(release => release.productVersion === targetVersion) || null

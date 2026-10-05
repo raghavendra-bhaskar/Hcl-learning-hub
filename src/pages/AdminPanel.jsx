@@ -1282,7 +1282,7 @@ function DeploymentTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [versionDraft, setVersionDraft] = useState('2');
+  const [versionDraft, setVersionDraft] = useState('3');
   const [rollbackVersion, setRollbackVersion] = useState('');
 
   const loadRollbackPreview = useCallback(async (version) => {
@@ -1301,7 +1301,7 @@ function DeploymentTab() {
       ]);
       setStatus(nextStatus);
       setUpgradePreview(nextUpgradePreview);
-      setVersionDraft(current => current && current !== '2' ? current : (nextStatus?.currentVersion || '2'));
+      setVersionDraft(current => current && current !== '3' ? current : (nextStatus?.suggestedVersion || '3'));
       const fallbackRollbackVersion = preferredRollbackVersion
         || rollbackVersion
         || nextStatus?.previousRelease?.productVersion

@@ -74,7 +74,7 @@ function buildSummary(u: any, trackedCourses: CourseMeta[]) {
       percentage,
       status,
     };
-  });
+  }).filter((course) => course.status === 'completed' || course.status === 'in-progress');
   return {
     id:              u.id,
     name:            u.name,

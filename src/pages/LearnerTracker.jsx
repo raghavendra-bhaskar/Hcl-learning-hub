@@ -49,7 +49,7 @@ function LearnerRow({ learner, expanded, onToggle, isLight }) {
   const allCerts = [...achievedCerts, ...inProgressCerts, ...learner.certifications.filter(c => c.status === 'assigned')];
 
   const trackedCourses = Array.isArray(learner.courseProgress) ? learner.courseProgress : [];
-  const optedCourses = trackedCourses.filter(course => course.status !== 'not-started');
+  const startedCourses = trackedCourses;
   const completedCourses = trackedCourses.filter(course => course.status === 'completed');
   const activeCourses = trackedCourses.filter(course => course.status === 'in-progress');
   const lastDate = learner.lastActivity ? new Date(learner.lastActivity).toLocaleDateString() : '—';
@@ -93,10 +93,10 @@ function LearnerRow({ learner, expanded, onToggle, isLight }) {
 
         {/* Courses */}
         <td className="px-4 py-3">
-          {optedCourses.length === 0 ? (
-            <span className={`text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-700'}`}>No tracked courses</span>
+          {startedCourses.length === 0 ? (
+            <span className={`text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-700'}`}>No started courses</span>
           ) : (
-            <span className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{optedCourses.length}</span>
+            <span className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{startedCourses.length}</span>
           )}
         </td>
 
@@ -134,9 +134,9 @@ function LearnerRow({ learner, expanded, onToggle, isLight }) {
 
               {/* Course status */}
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Tracked Courses</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Started Courses</p>
                 {trackedCourses.length === 0
-                  ? <p className={`text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-700'}`}>No tracked course activity yet.</p>
+                  ? <p className={`text-[11px] ${isLight ? 'text-slate-700' : 'text-slate-700'}`}>No started course activity yet.</p>
                   : trackedCourses.map((course) => {
                       const style = COURSE_STATUS_STYLE[course.status] || COURSE_STATUS_STYLE['not-started'];
                       return (
@@ -169,8 +169,8 @@ function LearnerRow({ learner, expanded, onToggle, isLight }) {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Stats</p>
                 <div className={`space-y-1.5 text-xs ${isLight ? 'text-slate-800' : 'text-slate-400'}`}>
                   <div className="flex justify-between">
-                    <span>Courses opted</span>
-                    <span className="text-cyan-400 font-bold">{optedCourses.length}</span>
+                    <span>Courses started</span>
+                    <span className="text-cyan-400 font-bold">{startedCourses.length}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Courses completed</span>
@@ -421,7 +421,7 @@ export default function LearnerTracker({ asTab = false }) {
                 <table className="w-full">
                   <thead>
                     <tr className={isLight ? 'border-b border-slate-500/10' : 'border-b border-white/5'}>
-                      {['Learner', 'Manager(s)', 'Courses Opted', 'Certifications', 'Last Active', ''].map(h => (
+                      {['Learner', 'Manager(s)', 'Courses Started', 'Certifications', 'Last Active', ''].map(h => (
                         <th key={h} className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>{h}</th>
                       ))}
                     </tr>

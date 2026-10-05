@@ -54,7 +54,7 @@ adminRouter.get('/deployment/rollback-preview', async (req, res) => {
 });
 
 adminRouter.post('/deployment/upgrade', async (req, res) => {
-  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '2';
+  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '3';
   const result = startUpgrade(version);
   await prisma.setting.upsert({
     where: { key: 'deployment.currentVersion' },

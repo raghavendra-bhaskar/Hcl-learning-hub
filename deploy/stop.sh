@@ -28,6 +28,11 @@ if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
 PG_SERVICE="${PG_SERVICE:-postgresql}"
+EXTERNAL_DB="${EXTERNAL_DB:-false}"
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-postgres}"
+DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
+# shellcheck disable=SC1091
+if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
 PID_FILE="$INSTALL_DIR/run/hub.pid"
 
@@ -79,8 +84,7 @@ done
 
 # ── Optional: stop PostgreSQL too ────────────────────────────────────────────
 if [ "$WITH_DB" = true ]; then
-  info "Stopping PostgreSQL ($PG_SERVICE)..."
-  sudo systemctl stop "$PG_SERVICE" && ok "PostgreSQL stopped" || warn "Could not stop $PG_SERVICE"
+  stop_db_runtime
 else
   info "PostgreSQL left running (use --with-db to stop it as well)"
 fi

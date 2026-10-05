@@ -38,7 +38,11 @@ DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-hclhub}"
 DB_USER="${DB_USER:-hcluser}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-postgres}"
+DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
 if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
+# shellcheck disable=SC1091
+if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
 cd "$INSTALL_DIR"
 
@@ -46,6 +50,7 @@ CREDS="$INSTALL_DIR/.deploy-credentials"
 [ -f "$CREDS" ] || fail "Missing $CREDS"
 DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
 [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+resolve_db_runtime
 
 BACKUP_DIR="$INSTALL_DIR/backups"
 RELEASES_DIR="$INSTALL_DIR/releases"
@@ -132,6 +137,13 @@ banner "Rollback summary"
 info "Current version: ${CURRENT_VERSION:-unknown}"
 info "Target version : ${TARGET_PRODUCT_VERSION:-unknown}"
 info "Target commit  : $TARGET_COMMIT"
+if [ "$DB_RUNTIME_KIND" = "container" ]; then
+  info "Database runtime: ${DB_RUNTIME_ENGINE}:${DB_RUNTIME_CONTAINER}"
+elif [ "$DB_RUNTIME_KIND" = "external" ]; then
+  info "Database runtime: external (${DB_HOST}:${DB_PORT})"
+else
+  info "Database runtime: host (${DB_HOST}:${DB_PORT})"
+fi
 if [ "$NO_RESTORE" = false ]; then
   info "Restore dump   : $RESTORE_FILE"
 else
@@ -147,7 +159,7 @@ if [ "$ASSUME_YES" != true ]; then
 fi
 
 banner "Rollback — step 1/5: Safety backup"
-if PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --format=custom --no-owner --no-acl -f "$SAFETY_BACKUP" 2>/dev/null; then
+if _db_dump "$SAFETY_BACKUP" 2>/dev/null; then
   ok "Safety backup written: $SAFETY_BACKUP"
 else
   fail "Could not take the rollback safety backup"
@@ -175,11 +187,7 @@ if [ "$NO_RESTORE" = false ]; then
   MAGIC="$(head -c 5 "$RESTORE_FILE" | tr -d '\0' || true)"
   RESTORE_LOG="$INSTALL_DIR/rollback-restore-${TIMESTAMP}.log"
   set +e
-  if [ "$MAGIC" = "PGDMP" ]; then
-    PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-acl "$RESTORE_FILE" > "$RESTORE_LOG" 2>&1
-  else
-    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --set ON_ERROR_STOP=off -f "$RESTORE_FILE" > "$RESTORE_LOG" 2>&1
-  fi
+  _db_restore "$RESTORE_FILE" "$RESTORE_LOG" "$MAGIC"
   RC=$?
   set -e
   [ $RC -eq 0 ] && ok "Restore complete" || warn "Restore exited $RC — see $RESTORE_LOG"

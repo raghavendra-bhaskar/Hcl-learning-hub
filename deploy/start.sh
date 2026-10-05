@@ -35,8 +35,12 @@ UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
 PG_SERVICE="${PG_SERVICE:-postgresql}"
 EXTERNAL_DB="${EXTERNAL_DB:-false}"
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-postgres}"
+DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
 # PGDG installs psql/pg_dump outside /usr/bin.
 if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
+# shellcheck disable=SC1091
+if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
 LOG_DIR="$INSTALL_DIR/logs"
 RUN_DIR="$INSTALL_DIR/run"
@@ -59,17 +63,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────
-if [ "$EXTERNAL_DB" = true ]; then
-  ok "Using an external database — not managing a local service"
-elif command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-active --quiet "$PG_SERVICE" 2>/dev/null; then
-    ok "PostgreSQL is running ($PG_SERVICE)"
-  else
-    info "Starting PostgreSQL ($PG_SERVICE)..."
-    sudo systemctl start "$PG_SERVICE" || fail "Could not start $PG_SERVICE"
-    ok "PostgreSQL started"
-  fi
-fi
+start_db_runtime
 
 # ── Dependency sanity check ──────────────────────────────────────────────────
 [ -d node_modules ]        || fail "node_modules missing. Run: npm install"
