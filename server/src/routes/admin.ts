@@ -54,26 +54,40 @@ adminRouter.get('/deployment/rollback-preview', async (req, res) => {
 });
 
 adminRouter.post('/deployment/upgrade', async (req, res) => {
-  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '3';
-  const result = startUpgrade(version);
-  await prisma.setting.upsert({
-    where: { key: 'deployment.currentVersion' },
-    create: { key: 'deployment.currentVersion', value: version },
-    update: { value: version },
-  });
-  res.status(202).json(result);
+  try {
+    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '3';
+    const result = startUpgrade(version);
+    await prisma.setting.upsert({
+      where: { key: 'deployment.currentVersion' },
+      create: { key: 'deployment.currentVersion', value: version },
+      update: { value: version },
+    });
+    res.status(202).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Upgrade could not be started.';
+    const status = /Linux VM runtime/i.test(message) ? 409 : 500;
+    console.error('[admin] deployment upgrade failed:', error);
+    res.status(status).json({ error: message });
+  }
 });
 
 adminRouter.post('/deployment/rollback', async (req, res) => {
-  const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '';
-  if (!version) return res.status(400).json({ error: 'Rollback version is required.' });
-  const result = startRollback(version);
-  await prisma.setting.upsert({
-    where: { key: 'deployment.currentVersion' },
-    create: { key: 'deployment.currentVersion', value: version },
-    update: { value: version },
-  });
-  res.status(202).json(result);
+  try {
+    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '';
+    if (!version) return res.status(400).json({ error: 'Rollback version is required.' });
+    const result = startRollback(version);
+    await prisma.setting.upsert({
+      where: { key: 'deployment.currentVersion' },
+      create: { key: 'deployment.currentVersion', value: version },
+      update: { value: version },
+    });
+    res.status(202).json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Rollback could not be started.';
+    const status = /Linux VM runtime/i.test(message) ? 409 : 500;
+    console.error('[admin] deployment rollback failed:', error);
+    res.status(status).json({ error: message });
+  }
 });
 
 adminRouter.get('/users', async (_req, res) => {

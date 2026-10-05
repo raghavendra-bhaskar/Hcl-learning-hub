@@ -282,7 +282,7 @@ export function startUpgrade(versionLabel: string) {
   const logFile = join(LOGS_DIR, `upgrade-${timestamp()}.log`);
   const latestBackup = findLatestBackup();
   const restoreArg = latestBackup ? ` --restore ${shellQuote('latest')}` : '';
-  const child = spawn('bash', ['-lc', `bash ${shellQuote(UPGRADE_SCRIPT)} --version ${shellQuote(versionLabel)}${restoreArg} > ${shellQuote(logFile)} 2>&1`], {
+  const child = spawn('bash', ['-lc', `sleep 2; bash ${shellQuote(UPGRADE_SCRIPT)} --version ${shellQuote(versionLabel)}${restoreArg} > ${shellQuote(logFile)} 2>&1`], {
     cwd: REPO_ROOT,
     detached: true,
     stdio: 'ignore',
@@ -296,7 +296,7 @@ export function startRollback(targetVersion: string) {
   ensureRunnableScript(ROLLBACK_SCRIPT);
   mkdirSync(LOGS_DIR, { recursive: true });
   const logFile = join(LOGS_DIR, `rollback-${timestamp()}.log`);
-  const child = spawn('bash', ['-lc', `bash ${shellQuote(ROLLBACK_SCRIPT)} --to-version ${shellQuote(targetVersion)} --yes > ${shellQuote(logFile)} 2>&1`], {
+  const child = spawn('bash', ['-lc', `sleep 2; bash ${shellQuote(ROLLBACK_SCRIPT)} --to-version ${shellQuote(targetVersion)} --yes > ${shellQuote(logFile)} 2>&1`], {
     cwd: REPO_ROOT,
     detached: true,
     stdio: 'ignore',

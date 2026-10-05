@@ -485,6 +485,9 @@ GIT_BRANCH=${GIT_BRANCH}
 HUBENV
 chmod 600 deploy/hub.env
 
+find deploy -maxdepth 1 -type f -name '*.sh' -exec chmod u+x {} \;
+ok "Deploy scripts marked executable"
+
 # Credentials summary (kept out of git by .gitignore)
 cat > .deploy-credentials <<CREDS
 # HCL Software Learning Hub — Deployment Credentials

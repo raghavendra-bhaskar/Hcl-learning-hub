@@ -33,6 +33,14 @@ fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
 
+ensure_execute_permissions() {
+  local script=""
+  for script in "$SCRIPT_DIR"/*.sh; do
+    [ -f "$script" ] || continue
+    chmod u+x "$script" 2>/dev/null || true
+  done
+}
+
 resolve_restore_file() {
   local requested="$1"
   local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
@@ -98,6 +106,8 @@ if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
+ensure_execute_permissions
+
 cd "$INSTALL_DIR"
 
 CREDS="$INSTALL_DIR/.deploy-credentials"
@@ -116,6 +126,16 @@ LATEST_BACKUP_FILE="$BACKUP_DIR/latest.dump"
 RELEASES_DIR="$INSTALL_DIR/releases"
 CURRENT_RELEASE_FILE="$RELEASES_DIR/current-release.env"
 PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
+PINNED_RESTORE_FILE=""
+if [ "$CODE_ONLY" = false ] && [ -n "$RESTORE_FILE" ]; then
+  RESTORE_FILE="$(resolve_restore_file "$RESTORE_FILE")" || fail "Restore file not found: $RESTORE_FILE"
+  if [ "$(basename "$RESTORE_FILE")" = "latest.dump" ]; then
+    PINNED_RESTORE_FILE="/tmp/hcl-hub-restore-${TIMESTAMP}.dump"
+    cp -f "$RESTORE_FILE" "$PINNED_RESTORE_FILE"
+    RESTORE_FILE="$PINNED_RESTORE_FILE"
+    info "Pinned restore source before refreshing latest.dump: $RESTORE_FILE"
+  fi
+fi
 if [ "$CODE_ONLY" = false ]; then
   mkdir -p "$BACKUP_DIR"
   mkdir -p "$RELEASES_DIR"
@@ -128,12 +148,12 @@ if [ "$CODE_ONLY" = false ]; then
     info "Detected host PostgreSQL at ${DB_HOST}:${DB_PORT}"
   fi
 
-  if _db_dump "$BACKUP_FILE" 2>/dev/null; then
+  if _db_dump "$BACKUP_FILE"; then
     ok "Backup written: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
     cp -f "$BACKUP_FILE" "$LATEST_BACKUP_FILE"
     ok "Latest backup pointer updated: $LATEST_BACKUP_FILE"
   else
-    fail "pg_dump failed. Is PostgreSQL running? Nothing has been changed. Use --code-only to deploy code without a database backup."
+    fail "pg_dump failed. Fix the PostgreSQL client/auth issue shown above, or use --code-only to deploy code without taking a fresh safety backup."
   fi
 
   # Keep the 10 most recent backups.
