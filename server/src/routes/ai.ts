@@ -1,7 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { requireRole } from '../middleware/requireRole.js';
 import { discoverModels, normalizeEndpoint, ollamaRequest } from '../lib/ollama.js';
 import { courseSources, retrieveSources, tutorSystemPrompt, type KnowledgeSource } from '../lib/aiKnowledge.js';
 
@@ -25,6 +24,40 @@ async function readConfig() {
   return row ? configSchema.parse(JSON.parse(row.value)) : defaults;
 }
 
+function moderatorSettingKey(slug: string) {
+  return `course.moderators.${slug}`;
+}
+
+function parseModeratorIds(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && id.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function ensureCourseAiAccess(req: any, res: any, courseId: string) {
+  if (!req.user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return null;
+  }
+  const course = await prisma.course.findUnique({ where: { id: courseId }, select: { id: true, slug: true } });
+  if (!course) {
+    res.status(404).json({ error: 'Course not found.' });
+    return null;
+  }
+  if (req.user.role === 'ADMIN') return course;
+  const setting = await prisma.setting.findUnique({ where: { key: moderatorSettingKey(course.slug) } });
+  const moderatorIds = parseModeratorIds(setting?.value);
+  if (!moderatorIds.includes(req.user.id)) {
+    res.status(403).json({ error: 'Forbidden: insufficient course permissions' });
+    return null;
+  }
+  return course;
+}
+
 const handle = (handler: RequestHandler): RequestHandler => (req, res, next) => {
   Promise.resolve(handler(req, res, next)).catch(error => {
     if (error instanceof z.ZodError) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid AI request.' });
@@ -39,45 +72,6 @@ const handle = (handler: RequestHandler): RequestHandler => (req, res, next) => 
     res.status(503).json({ error: safeMessage });
   });
 };
-
-function parseAiJsonPayload(content: unknown) {
-  const text = String(content || '').replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-  if (!text) throw new Error('The AI returned an empty response.');
-  try { return JSON.parse(text); }
-  catch {
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      return JSON.parse(text.slice(firstBrace, lastBrace + 1));
-    }
-    throw new Error('The AI returned malformed JSON.');
-  }
-}
-
-aiRouter.get('/config', requireRole('ADMIN'), handle(async (_req, res) => {
-  res.json(await readConfig());
-}));
-
-aiRouter.post('/models', requireRole('ADMIN'), handle(async (req, res) => {
-  const { endpoint } = z.object({ endpoint: endpointSchema }).strict().parse(req.body);
-  res.json({ models: await discoverModels(endpoint) });
-}));
-
-aiRouter.put('/config', requireRole('ADMIN'), handle(async (req, res) => {
-  const config = configSchema.parse(req.body);
-  if (config.enabled) {
-    const models = await discoverModels(config.endpoint);
-    if (!models.some((model: { name: string }) => model.name === config.model)) {
-      res.status(400).json({ error: 'The selected model is no longer installed. Refresh the model list.' });
-      return;
-    }
-  }
-  await prisma.setting.upsert({
-    where: { key: CONFIG_KEY }, create: { key: CONFIG_KEY, value: JSON.stringify(config) },
-    update: { value: JSON.stringify(config) },
-  });
-  res.json(config);
-}));
 
 const outlineSchema = z.object({
   courseId: z.string().min(1).max(100),
@@ -94,11 +88,29 @@ const generatedWeekSchema = z.object({
 });
 const generatedPlanSchema = z.object({ weeks: z.array(generatedWeekSchema).min(1).max(8) });
 
-aiRouter.post('/course-outline', requireRole('ADMIN'), handle(async (req, res) => {
+function parseAiJsonPayload(payload: unknown) {
+  const text = String(payload || '').trim();
+  if (!text) throw new Error('Empty AI response');
+  const cleaned = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  const jsonText = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+  return JSON.parse(jsonText);
+}
+
+aiRouter.post('/course-outline', handle(async (req, res) => {
   const input = outlineSchema.parse(req.body);
+  const access = await ensureCourseAiAccess(req, res, input.courseId);
+  if (!access) return;
+
   const config = await readConfig();
   if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
   const course = await prisma.course.findUnique({ where: { id: input.courseId }, select: { title: true, description: true } });
+
   if (!course) { res.status(404).json({ error: 'Course not found.' }); return; }
   const result = await ollamaRequest(config.endpoint, '/api/chat', {
     model: config.model, stream: false, format: 'json',
@@ -125,7 +137,16 @@ const builderSchema = z.object({
   courseId: z.string().min(1).max(100),
   outline: z.string().trim().min(20).max(12000),
   mode: z.enum(['create', 'modify', 'quests-only']).default('create'),
+  resourceUrls: z.array(z.string().url().max(1000)).max(12).default([]),
+  attachments: z.array(z.object({
+    name: z.string().trim().min(1).max(240),
+    type: z.string().trim().max(120).default('application/octet-stream'),
+    sizeBytes: z.number().int().nonnegative().max(25 * 1024 * 1024).default(0),
+    summary: z.string().trim().max(2000).default(''),
+    previewText: z.string().trim().max(12000).default(''),
+  }).strict()).max(8).default([]),
 }).strict();
+
 const builderResourceSchema = z.object({
   label: z.string().trim().min(2).max(180),
   type: z.enum(['youtube', 'playlist', 'video', 'read', 'ibm', 'link']),
@@ -203,6 +224,21 @@ function extractOutlineTopics(outline: string) {
 
   const unique = Array.from(new Set(normalized.map((value) => value.replace(/^module\s*\d+\s*/i, '').trim()).filter(Boolean)));
   return unique.length ? unique : ['Foundations', 'Core Workflow'];
+}
+
+function summarizeBuilderAttachments(attachments: Array<{ name: string; type: string; sizeBytes: number; summary: string; previewText: string }>) {
+  return attachments
+    .map((attachment, index) => {
+      const parts = [
+        `ATTACHMENT ${index + 1}: ${attachment.name}`,
+        `TYPE: ${attachment.type || 'unknown'}`,
+        `SIZE: ${attachment.sizeBytes || 0} bytes`,
+      ];
+      if (attachment.summary) parts.push(`SUMMARY: ${attachment.summary}`);
+      if (attachment.previewText) parts.push(`CONTENT PREVIEW: ${attachment.previewText.slice(0, 4000)}`);
+      return parts.join('\n');
+    })
+    .join('\n\n');
 }
 
 function extractDocumentationUrls(input: string) {
@@ -424,8 +460,10 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
   };
 }
 
-aiRouter.post('/course-builder', requireRole('ADMIN'), handle(async (req, res) => {
+aiRouter.post('/course-builder', handle(async (req, res) => {
   const input = builderSchema.parse(req.body);
+  const access = await ensureCourseAiAccess(req, res, input.courseId);
+  if (!access) return;
   const config = await readConfig();
 
   if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
@@ -461,12 +499,17 @@ aiRouter.post('/course-builder', requireRole('ADMIN'), handle(async (req, res) =
   const existingModuleTitles = (course.weeks || []).flatMap((week: any) =>
     (Array.isArray(week.modules) ? week.modules : []).map((module: any) => cleanBuilderTitle(module.title, 'Untitled Module')).filter(Boolean),
   );
-  const documentationUrls = extractDocumentationUrls(input.outline);
+  const documentationUrls = Array.from(new Set([...extractDocumentationUrls(input.outline), ...(input.resourceUrls || [])]));
   const documentationSources = await resolveDocumentationSources(documentationUrls);
+  const attachmentTopics = (input.attachments || [])
+    .flatMap((attachment) => extractOutlineTopics([attachment.summary, attachment.previewText].filter(Boolean).join('\n')))
+    .filter(Boolean);
   const requestedTopics = Array.from(new Set([
     ...extractOutlineTopics(stripUrls(input.outline)),
+    ...attachmentTopics,
     ...documentationSources.flatMap(source => source.topics),
   ])).slice(0, 12);
+
   const outlineTopics = input.mode === 'quests-only'
     ? (existingModuleTitles.length ? existingModuleTitles.slice(0, 12) : requestedTopics.slice(0, 12))
     : input.mode === 'modify'
@@ -492,6 +535,9 @@ aiRouter.post('/course-builder', requireRole('ADMIN'), handle(async (req, res) =
       `EXCERPT: ${source.summary.slice(0, 2500)}`,
     ].join('\n')).join('\n\n')
     : 'No product documentation URLs were supplied.';
+  const attachmentsText = input.attachments?.length
+    ? summarizeBuilderAttachments(input.attachments)
+    : 'No local attachments were supplied.';
   const result = await ollamaRequest(config.endpoint, '/api/chat', {
     model: config.model, stream: false, format: 'json',
     messages: [{ role: 'system', content: [
@@ -509,8 +555,9 @@ aiRouter.post('/course-builder', requireRole('ADMIN'), handle(async (req, res) =
           ? 'Modify mode: treat the existing course as the base. Update only the requested areas and preserve unaffected structure.'
           : 'Create mode: build a full course preview while avoiding duplicates against the existing course structure.',
       'If product documentation URLs are supplied, infer the module list from the documentation headings, workflows, and terminology before filling any missing areas from the free-text request.',
+      'If local attachments are supplied, use their summaries and extracted previews as additional context. If an attachment has no readable preview, use only its filename and summary metadata.',
       'Use only the supplied candidate URLs. Do not invent or modify URLs. A topic may have zero resources if none fit.',
-      `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nREQUEST: ${input.outline}\nOUTLINE TOPICS:\n${outlineTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}\nEXISTING COURSE STRUCTURE:\n${existingCourseSummary || 'No existing course content.'}\nDOCUMENTATION SOURCES:\n${documentationText}\nCANDIDATE RESOURCES:\n${resourceText}`,
+      `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nREQUEST: ${input.outline}\nOUTLINE TOPICS:\n${outlineTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}\nEXISTING COURSE STRUCTURE:\n${existingCourseSummary || 'No existing course content.'}\nDOCUMENTATION SOURCES:\n${documentationText}\nATTACHMENTS:\n${attachmentsText}\nCANDIDATE RESOURCES:\n${resourceText}`,
     ].join('\n') }],
     options: { temperature: 0.15, num_predict: 6000, num_ctx: 8192 },
   }, { timeoutMs: 480000 });

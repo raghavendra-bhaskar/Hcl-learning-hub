@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, Map, ShieldCheck, Search, BookOpen, Moon, Sun, Sparkles } from 'lucide-react';
-import { getAuth, signOut } from './LoginPage.jsx';
+import { ChevronRight, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, Map, ShieldCheck, Search, BookOpen, Sparkles } from 'lucide-react';
+import { clearAuth, getAuth, signOut } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
 import { api } from '../lib/api.js';
 import { QUESTS } from '../data/index.js';
@@ -282,17 +282,14 @@ export default function CourseSelect() {
     dbCourses: storeDbCourses,
     setDbCourses,
     theme,
-    setTheme,
     completedQuests,
     devopsCompletedQuests,
     courseCompletedQuests,
   } = useAppStore();
 
   const isAdmin = auth?.role === 'ADMIN';
-  const isModerator = auth?.role === 'MODERATOR';
   const isLight = theme === 'light';
   const lightPanel     = 'rgba(255,255,255,0.92)';
-  const lightPanelSoft  = 'rgba(248,250,252,0.96)';
 
   const [enrollingCourse, setEnrollingCourse] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -303,6 +300,7 @@ export default function CourseSelect() {
   const [courseSearch, setCourseSearch] = useState('');
   const [dragOverId, setDragOverId] = useState(null);
   const [dragId, setDragId] = useState(null);
+  const [sessionInvalid, setSessionInvalid] = useState(false);
 
   const profileRef = useRef(null);
   const filterRef = useRef(null);
@@ -321,8 +319,16 @@ export default function CourseSelect() {
   useEffect(() => {
     api.get('/courses-api').then(data => {
       const sorted = Array.isArray(data) ? [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : [];
+      setSessionInvalid(false);
       setDbCourses(sorted);
-    }).catch(() => {});
+    }).catch((error) => {
+      if (error?.status === 401 || error?.status === 403) {
+        clearAuth();
+        setSessionInvalid(true);
+        setDbCourses([]);
+        return;
+      }
+    });
   }, [setDbCourses]);
 
   const scoreSearch = (course) => {
@@ -353,7 +359,7 @@ export default function CourseSelect() {
   const activeFilter = COURSE_FILTERS.find(filter => filter.id === courseFilter) || COURSE_FILTERS[0];
   const dbCourseMap = Object.fromEntries((storeDbCourses || []).map(course => [course.slug, course]));
 
-  const normalizedDbCourses = useMemo(() => (storeDbCourses || [])
+  const normalizedDbCourses = useMemo(() => sessionInvalid ? [] : (storeDbCourses || [])
     .filter(course => !HARD_CODED_SLUGS.has(course.slug))
     .map((course, index) => ({
       ...course,
@@ -364,9 +370,9 @@ export default function CourseSelect() {
       sortOrder: typeof course.order === 'number' ? course.order : 100 + index,
       badge: course._count?.weeks ? `${course._count.weeks} Week${course._count.weeks === 1 ? '' : 's'}` : 'Course Track',
       totalQuests: course._count?.quests || null,
-    })), [storeDbCourses]);
+    })), [sessionInvalid, storeDbCourses]);
 
-  const normalizedHardcodedCourses = useMemo(() => COURSES.map((course, index) => ({
+  const normalizedHardcodedCourses = useMemo(() => sessionInvalid ? [] : COURSES.map((course, index) => ({
     ...course,
     source: 'hardcoded',
     title: dbCourseMap[course.id]?.title || course.title,
@@ -382,7 +388,7 @@ export default function CourseSelect() {
     order: dbCourseMap[course.id]?.order,
     slug: course.id,
     sortOrder: typeof dbCourseMap[course.id]?.order === 'number' ? dbCourseMap[course.id].order : index,
-  })), [dbCourseMap]);
+  })), [dbCourseMap, sessionInvalid]);
 
   const allCourses = useMemo(() => [...normalizedHardcodedCourses, ...normalizedDbCourses], [normalizedHardcodedCourses, normalizedDbCourses]);
 
@@ -397,6 +403,7 @@ export default function CourseSelect() {
   const moderatedCourses = useMemo(() => allCourses
     .filter(course => course.canEdit)
     .sort((a, b) => a.title.localeCompare(b.title)), [allCourses]);
+  const hasModeratedCourses = moderatedCourses.length > 0;
 
   useEffect(() => {
     const dbCoursesWithProgress = allCourses.filter(course => course.source === 'db' && Object.keys(courseCompletedQuests?.[course.slug || course.id] || {}).length > 0);
@@ -633,10 +640,6 @@ export default function CourseSelect() {
               )}
             </div>
 
-            <button onClick={() => setTheme(isLight ? 'dark' : 'light')} className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${isLight ? 'text-amber-600 hover:text-amber-700' : 'text-slate-300 hover:text-white'}`} style={{ border: isLight ? '1px solid rgba(100,116,139,0.3)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? lightPanel : 'rgba(255,255,255,0.03)' }} title={isLight ? 'Switch to dark mode' : 'Switch to light mode'}>
-              {isLight ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
-
             <div className="relative" ref={profileRef}>
               <button onClick={() => setProfileOpen(open => !open)} className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`} style={{ border: isLight ? '1px solid rgba(100,116,139,0.3)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? lightPanel : 'rgba(255,255,255,0.03)' }}>
                 {avatar ? <AvatarDisplay avatar={avatar} size="xs" /> : <UserCircle size={18} className={isLight ? 'text-slate-500' : 'text-slate-400'} />}
@@ -660,7 +663,7 @@ export default function CourseSelect() {
                     {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors text-left"><ShieldCheck size={13} className="text-red-400" />User Management</button>}
                     {(auth?.role === 'ADMIN' || auth?.role === 'MANAGER') && <button onClick={() => { setProfileOpen(false); navigate('/tracker'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 transition-colors text-left"><GraduationCap size={13} className="text-amber-400" />Learner Tracker</button>}
                     {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin?tab=courses'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-violet-300 hover:bg-violet-500/10 hover:text-violet-200 transition-colors text-left"><Map size={13} className="text-violet-400" />Courses</button>}
-                    {isModerator && (
+                    {hasModeratedCourses && (
                       <>
                         <div className="my-1 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }} />
                         <div className="px-4 py-2">
@@ -710,6 +713,13 @@ export default function CourseSelect() {
                   <p className="text-xs text-slate-500">{totalVisibleCount} result{totalVisibleCount !== 1 ? 's' : ''} · {activeFilter.description}</p>
                 </div>
               </div>
+
+              {sessionInvalid && (
+                <div className="mb-5 rounded-2xl border px-4 py-3" style={{ background: isLight ? 'rgba(254,242,242,0.95)' : 'rgba(127,29,29,0.18)', borderColor: isLight ? 'rgba(248,113,113,0.30)' : 'rgba(248,113,113,0.25)' }}>
+                  <p className={`text-sm font-semibold ${isLight ? 'text-red-700' : 'text-red-200'}`}>Session expired — please log in again.</p>
+                  <button onClick={() => navigate('/login', { replace: true })} className="mt-2 text-xs font-bold text-cyan-500 hover:text-cyan-400">Go to login</button>
+                </div>
+              )}
 
               <div className="grid sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
                 {visibleCourses.map(course => (

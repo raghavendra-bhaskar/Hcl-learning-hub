@@ -49,11 +49,49 @@ function cleanBuilderDisplayTitle(value, fallback = '') {
     .trim() || fallback;
 }
 
-function normalizeBuilderKey(value) {
-  return cleanBuilderDisplayTitle(value, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+const normalizeBuilderKey = (value) => cleanBuilderDisplayTitle(value, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim();
+
+const TEXT_ATTACHMENT_EXTENSIONS = /\.(txt|md|csv|json|ya?ml|xml|html?|js|jsx|ts|tsx|py|java|sql|log|ini|cfg)$/i;
+
+function formatAttachmentSize(sizeBytes) {
+  if (!sizeBytes) return '0 B';
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+    reader.readAsText(file);
+  });
+}
+
+async function buildAttachmentPayload(file) {
+  const type = file.type || 'application/octet-stream';
+  const canPreviewAsText = type.startsWith('text/')
+    || /json|xml|csv|javascript/i.test(type)
+    || TEXT_ATTACHMENT_EXTENSIONS.test(file.name || '');
+  let previewText = '';
+  if (canPreviewAsText) {
+    try {
+      previewText = (await readFileAsText(file)).replace(/\s+/g, ' ').trim().slice(0, 12000);
+    } catch {}
+  }
+  return {
+    name: file.name,
+    type,
+    sizeBytes: Number(file.size || 0),
+    summary: previewText
+      ? `${file.name} uploaded with readable text preview.`
+      : `${file.name} uploaded (${type}, ${formatAttachmentSize(Number(file.size || 0))}).`,
+    previewText,
+  };
 }
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────
@@ -566,6 +604,8 @@ function HelpSessionPanel({ course, onUpdate, isLight }) {
 function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
   const [open, setOpen] = useState(false);
   const [outline, setOutline] = useState('');
+  const [resourceUrls, setResourceUrls] = useState(['']);
+  const [attachments, setAttachments] = useState([]);
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -577,10 +617,53 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
   const generate = async () => {
     setBusy(true); setError('');
     try {
-      const nextPlan = await api.post('/ai/course-builder', { courseId: course.id, outline, mode });
+      const cleanedUrls = resourceUrls.map(value => value.trim()).filter(Boolean);
+      const invalidUrl = cleanedUrls.find(value => {
+        try {
+          new URL(value);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      if (invalidUrl) throw new Error(`Invalid URL: ${invalidUrl}`);
+      const nextPlan = await api.post('/ai/course-builder', { courseId: course.id, outline, mode, resourceUrls: cleanedUrls, attachments });
       setPlan(nextPlan);
     } catch (e) { setError(e?.message || 'Could not generate course topics'); }
     finally { setBusy(false); }
+  };
+
+  const updateResourceUrl = (index, value) => {
+    setResourceUrls(previous => previous.map((item, itemIndex) => itemIndex === index ? value : item));
+  };
+
+  const addResourceUrl = () => {
+    setResourceUrls(previous => previous.length >= 12 ? previous : [...previous, '']);
+  };
+
+  const removeResourceUrl = (index) => {
+    setResourceUrls(previous => {
+      const next = previous.filter((_, itemIndex) => itemIndex !== index);
+      return next.length ? next : [''];
+    });
+  };
+
+  const onAttachmentChange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+    try {
+      const remainingSlots = Math.max(0, 8 - attachments.length);
+      const nextFiles = files.slice(0, remainingSlots);
+      const nextAttachments = await Promise.all(nextFiles.map(buildAttachmentPayload));
+      setAttachments(previous => [...previous, ...nextAttachments].slice(0, 8));
+    } catch (e) {
+      setError(e?.message || 'Could not read attachments');
+    }
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(previous => previous.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const addPlan = async () => {
@@ -711,6 +794,8 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
       const refreshedCourse = await api.get(`/courses-api/${course.slug}`);
       onCreated(refreshedCourse.weeks || []);
       setPlan(null); setOutline(''); setOpen(false);
+      setResourceUrls(['']);
+      setAttachments([]);
     } catch (e) { setError(e?.message || 'Could not add generated topics'); }
     finally { setBusy(false); }
   };
@@ -745,6 +830,51 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
         <div className="rounded-xl border px-4 py-3" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
           <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Current course structure</p>
           <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{weeks.length} week{weeks.length === 1 ? '' : 's'} · {currentModuleCount} module{currentModuleCount === 1 ? '' : 's'} · duplicate module names will update existing content instead of creating extra copies.</p>
+        </div>
+        <div className="rounded-xl border px-4 py-3 space-y-3" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Reference URLs</p>
+              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Add multiple documentation or tutorial links for the builder to use.</p>
+            </div>
+            <button onClick={addResourceUrl} type="button" className="px-3 py-1.5 rounded-lg text-[11px] font-bold border"
+              style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
+              + Add URL
+            </button>
+          </div>
+          <div className="space-y-2">
+            {resourceUrls.map((value, index) => (
+              <div key={index} className="flex gap-2">
+                <input value={value} onChange={event => updateResourceUrl(index, event.target.value)} placeholder="https://www.ibm.com/docs/..."
+                  className="flex-1 rounded-xl px-3 py-2 text-sm focus:outline-none" style={inputStyle} />
+                {resourceUrls.length > 1 && <button onClick={() => removeResourceUrl(index)} type="button" className={`px-3 rounded-lg text-xs ${isLight ? 'text-slate-500 hover:text-red-600' : 'text-slate-500 hover:text-red-300'}`}>Remove</button>}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border px-4 py-3 space-y-3" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Attachments</p>
+              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Upload screenshots, spreadsheets, PDFs, or notes to guide the builder. Text files are previewed automatically.</p>
+            </div>
+            <label className="px-3 py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer"
+              style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
+              Upload files
+              <input type="file" multiple onChange={onAttachmentChange} className="hidden" />
+            </label>
+          </div>
+          {attachments.length > 0 ? <div className="space-y-2">
+            {attachments.map((attachment, index) => <div key={`${attachment.name}-${index}`} className="flex items-start gap-3 rounded-xl px-3 py-2 border"
+              style={{ background: isLight ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.03)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{attachment.name}</p>
+                <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{attachment.type || 'application/octet-stream'} · {formatAttachmentSize(attachment.sizeBytes)}</p>
+                {attachment.previewText && <p className={`text-[10px] mt-1 line-clamp-2 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{attachment.previewText.slice(0, 220)}</p>}
+              </div>
+              <button onClick={() => removeAttachment(index)} type="button" className={`text-xs ${isLight ? 'text-slate-500 hover:text-red-600' : 'text-slate-500 hover:text-red-300'}`}>Remove</button>
+            </div>)}
+          </div> : <p className={`text-[11px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>No attachments added yet.</p>}
         </div>
         <textarea value={outline} onChange={e => setOutline(e.target.value)} rows={5} maxLength={12000}
           placeholder={mode === 'quests-only'

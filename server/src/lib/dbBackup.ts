@@ -74,6 +74,40 @@ function findExecutableOnPath(fileName: string) {
   return '';
 }
 
+function findNewestLinuxPgExecutable(fileName: string) {
+  const candidates: Array<{ version: number; filePath: string }> = [];
+  const configuredBin = process.env.PG_BIN?.trim();
+
+  if (configuredBin) {
+    const configuredCandidate = join(configuredBin, fileName);
+    if (existsSync(configuredCandidate)) return configuredCandidate;
+  }
+
+  if (existsSync('/usr')) {
+    readdirSync('/usr')
+      .map(name => ({ name, version: Number.parseInt(name.replace(/^pgsql-/, ''), 10) || 0 }))
+      .filter(entry => entry.version > 0)
+      .forEach(entry => {
+        candidates.push({ version: entry.version, filePath: join('/usr', entry.name, 'bin', fileName) });
+      });
+  }
+
+  if (existsSync('/usr/lib/postgresql')) {
+    readdirSync('/usr/lib/postgresql')
+      .map(name => ({ name, version: Number.parseInt(name, 10) || 0 }))
+      .filter(entry => entry.version > 0)
+      .forEach(entry => {
+        candidates.push({ version: entry.version, filePath: join('/usr/lib/postgresql', entry.name, 'bin', fileName) });
+      });
+  }
+
+  const match = candidates
+    .filter(candidate => existsSync(candidate.filePath))
+    .sort((a, b) => b.version - a.version)[0];
+
+  return match?.filePath || '';
+}
+
 function getDefaultBackupDirectory() {
   const configured = process.env.BACKUP_DIR?.trim();
   if (configured) return configured;
@@ -86,6 +120,11 @@ function getPgDumpCommand() {
   const configured = process.env.PG_DUMP_PATH?.trim();
   if (configured && existsSync(configured)) return configured;
   if (configured) return configured;
+
+  if (process.platform !== 'win32') {
+    const preferredLinuxClient = findNewestLinuxPgExecutable('pg_dump');
+    if (preferredLinuxClient) return preferredLinuxClient;
+  }
 
   const fromPath = findExecutableOnPath(process.platform === 'win32' ? 'pg_dump.exe' : 'pg_dump');
   if (fromPath) return fromPath;
