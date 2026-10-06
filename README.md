@@ -59,6 +59,42 @@ There are two ways to install on a VM that has internet access:
 Both are separate from the air-gap bundle flow further below. Do not use either
 build-from-source path on a host without internet.
 
+### Running from source on Windows
+
+The repository now includes Windows source-deployment scripts in `deploy/*.ps1`
+with `deploy/*.cmd` launchers so you can run the same install, start, stop,
+sync and upgrade lifecycle on a Windows machine.
+
+Run the installer from an elevated PowerShell or Command Prompt in the cloned
+repository root:
+
+```powershell
+deploy\install.cmd -DatabaseUrl postgresql://hcluser:password@127.0.0.1:5432/hclhub
+```
+
+Useful options:
+
+```powershell
+deploy\install.cmd -ServerHost laptop01.contoso.local
+deploy\install.cmd -DatabaseUrl postgresql://u:p@dbhost:5432/hclhub -SkipDbRestore
+deploy\install.cmd -Dump D:\Backups\hcl-hub-latest.dump
+deploy\install.cmd -UiPort 5173 -ApiPort 4000
+```
+
+What the Windows installer does:
+
+| Step | What it does |
+|---|---|
+| 1 | Verifies Git, PowerShell and Node.js 20+ |
+| 2 | Installs root and `server/` npm dependencies |
+| 3 | Writes `server/.env`, `deploy/hub.env` and `.deploy-credentials` |
+| 4 | Generates local development certificates |
+| 5 | Generates Prisma client, applies migrations, optionally restores a dump, and seeds the local admin |
+
+The Windows scripts expect PostgreSQL client tools to be installed locally if
+you want backup or restore support. `deploy/runtime.ps1` automatically prefers
+the highest PostgreSQL version found under `C:\Program Files\PostgreSQL\<version>\bin`.
+
 The repository is **private**, so both the download and the clone need a
 GitHub personal access token. A GitHub account password will not work —
 password authentication for Git was removed, which is why `git clone` fails with
@@ -229,6 +265,32 @@ ls backups/                 # pre-sync database dumps
 ls releases/                # rollout version metadata used by rollback.sh
 ```
 
+### Windows start, stop and sync
+
+On Windows, run the matching `.cmd` wrappers from the repository root:
+
+```powershell
+deploy\start.cmd
+deploy\stop.cmd
+deploy\sync.cmd
+deploy\sync.cmd -Version 1.0.1
+deploy\sync.cmd -CodeOnly
+deploy\sync.cmd -Restore latest
+deploy\upgrade.cmd
+```
+
+| Script | Options |
+|---|---|
+| `install.cmd` | `-ServerHost <fqdn>`, `-DatabaseUrl <url>`, `-Dump <file>`, `-SkipDbRestore`, `-UiPort <port>`, `-ApiPort <port>` |
+| `start.cmd` | `-Foreground` |
+| `stop.cmd` | `-WithDb` prints a reminder; PostgreSQL service stop remains manual on Windows |
+| `sync.cmd` | `-Version <label>`, `-CodeOnly`, `-Restore <dump|latest>`, `-NoRestart`, `-BackupOnly`, `-NoBackup` |
+| `upgrade.cmd` | `-Version <label>`, `-Restore <dump|latest>`, `-CodeOnly`, `-NoRestart`, `-NoBackup` |
+
+`sync.cmd` mirrors the Linux sync flow: it can create a fresh backup, stop the
+running app, pull Git changes, refresh dependencies, regenerate Prisma, apply
+migrations, optionally restore a dump, and start the app again.
+
 ### VM sync and versioned rollout steps
 
 For your VM `blmycldtl596461.nonprod.hclpnp.com`, the normal source upgrade flow is:
@@ -260,6 +322,37 @@ bash deploy/rollback.sh --to-version 1.0.1
 
 `rollback.sh` takes a fresh **safety backup first**, then checks out the earlier
 commit and restores the matching pre-sync dump unless you pass `--no-restore`.
+
+### Cross-platform sync workflows
+
+Use the scripts according to the machine that is hosting the application:
+
+| Host machine | Install | Start | Stop | Sync |
+|---|---|---|---|---|
+| Linux VM | `bash deploy/install.sh` | `bash deploy/start.sh` | `bash deploy/stop.sh` | `bash deploy/sync.sh` |
+| Windows host | `deploy\install.cmd` | `deploy\start.cmd` | `deploy\stop.cmd` | `deploy\sync.cmd` |
+
+Typical flows:
+
+1. **Windows laptop backing up a Linux VM**
+   - Run `deploy/Backup-Remote.ps1` on Windows.
+   - It calls `deploy/sync.sh --backup-only` on the VM over SSH.
+   - The newest dump is copied back to Windows for safekeeping.
+
+2. **Linux VM restoring a dump created elsewhere**
+   - Copy the `.dump` file into `backups/` or `scripts/` on the VM.
+   - Run `bash deploy/sync.sh --restore latest` or `bash deploy/sync.sh --restore <file>`.
+
+3. **Windows host restoring a dump from a Linux VM**
+   - Copy the `.dump` file into `backups\`, `scripts\`, or another local path on Windows.
+   - Run `deploy\sync.cmd -Restore latest` or `deploy\sync.cmd -Restore D:\path\file.dump`.
+
+4. **Code-only rollout when database movement is handled separately**
+   - Linux: `bash deploy/sync.sh --code-only`
+   - Windows: `deploy\sync.cmd -CodeOnly`
+
+Do not copy `node_modules` or `server/node_modules` between Windows and Linux.
+Only move source files and PostgreSQL dump files between operating systems.
 
 ### Database backup and restore
 

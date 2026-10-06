@@ -176,11 +176,27 @@ const builderWeekSchema = z.object({
   title: z.string().trim().min(2).max(180),
   modules: z.array(builderModuleSchema).min(1).max(6),
 });
+const builderCleanupSchema = z.object({
+  replaceExistingCourse: z.boolean().default(false),
+  deleteAllQuests: z.boolean().default(false),
+  deleteWeeks: z.array(z.string().trim().min(1).max(180)).max(24).default([]),
+  deleteModules: z.array(z.string().trim().min(1).max(180)).max(48).default([]),
+  deleteQuestTitles: z.array(z.string().trim().min(1).max(180)).max(96).default([]),
+  rationale: z.string().trim().max(1200).default(''),
+});
 const builderPlanSchema = z.object({
   learningMap: z.string().trim().min(20).max(4000),
   diagram: z.string().trim().min(20).max(6000),
   weeks: z.array(builderWeekSchema).min(1).max(6),
-});
+  cleanup: builderCleanupSchema.default({
+    replaceExistingCourse: false,
+    deleteAllQuests: false,
+    deleteWeeks: [],
+    deleteModules: [],
+    deleteQuestTitles: [],
+    rationale: '',
+  }),
+}).strict();
 
 async function searchPublicResources(queries: string[]) {
   const resources: Array<{ label: string; type: 'youtube' | 'read' | 'link'; url: string }> = [];
@@ -366,6 +382,7 @@ function composeWeekTitle(moduleTitles: string[]) {
 function buildExistingCourseSummary(course: any) {
   const weeks = Array.isArray(course?.weeks) ? course.weeks : [];
   const quests = Array.isArray(course?.quests) ? course.quests : [];
+
   const moduleQuestCount = new Map<string, number>();
   quests.forEach((quest: any) => {
     if (!quest?.moduleId) return;
@@ -382,8 +399,74 @@ function buildExistingCourseSummary(course: any) {
   }).join('\n');
 }
 
+function extractQuotedOrBulletedNames(input: string) {
+  const fromQuotes = [...input.matchAll(/["“”']([^"“”'\n]{2,180})["“”']/g)].map((match) => match[1].trim());
+  const fromBullets = input.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[-*\d.)]+\s+/.test(line))
+    .map((line) => line.replace(/^[-*\d.)]+\s+/, '').trim())
+    .filter(Boolean);
+  return Array.from(new Set([...fromQuotes, ...fromBullets])).slice(0, 48);
+}
+
+function deriveCleanupHints(input: string, existingCourse: any) {
+  const request = String(input || '');
+  const normalized = request.toLowerCase();
+  const existingWeeks = Array.isArray(existingCourse?.weeks) ? existingCourse.weeks : [];
+  const existingModules = existingWeeks.flatMap((week: any) => Array.isArray(week?.modules) ? week.modules : []);
+  const existingQuests = Array.isArray(existingCourse?.quests) ? existingCourse.quests : [];
+  const namedItems = extractQuotedOrBulletedNames(request);
+
+  const replaceExistingCourse = /(remove|delete|replace|rebuild|recreate).*(entire|whole|old|existing).*(learning path|course)|remove the old weekly learning path|replace the old weekly learning path/i.test(request);
+  const deleteAllQuests = /(delete|remove).*(all|existing).*(quest|quiz)/i.test(request);
+  const deleteWeeks = existingWeeks
+    .map((week: any) => String(week?.title || '').trim())
+    .filter((title: string) => {
+      const key = normalizeBuilderKey(title);
+      return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
+    });
+  const deleteModules = existingModules
+    .map((module: any) => String(module?.title || '').trim())
+    .filter((title: string) => {
+      const key = normalizeBuilderKey(title);
+      return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
+    });
+  const deleteQuestTitles = existingQuests
+    .map((quest: any) => String(quest?.title || '').trim())
+    .filter((title: string) => {
+      const key = normalizeBuilderKey(title);
+      return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
+    });
+
+  return {
+    replaceExistingCourse,
+    deleteAllQuests,
+    deleteWeeks: Array.from(new Set(deleteWeeks)).slice(0, 24),
+    deleteModules: Array.from(new Set(deleteModules)).slice(0, 48),
+    deleteQuestTitles: Array.from(new Set(deleteQuestTitles)).slice(0, 96),
+    rationale: normalized.includes('delete') || normalized.includes('remove') || normalized.includes('replace')
+      ? 'Derived from explicit delete/remove/replace instructions in the request.'
+      : '',
+  };
+}
+
+function normalizeCleanupPlan(cleanup: any, input: string, existingCourse: any) {
+  const hinted = deriveCleanupHints(input, existingCourse);
+  const parsed = builderCleanupSchema.safeParse(cleanup || {});
+  const data = parsed.success ? parsed.data : builderCleanupSchema.parse({});
+  return {
+    replaceExistingCourse: data.replaceExistingCourse || hinted.replaceExistingCourse,
+    deleteAllQuests: data.deleteAllQuests || hinted.deleteAllQuests,
+    deleteWeeks: Array.from(new Set([...(data.deleteWeeks || []), ...hinted.deleteWeeks])).slice(0, 24),
+    deleteModules: Array.from(new Set([...(data.deleteModules || []), ...hinted.deleteModules])).slice(0, 48),
+    deleteQuestTitles: Array.from(new Set([...(data.deleteQuestTitles || []), ...hinted.deleteQuestTitles])).slice(0, 96),
+    rationale: clampText(data.rationale || hinted.rationale || '', '', 1200, 0),
+  };
+}
+
 function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: string[], weekTopicTargets: number[], mode: 'create' | 'modify' | 'quests-only') {
   const weeks = Array.isArray(plan?.weeks) ? plan.weeks : [];
+
   const flattenedTopics = weeks.flatMap((week: any) =>
     (Array.isArray(week?.modules) ? week.modules : []).flatMap((module: any) =>
       (Array.isArray(module?.topics) ? module.topics : []).map((topic: any) => ({
@@ -457,6 +540,15 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
     learningMap: clampText(plan?.learningMap, `The course progresses from foundations to practical application across ${normalizedWeeks.length || 1} stages.`, 4000, 20),
     diagram: clampText(plan?.diagram, `flowchart TD\nA[Foundations]-->B[Practice]\nB-->C[Assessment]`, 6000, 20),
     weeks: normalizedWeeks,
+    cleanup: builderCleanupSchema.parse({
+      replaceExistingCourse: false,
+      deleteAllQuests: false,
+      deleteWeeks: [],
+      deleteModules: [],
+      deleteQuestTitles: [],
+      rationale: '',
+      ...(plan?.cleanup || {}),
+    }),
   };
 }
 
@@ -538,17 +630,21 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
   const attachmentsText = input.attachments?.length
     ? summarizeBuilderAttachments(input.attachments)
     : 'No local attachments were supplied.';
+  const cleanupHints = deriveCleanupHints(input.outline, course);
   const result = await ollamaRequest(config.endpoint, '/api/chat', {
     model: config.model, stream: false, format: 'json',
     messages: [{ role: 'system', content: [
       'You are the HCL Software Learning Hub full course designer.',
       'Use the AI Quest style: progressive learning, compact topics, scenario-based learning, one quiz quest per topic.',
-      'Return JSON only in this exact shape: {"learningMap":"...","diagram":"...","weeks":[{"title":"...","modules":[{"title":"...","topics":[{"title":"...","content":"...","resources":[{"label":"...","type":"read|youtube|link","url":"..."}],"quest":{"title":"...","scenario":"...","optionA":"...","optionB":"...","optionC":"...","optionD":"...","correct":"A|B|C|D","explanation":"..."}}]}]}]}.',
+      'Return JSON only in this exact shape: {"learningMap":"...","diagram":"...","cleanup":{"replaceExistingCourse":false,"deleteAllQuests":false,"deleteWeeks":[],"deleteModules":[],"deleteQuestTitles":[],"rationale":"..."},"weeks":[{"title":"...","modules":[{"title":"...","topics":[{"title":"...","content":"...","resources":[{"label":"...","type":"read|youtube|link","url":"..."}],"quest":{"title":"...","scenario":"...","optionA":"...","optionB":"...","optionC":"...","optionD":"...","correct":"A|B|C|D","explanation":"..."}}]}]}]}.',
       `BUILDER MODE: ${input.mode}.`,
       `Create exactly ${weekTopicTargets.length} weeks. Use this module distribution per week: ${weekTopicTargets.map((count, index) => `Week ${index + 1}=${count} modules`).join(', ')}.`,
       'Each outline topic must appear once. Create exactly 1 topic per module. Keep each topic teachable in 8 to 20 minutes.',
       'learningMap explains the progression. diagram is Mermaid flowchart text only, no markdown fences.',
       'Use concise titles without Week/Module prefixes. Each topic needs one learn-and-practice quest with four options and one correct answer.',
+      'The REQUEST is the highest-priority source of truth. Follow it exactly, especially for keep, delete, replace, compare, split, or separate-enablement instructions.',
+      'Reconcile and unify all three context sources together: direct instructions, product documentation URLs, and uploaded attachments. Do not ignore any of the three when they are supplied.',
+      'If the request names modules or weeks explicitly, preserve those names unless the request explicitly asks you to replace them.',
       input.mode === 'quests-only'
         ? 'Quest-only mode: keep the existing week and module structure. Regenerate only learn content and quiz quests.'
         : input.mode === 'modify'
@@ -556,8 +652,9 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
           : 'Create mode: build a full course preview while avoiding duplicates against the existing course structure.',
       'If product documentation URLs are supplied, infer the module list from the documentation headings, workflows, and terminology before filling any missing areas from the free-text request.',
       'If local attachments are supplied, use their summaries and extracted previews as additional context. If an attachment has no readable preview, use only its filename and summary metadata.',
+      'If the request asks to delete or replace content, populate the cleanup object precisely. Use replaceExistingCourse when the old learning path or whole course should be removed before rebuilding.',
       'Use only the supplied candidate URLs. Do not invent or modify URLs. A topic may have zero resources if none fit.',
-      `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nREQUEST: ${input.outline}\nOUTLINE TOPICS:\n${outlineTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}\nEXISTING COURSE STRUCTURE:\n${existingCourseSummary || 'No existing course content.'}\nDOCUMENTATION SOURCES:\n${documentationText}\nATTACHMENTS:\n${attachmentsText}\nCANDIDATE RESOURCES:\n${resourceText}`,
+      `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nREQUEST: ${input.outline}\nOUTLINE TOPICS:\n${outlineTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}\nEXISTING COURSE STRUCTURE:\n${existingCourseSummary || 'No existing course content.'}\nHEURISTIC CLEANUP HINTS:\n${JSON.stringify(cleanupHints, null, 2)}\nDOCUMENTATION SOURCES:\n${documentationText}\nATTACHMENTS:\n${attachmentsText}\nCANDIDATE RESOURCES:\n${resourceText}`,
     ].join('\n') }],
     options: { temperature: 0.15, num_predict: 6000, num_ctx: 8192 },
   }, { timeoutMs: 480000 });
@@ -566,7 +663,11 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
   try {
     plan = parseAiJsonPayload(result.message?.content);
   } catch { throw new Error('The AI returned an invalid full course plan. Try a smaller outline.'); }
-  const parsed = builderPlanSchema.safeParse(normalizeBuilderPlan(plan, course.title, outlineTopics, weekTopicTargets, input.mode));
+  const normalizedPlan = normalizeBuilderPlan(plan, course.title, outlineTopics, weekTopicTargets, input.mode);
+  const parsed = builderPlanSchema.safeParse({
+    ...normalizedPlan,
+    cleanup: normalizeCleanupPlan(normalizedPlan.cleanup, input.outline, course),
+  });
   if (!parsed.success) throw new Error('The AI returned an incomplete course plan. Try a smaller outline or model.');
   res.json({ ...parsed.data, discoveredResources: resources, documentationSources: documentationSources.map(source => ({ title: source.title, url: source.url })) });
 }));

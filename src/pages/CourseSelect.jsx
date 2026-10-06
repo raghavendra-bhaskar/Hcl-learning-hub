@@ -53,6 +53,37 @@ const COURSES = [
 const statusPriority = (status) => status === 'live' ? 0 : 1;
 const HARD_CODED_SLUGS = new Set(COURSES.map(course => course.id));
 
+function ModeratedCoursesSheet({ courses, onClose, onSelect, isLight }) {
+  return (
+    <div className="fixed inset-0 z-[80]" style={{ background: 'rgba(0,0,0,0.52)', backdropFilter: 'blur(4px)' }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className={`ml-auto h-full w-full max-w-sm border-l ${isLight ? 'bg-white' : 'bg-slate-950'}`}
+        style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)', boxShadow: '0 16px 48px rgba(0,0,0,0.30)' }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }}>
+          <div>
+            <p className={`text-sm font-black tracking-wide ${isLight ? 'text-slate-900' : 'text-white'}`}>Moderated Courses</p>
+            <p className="text-[11px] text-slate-500 mt-1">Select a course to edit.</p>
+          </div>
+          <button onClick={onClose} className={`text-xs font-bold px-2 py-1 rounded-lg ${isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>Close</button>
+        </div>
+        <div className="p-3 space-y-2 max-h-full overflow-y-auto">
+          {courses.length ? courses.map(course => (
+            <button key={course.slug || course.id} onClick={() => onSelect(course)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 border text-left transition-colors ${isLight ? 'hover:bg-slate-50' : 'hover:bg-white/5'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.20)' : 'rgba(255,255,255,0.08)' }}>
+              <Pencil size={14} style={{ color: course.color || course.accentColor || '#06b6d4' }} />
+              <div className="min-w-0 flex-1">
+                <p className={`text-sm font-semibold truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</p>
+                <p className="text-[10px] text-slate-500 truncate">Open course editor</p>
+              </div>
+              <ChevronRight size={14} className="text-slate-400" />
+            </button>
+          )) : <div className="px-3 py-4 text-xs text-slate-500">No moderated courses assigned.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PathEnrollModal({ course, onClose, isLight }) {
   const navigate = useNavigate();
   const [paths, setPaths]       = useState([]);
@@ -293,6 +324,7 @@ export default function CourseSelect() {
 
   const [enrollingCourse, setEnrollingCourse] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [moderatedCoursesOpen, setModeratedCoursesOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [myLearningOpen, setMyLearningOpen] = useState(false);
   const [courseQuestMap, setCourseQuestMap] = useState({});
@@ -404,6 +436,7 @@ export default function CourseSelect() {
     .filter(course => course.canEdit)
     .sort((a, b) => a.title.localeCompare(b.title)), [allCourses]);
   const hasModeratedCourses = moderatedCourses.length > 0;
+  const showModeratedCoursesEntry = !isAdmin && hasModeratedCourses;
 
   useEffect(() => {
     const dbCoursesWithProgress = allCourses.filter(course => course.source === 'db' && Object.keys(courseCompletedQuests?.[course.slug || course.id] || {}).length > 0);
@@ -663,19 +696,14 @@ export default function CourseSelect() {
                     {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors text-left"><ShieldCheck size={13} className="text-red-400" />User Management</button>}
                     {(auth?.role === 'ADMIN' || auth?.role === 'MANAGER') && <button onClick={() => { setProfileOpen(false); navigate('/tracker'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 transition-colors text-left"><GraduationCap size={13} className="text-amber-400" />Learner Tracker</button>}
                     {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin?tab=courses'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-violet-300 hover:bg-violet-500/10 hover:text-violet-200 transition-colors text-left"><Map size={13} className="text-violet-400" />Courses</button>}
-                    {hasModeratedCourses && (
+                    {showModeratedCoursesEntry && (
                       <>
                         <div className="my-1 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }} />
-                        <div className="px-4 py-2">
-                          <p className="text-[10px] font-black tracking-widest uppercase text-slate-500">Moderated Courses</p>
-                          <p className="text-[10px] text-slate-500 mt-1">Only courses assigned to you appear here.</p>
-                        </div>
-                        {moderatedCourses.length ? moderatedCourses.map(course => (
-                          <button key={course.slug || course.id} onClick={() => { setProfileOpen(false); navigate(`/admin/courses/${course.slug}/edit`); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs transition-colors text-left ${isLight ? 'text-slate-700 hover:bg-slate-300/50 hover:text-slate-900' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
-                            <Pencil size={13} style={{ color: course.color || course.accentColor || '#06b6d4' }} />
-                            <span className="truncate">{course.title}</span>
-                          </button>
-                        )) : <div className="px-4 py-2.5 text-[11px] text-slate-500">No moderator courses assigned.</div>}
+                        <button onClick={() => { setProfileOpen(false); setModeratedCoursesOpen(true); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs transition-colors text-left ${isLight ? 'text-slate-700 hover:bg-slate-300/50 hover:text-slate-900' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+                          <Pencil size={13} className="text-cyan-400" />
+                          <span className="flex-1">Moderated Courses</span>
+                          <ChevronRight size={13} className="text-slate-400" />
+                        </button>
                       </>
                     )}
                     <div className="my-1 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }} />
@@ -753,7 +781,20 @@ export default function CourseSelect() {
         </div>
       </div>
 
-      {enrollingCourse && <PathEnrollModal course={enrollingCourse} onClose={() => setEnrollingCourse(null)} isLight={isLight} />}
+      {enrollingCourse && (
+        <PathEnrollModal course={enrollingCourse} onClose={() => setEnrollingCourse(null)} isLight={isLight} />
+      )}
+      {moderatedCoursesOpen && (
+        <ModeratedCoursesSheet
+          courses={moderatedCourses}
+          isLight={isLight}
+          onClose={() => setModeratedCoursesOpen(false)}
+          onSelect={(course) => {
+            setModeratedCoursesOpen(false);
+            navigate(`/admin/courses/${course.slug}/edit`);
+          }}
+        />
+      )}
     </div>
   );
 }

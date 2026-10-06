@@ -1,20 +1,44 @@
 #!/bin/bash
 
+postgres_client_version() {
+  local candidate="$1"
+  local version=""
+  [ -x "$candidate/pg_dump" ] || return 1
+  version="$($candidate/pg_dump --version 2>/dev/null | sed -E 's/.* ([0-9]+(\.[0-9]+)?).*/\1/' | head -1)"
+  [ -n "$version" ] || version="0"
+  printf '%s\n' "$version"
+}
+
 prefer_postgres_client_bin() {
   local candidate=""
-  if [ -n "${PG_BIN:-}" ] && [ -d "${PG_BIN:-}" ]; then
-    export PATH="$PG_BIN:$PATH"
-    return 0
-  fi
+  local best_candidate=""
+  local best_version="0"
   while IFS= read -r candidate; do
     [ -x "$candidate/pg_dump" ] || continue
-    export PG_BIN="$candidate"
-    export PATH="$PG_BIN:$PATH"
-    return 0
+    local version="$(postgres_client_version "$candidate" || echo 0)"
+    if [ -z "$best_candidate" ] || [ "$(printf '%s\n%s\n' "$best_version" "$version" | sort -V | tail -1)" = "$version" ]; then
+      best_candidate="$candidate"
+      best_version="$version"
+    fi
   done < <({
+    [ -n "${PG_BIN:-}" ] && [ -d "${PG_BIN:-}" ] && printf '%s\n' "$PG_BIN"
     ls -d /usr/pgsql-*/bin 2>/dev/null || true
     ls -d /usr/lib/postgresql/*/bin 2>/dev/null || true
-  } | sort -Vr)
+    command -v pg_dump 2>/dev/null | xargs -r dirname
+  } | awk '!seen[$0]++')
+
+  if [ -n "$best_candidate" ]; then
+    export PG_BIN="$best_candidate"
+    export PATH="$PG_BIN:$PATH"
+    export PG_DUMP_CMD="$PG_BIN/pg_dump"
+    export PG_RESTORE_CMD="$PG_BIN/pg_restore"
+    export PSQL_CMD="$PG_BIN/psql"
+    return 0
+  fi
+
+  export PG_DUMP_CMD="$(command -v pg_dump 2>/dev/null || echo pg_dump)"
+  export PG_RESTORE_CMD="$(command -v pg_restore 2>/dev/null || echo pg_restore)"
+  export PSQL_CMD="$(command -v psql 2>/dev/null || echo psql)"
 }
 
 resolve_db_runtime() {
@@ -48,6 +72,9 @@ resolve_db_runtime() {
   done
 
   if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
+  export PG_DUMP_CMD="${PG_DUMP_CMD:-$(command -v pg_dump 2>/dev/null || echo pg_dump)}"
+  export PG_RESTORE_CMD="${PG_RESTORE_CMD:-$(command -v pg_restore 2>/dev/null || echo pg_restore)}"
+  export PSQL_CMD="${PSQL_CMD:-$(command -v psql 2>/dev/null || echo psql)}"
 }
 
 _db_exec() {
@@ -65,7 +92,7 @@ _db_dump() {
       pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" --format=custom --no-owner --no-acl \
       > "$target_file"
   else
-    PGPASSWORD="$DB_PASSWORD" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+    PGPASSWORD="$DB_PASSWORD" "$PG_DUMP_CMD" -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
       --format=custom --no-owner --no-acl -f "$target_file"
   fi
 }
@@ -99,10 +126,10 @@ _db_restore() {
   fi
 
   if [ "$magic" = "PGDMP" ]; then
-    PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+    PGPASSWORD="$DB_PASSWORD" "$PG_RESTORE_CMD" -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
       --clean --if-exists --no-owner --no-acl "$restore_file" > "$restore_log" 2>&1
   else
-    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+    PGPASSWORD="$DB_PASSWORD" "$PSQL_CMD" -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
       --set ON_ERROR_STOP=off -f "$restore_file" > "$restore_log" 2>&1
   fi
 }

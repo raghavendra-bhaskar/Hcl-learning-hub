@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, Edit2, Check, X,
   Save, ExternalLink, GripVertical, Pencil,
@@ -55,6 +56,8 @@ const normalizeBuilderKey = (value) => cleanBuilderDisplayTitle(value, '')
   .trim();
 
 const TEXT_ATTACHMENT_EXTENSIONS = /\.(txt|md|csv|json|ya?ml|xml|html?|js|jsx|ts|tsx|py|java|sql|log|ini|cfg)$/i;
+const SPREADSHEET_ATTACHMENT_EXTENSIONS = /\.(xlsx|xls|xlsm|xlsb|ods|csv)$/i;
+const SPREADSHEET_MIME_PATTERN = /(spreadsheet|excel|sheet|csv|opendocument)/i;
 
 function formatAttachmentSize(sizeBytes) {
   if (!sizeBytes) return '0 B';
@@ -63,24 +66,71 @@ function formatAttachmentSize(sizeBytes) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function readFileAsText(file) {
+function normalizeAttachmentPreview(value) {
+  return String(value || '')
+    .replace(/\u0000/g, ' ')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 12000);
+}
+
+function readFileAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onload = () => resolve(reader.result);
     reader.onerror = () => reject(reader.error || new Error('Could not read file'));
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   });
+}
+
+function decodeArrayBufferToText(buffer) {
+  const attempts = ['utf-8', 'utf-16le', 'utf-16be', 'windows-1252'];
+  for (const encoding of attempts) {
+    try {
+      const decoded = new TextDecoder(encoding, { fatal: false }).decode(buffer);
+      const normalized = normalizeAttachmentPreview(decoded);
+      if (normalized) return normalized;
+    } catch {}
+  }
+  return '';
+}
+
+async function readFileAsText(file) {
+  const buffer = await readFileAsArrayBuffer(file);
+  return decodeArrayBufferToText(buffer);
+}
+
+async function extractSpreadsheetPreview(file) {
+  const buffer = await readFileAsArrayBuffer(file);
+  const workbook = XLSX.read(buffer, { type: 'array', dense: true, raw: false, cellText: true, cellDates: true });
+  const sections = workbook.SheetNames.slice(0, 4).map((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false, defval: '' })
+      .slice(0, 14)
+      .map((row) => Array.isArray(row)
+        ? row.map((cell) => String(cell ?? '').trim()).filter(Boolean).join(' | ')
+        : String(row || '').trim())
+      .filter(Boolean);
+    return [`Sheet: ${sheetName}`, ...rows].join('\n');
+  }).filter(Boolean);
+  return normalizeAttachmentPreview(sections.join('\n\n'));
 }
 
 async function buildAttachmentPayload(file) {
   const type = file.type || 'application/octet-stream';
+  const isSpreadsheet = SPREADSHEET_ATTACHMENT_EXTENSIONS.test(file.name || '') || SPREADSHEET_MIME_PATTERN.test(type);
   const canPreviewAsText = type.startsWith('text/')
-    || /json|xml|csv|javascript/i.test(type)
+    || /json|xml|javascript/i.test(type)
     || TEXT_ATTACHMENT_EXTENSIONS.test(file.name || '');
   let previewText = '';
-  if (canPreviewAsText) {
+  if (isSpreadsheet) {
     try {
-      previewText = (await readFileAsText(file)).replace(/\s+/g, ' ').trim().slice(0, 12000);
+      previewText = await extractSpreadsheetPreview(file);
+    } catch {}
+  } else if (canPreviewAsText) {
+    try {
+      previewText = normalizeAttachmentPreview(await readFileAsText(file));
     } catch {}
   }
   return {
@@ -88,7 +138,7 @@ async function buildAttachmentPayload(file) {
     type,
     sizeBytes: Number(file.size || 0),
     summary: previewText
-      ? `${file.name} uploaded with readable text preview.`
+      ? `${file.name} uploaded with readable ${isSpreadsheet ? 'spreadsheet' : 'text'} preview.`
       : `${file.name} uploaded (${type}, ${formatAttachmentSize(Number(file.size || 0))}).`,
     previewText,
   };
@@ -613,6 +663,13 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
 
   const currentModuleCount = weeks.reduce((count, week) => count + (Array.isArray(week.modules) ? week.modules.length : 0), 0);
   const activeMode = BUILDER_MODES.find(item => item.id === mode) || BUILDER_MODES[0];
+  const cleanupSummary = plan?.cleanup ? [
+    plan.cleanup.replaceExistingCourse ? 'Replace existing course structure' : '',
+    plan.cleanup.deleteAllQuests ? 'Delete all existing quests' : '',
+    ...(plan.cleanup.deleteWeeks || []).map(title => `Delete week: ${title}`),
+    ...(plan.cleanup.deleteModules || []).map(title => `Delete module: ${title}`),
+    ...(plan.cleanup.deleteQuestTitles || []).map(title => `Delete quest: ${title}`),
+  ].filter(Boolean) : [];
 
   const generate = async () => {
     setBusy(true); setError('');
@@ -685,6 +742,69 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
           }))
         : [];
       const workingQuests = Array.isArray(currentQuests) ? [...currentQuests] : [];
+
+      const removeQuestById = async (questId) => {
+        await api.delete(`/courses-api/quests/${questId}`);
+        const index = workingQuests.findIndex(quest => quest.id === questId);
+        if (index >= 0) workingQuests.splice(index, 1);
+      };
+
+      const removeQuestsForModule = async (moduleId) => {
+        for (const quest of [...workingQuests].filter(item => item.moduleId === moduleId)) {
+          await removeQuestById(quest.id);
+        }
+      };
+
+      const removeModuleById = async (moduleId) => {
+        await removeQuestsForModule(moduleId);
+        await api.delete(`/courses-api/modules/${moduleId}`);
+        workingWeeks.forEach((week) => {
+          week.modules = (week.modules || []).filter(module => module.id !== moduleId);
+        });
+      };
+
+      const removeWeekById = async (weekId) => {
+        const week = workingWeeks.find(item => item.id === weekId);
+        if (week) {
+          for (const module of [...(week.modules || [])]) {
+            await removeQuestsForModule(module.id);
+          }
+        }
+        await api.delete(`/courses-api/weeks/${weekId}`);
+        const index = workingWeeks.findIndex(item => item.id === weekId);
+        if (index >= 0) workingWeeks.splice(index, 1);
+      };
+
+      const cleanup = plan?.cleanup || {};
+      const weekDeleteKeys = new Set((cleanup.deleteWeeks || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+      const moduleDeleteKeys = new Set((cleanup.deleteModules || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+      const questDeleteKeys = new Set((cleanup.deleteQuestTitles || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+
+      if (cleanup.replaceExistingCourse) {
+        for (const quest of [...workingQuests]) await removeQuestById(quest.id);
+        for (const week of [...workingWeeks].sort((a, b) => (b.weekNumber ?? 0) - (a.weekNumber ?? 0))) {
+          await removeWeekById(week.id);
+        }
+      } else {
+        if (cleanup.deleteAllQuests) {
+          for (const quest of [...workingQuests]) await removeQuestById(quest.id);
+        } else if (questDeleteKeys.size > 0) {
+          for (const quest of [...workingQuests]) {
+            if (questDeleteKeys.has(normalizeBuilderKey(quest.title))) await removeQuestById(quest.id);
+          }
+        }
+
+        for (const week of [...workingWeeks].sort((a, b) => (b.weekNumber ?? 0) - (a.weekNumber ?? 0))) {
+          if (weekDeleteKeys.has(normalizeBuilderKey(week.title))) await removeWeekById(week.id);
+        }
+
+        for (const week of [...workingWeeks]) {
+          for (const module of [...(week.modules || [])]) {
+            if (moduleDeleteKeys.has(normalizeBuilderKey(module.title))) await removeModuleById(module.id);
+          }
+        }
+      }
+
       let nextWeekNumber = workingWeeks.length + 1;
       let nextQuestOrder = workingQuests.reduce((max, quest) => Math.max(max, Number(quest.order ?? -1)), -1) + 1;
 
@@ -889,6 +1009,13 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
         </button>
         {plan && <div className="space-y-3 rounded-xl p-4 border" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.16)', borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.10)' }}>
           <p className={`text-xs ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>Preview: {plan.weeks.length} week{plan.weeks.length === 1 ? '' : 's'} · {activeMode.label.toLowerCase()} · review before applying</p>
+          {cleanupSummary.length > 0 && <div className="rounded-lg border p-3" style={{ borderColor: isLight ? 'rgba(248,113,113,0.22)' : 'rgba(248,113,113,0.18)', background: isLight ? 'rgba(254,242,242,0.95)' : 'rgba(127,29,29,0.12)' }}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-red-700' : 'text-red-300'}`}>Cleanup actions</p>
+            <ul className={`mt-2 list-disc pl-4 text-xs space-y-1 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+              {cleanupSummary.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+            </ul>
+            {plan.cleanup?.rationale && <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{plan.cleanup.rationale}</p>}
+          </div>}
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-lg border p-3" style={{ borderColor: isLight ? 'rgba(8,145,178,0.20)' : 'rgba(34,211,238,0.20)', background: isLight ? 'rgba(236,254,255,0.95)' : 'rgba(34,211,238,0.05)' }}>
               <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>Learning map</p>
