@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Target, ChevronRight, Clock, Moon, Sun, Search } from 'lucide-react';
+import { ArrowLeft, BookOpen, Target, ChevronRight, Clock, Search } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
 
@@ -104,7 +104,7 @@ function QuestCard({ quest, index, slug, navigate, accent, isLight }) {
 export default function CourseQuestsPage() {
   const { slug } = useParams();
   const navigate  = useNavigate();
-  const { theme, setTheme, courseCompletedQuests } = useAppStore();
+  const { theme, courseCompletedQuests } = useAppStore();
   const isLight = theme === 'light';
 
   const [course, setCourse]   = useState(null);
@@ -133,7 +133,7 @@ export default function CourseQuestsPage() {
   if (error || !course) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
       <p className="text-red-400">{error || 'Course not found'}</p>
-      <button onClick={() => navigate(`/c/${slug}`)} className="text-cyan-400 text-sm">← Back</button>
+      <button onClick={() => navigate('/courses')} className="text-cyan-400 text-sm">← Back to Course Hub</button>
     </div>
   );
 
@@ -198,26 +198,25 @@ export default function CourseQuestsPage() {
 
   return (
     <div className="min-h-screen pb-24" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
-      {/* Header */}
+      {/* Header with the course title plus direct navigation back to Course Home and the Course Hub. */}
       <header className="sticky top-0 z-40 backdrop-blur-md border-b"
         style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate(`/c/${slug}`)}
+          <button onClick={() => navigate('/courses')}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
-            <ArrowLeft size={14} /> {course.title}
+            <ArrowLeft size={14} /> Back
           </button>
           <span className="text-slate-500">/</span>
-          <span className="text-xs font-semibold" style={{ color: accent }}>Quests</span>
+          <span className={`text-xs font-bold font-orbitron ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</span>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => setTheme(isLight ? 'dark' : 'light')}
-              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}
-              style={{ border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? '#ffffff' : 'rgba(255,255,255,0.03)' }}
-              title={isLight ? 'Dark mode' : 'Light mode'}>
-              {isLight ? <Moon size={13} /> : <Sun size={13} />}
+            <button onClick={() => navigate(`/c/${slug}`)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors border ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)' }}>
+              Course Home
             </button>
-            <span className="text-[11px] px-3 py-1 rounded-full font-bold"
-              style={{ background: accent + '18', border: `1px solid ${accent}30`, color: accent }}>
-              {quests.length} Quest{quests.length !== 1 ? 's' : ''}
+            <span className="text-[11px] font-semibold px-3 py-1 rounded-lg border"
+              style={{ color: accent, borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)', background: isLight ? accent + '10' : accent + '14' }}>
+              Quests
             </span>
           </div>
         </div>

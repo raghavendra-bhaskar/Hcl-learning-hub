@@ -4,6 +4,10 @@ import { ArrowLeft } from 'lucide-react';
 import { getQuest } from '../data/index.js';
 import { SOLUTION_CENTER, VIDEO_LINKS, QUEST_MORE_VIDEOS } from '../data/solutionCenter.js';
 
+// This page is the guided "Learn" experience for AI Quest. Before learners are
+// assessed in the quiz, they step through an architecture walkthrough that ties
+// the quest scenario to system components, videos, and a deliberate reasoning
+// path so the course teaches concepts rather than only testing answers.
 // ── Architecture Diagram SVG Component ──────────────────────────────────────
 const COL_X = [0, 78, 192, 312, 430, 548, 665];  // indexed by col (1-6)
 const ROW_Y = [0, 72, 186, 296];                   // indexed by row (1-3)
@@ -28,6 +32,9 @@ function edgePoints(fn, tn) {
   return { sx, sy, tx, ty };
 }
 
+// The SVG diagram is the visual teaching surface of the page. It highlights the
+// active architecture nodes for the current step and lets learners jump between
+// connected concepts without leaving the course lesson.
 function ArchDiagram({ nodes, edges, highlight, onNodeClick, nodeStepMap }) {
   const nodeById = {};
   nodes.forEach(n => { nodeById[n.id] = n; });
@@ -179,6 +186,8 @@ function Tab({ num, label, active, first, last }) {
 }
 
 // ── Main SolutionCenter Page ─────────────────────────────────────────────────
+// The route is implemented between the quest overview and quiz screens. It is
+// the place where the learner consumes guided explanation content for a quest.
 export default function SolutionCenter() {
   const { questId } = useParams();
   const navigate = useNavigate();

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, BookOpen, Bot, GraduationCap, KeyRound, Rocket, Settings, ShieldCheck, UserCog, Users } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
@@ -495,7 +496,7 @@ function LocalUsersTab() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Create form */}
       <div className="rounded-2xl p-6" style={getCardStyle(isLight)}>
-        <h3 className={`font-bold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>Create Local User</h3>
+        <h3 className={`font-bold mb-1 ${isLight ? 'text-slate-900' : 'text-white'}`}>Create Internal Security User</h3>
         <p className={`text-xs mb-5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Accounts not linked to Okta — authenticated with email + password.</p>
         <form onSubmit={handleCreate} className="space-y-3">
           {[['Name','text','name','Full name'],['Email','email','email','user@example.com'],['Password','password','password','Min 6 characters']].map(([label,type,field,ph]) => (
@@ -519,7 +520,7 @@ function LocalUsersTab() {
           <button type="submit" disabled={saving}
             className="w-full py-2.5 rounded-xl font-bold text-white text-sm transition-all hover:opacity-90"
             style={{ background: saving?'rgba(6,182,212,0.3)':'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
-            {saving ? 'Creating…' : 'Create Local User'}
+            {saving ? 'Creating…' : 'Create Internal Security User'}
           </button>
         </form>
       </div>
@@ -527,11 +528,11 @@ function LocalUsersTab() {
       {/* Local users list */}
       <div className="rounded-2xl overflow-hidden" style={getCardStyle(isLight)}>
         <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Local Accounts</span>
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Internal Security Accounts</span>
           <span className="text-[10px] text-slate-600">{localUsers.length} users</span>
         </div>
         {loading ? <div className="py-10 flex justify-center"><div className="w-5 h-5 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin"/></div>
-         : localUsers.length === 0 ? <div className="py-10 text-center text-slate-600 text-sm">No local users yet.</div>
+         : localUsers.length === 0 ? <div className="py-10 text-center text-slate-600 text-sm">No internal security users yet.</div>
          : <div className="divide-y divide-white/5">
             {localUsers.map(u => (
               <div key={u.id} className="px-4 py-3 flex items-center gap-3">
@@ -556,6 +557,18 @@ function LocalUsersTab() {
 
 // ── Courses tab ──────────────────────────────────────────────────────────────
 const ACCENT_COLORS_PREVIEW = { '#06b6d4':'Cyan','#f97316':'Orange','#7c3aed':'Violet','#10b981':'Emerald','#f59e0b':'Amber','#f43f5e':'Rose','#3b82f6':'Blue','#6366f1':'Indigo' };
+const COURSE_CATEGORIES = [
+  { id: 'process', label: 'Process' },
+  { id: 'product', label: 'Product' },
+  { id: 'technology', label: 'Technology' },
+];
+const COURSE_CATEGORY_STYLES = {
+  process: { color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.24)' },
+  product: { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.24)' },
+  technology: { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.24)' },
+};
+const normalizeCourseCategory = (value) => COURSE_CATEGORIES.some(option => option.id === value) ? value : 'technology';
+const getSelectOptionStyle = (L) => ({ background: L ? '#ffffff' : '#0f172a', color: L ? '#0f172a' : '#f8fafc' });
 
 const PLATFORM_ROUTES = { 'devops-loop': '/devops-loop', 'ai-quest': '/ai-quest' };
 const courseRoute = (slug) => PLATFORM_ROUTES[slug] || `/c/${slug}`;
@@ -568,7 +581,7 @@ function CoursesTab() {
   const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [creating, setCreating] = useState(false);
-  const [form, setForm]         = useState({ title:'', slug:'', tagline:'', emoji:'📚', accentColor:'#06b6d4' });
+  const [form, setForm]         = useState({ title:'', slug:'', tagline:'', emoji:'📚', accentColor:'#06b6d4', category:'technology' });
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState('');
   const [editingId, setEditingId] = useState(null);
@@ -612,7 +625,7 @@ function CoursesTab() {
       const c = await api.post('/courses-api', { ...form, order: maxOrder + 1 });
       setCourses(p => [...p, c]);
       setCreating(false);
-      setForm({ title:'', slug:'', tagline:'', emoji:'📚', accentColor:'#06b6d4' });
+      setForm({ title:'', slug:'', tagline:'', emoji:'📚', accentColor:'#06b6d4', category:'technology' });
     } catch (e) { setError(e?.message || 'Create failed'); }
     finally { setSaving(false); }
   };
@@ -650,15 +663,16 @@ function CoursesTab() {
 
   const startEdit = (c) => {
     setEditingId(c.id);
-    setEditForm({ title: c.title, tagline: c.tagline || '', emoji: c.emoji || '📚', accentColor: c.accentColor || '#06b6d4', description: c.description || '' });
+    setEditForm({ title: c.title, tagline: c.tagline || '', emoji: c.emoji || '📚', accentColor: c.accentColor || '#06b6d4', description: c.description || '', category: normalizeCourseCategory(c.category) });
   };
 
   const saveEdit = async (id) => {
     try {
+      setError('');
       const updated = await api.put(`/courses-api/${id}`, editForm);
-      setCourses(p => p.map(c => c.id === id ? { ...c, ...editForm } : c));
+      setCourses(p => p.map(c => c.id === id ? { ...c, ...updated } : c));
       setEditingId(null);
-    } catch (e) { alert(e?.message || 'Update failed'); }
+    } catch (e) { setError(e?.message || 'Update failed'); }
   };
 
   const handleDrop = async (targetId) => {
@@ -677,6 +691,7 @@ function CoursesTab() {
 
   const weekCount = c => c._count?.weeks ?? c.weeks?.length ?? 0;
   const modCount  = c => c.weeks?.reduce((a, w) => a + (w.modules?.length || 0), 0) ?? 0;
+  const categoryMeta = (category) => COURSE_CATEGORY_STYLES[normalizeCourseCategory(category)] || COURSE_CATEGORY_STYLES.technology;
 
   const openModerators = async (course) => {
     setModeratorCourseId(course.id);
@@ -775,6 +790,13 @@ function CoursesTab() {
                 onChange={e => setForm(p => ({ ...p, emoji: e.target.value }))}
                 className="w-full rounded-xl px-3 py-2 text-2xl text-center text-white focus:outline-none" style={getInputStyle(isLight)} />
             </div>
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Category</label>
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}
+                className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)}>
+                {COURSE_CATEGORIES.map(option => <option key={option.id} value={option.id} style={getSelectOptionStyle(isLight)}>{option.label}</option>)}
+              </select>
+            </div>
           </div>
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-2">Accent Color</label>
@@ -848,6 +870,13 @@ function CoursesTab() {
                               ))}
                             </div>
                           </div>
+                          <div>
+                            <label className="text-[10px] text-slate-600 block mb-1">Category</label>
+                            <select value={editForm.category || 'technology'} onChange={e => setEditForm(p => ({...p, category: e.target.value}))}
+                              className="w-full rounded-xl px-3 py-2 text-sm text-white focus:outline-none" style={getInputStyle(isLight)}>
+                              {COURSE_CATEGORIES.map(option => <option key={option.id} value={option.id} style={getSelectOptionStyle(isLight)}>{option.label}</option>)}
+                            </select>
+                          </div>
                           <div className="sm:col-span-3">
                             <label className="text-[10px] text-slate-600 block mb-1">Description</label>
                             <textarea value={editForm.description} rows={2} onChange={e => setEditForm(p => ({...p, description: e.target.value}))}
@@ -873,6 +902,10 @@ function CoursesTab() {
                             <span className="text-[10px] text-slate-600">{weekCount(c)} wk · {modCount(c)} mod</span>
                           </div>
                         </div>
+                        <span className="text-[10px] px-2.5 py-1 rounded-full font-bold border"
+                          style={{ background: categoryMeta(c.category).bg, color: categoryMeta(c.category).color, borderColor: categoryMeta(c.category).border }}>
+                          {COURSE_CATEGORIES.find(option => option.id === normalizeCourseCategory(c.category))?.label || 'Technology'}
+                        </span>
                         {/* Status toggle */}
                         <button onClick={() => toggleStatus(c)}
                           className={`text-[10px] px-2.5 py-1 rounded-full font-bold border transition-all hover:scale-105 ${c.status === 'live' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25 hover:bg-emerald-500/20' : 'text-slate-500 bg-slate-700/20 border-slate-600/20 hover:text-amber-400 hover:border-amber-400/30'}`}
@@ -1282,7 +1315,7 @@ function DeploymentTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [versionDraft, setVersionDraft] = useState('3');
+  const [versionDraft, setVersionDraft] = useState('4');
   const [rollbackVersion, setRollbackVersion] = useState('');
 
   const loadRollbackPreview = useCallback(async (version) => {
@@ -1301,7 +1334,9 @@ function DeploymentTab() {
       ]);
       setStatus(nextStatus);
       setUpgradePreview(nextUpgradePreview);
-      setVersionDraft(current => current && current !== '3' ? current : (nextStatus?.suggestedVersion || '3'));
+      setVersionDraft(current => current && current !== '4'
+        ? current
+        : (nextStatus?.suggestedVersion === '3' ? '4' : (nextStatus?.suggestedVersion || '4')));
       const fallbackRollbackVersion = preferredRollbackVersion
         || rollbackVersion
         || nextStatus?.previousRelease?.productVersion
@@ -1444,16 +1479,21 @@ function DeploymentTab() {
 }
 
 // ── Main AdminPanel ───────────────────────────────────────────────────────────
-const TABS = [
-  { id:'okta-users',      label:'Okta Users'           },
-  { id:'local-users',     label:'Local Users'           },
-  { id:'courses',         label:'Courses'               },
-  { id:'deployment',      label:'Deployment'            },
-  { id:'learner-tracker', label:'Learner Tracker'       },
-  { id:'help-settings',   label:'Help Settings'         },
-  { id:'ai-provider',     label:'AI Provider'           },
-  { id:'auth-realm',      label:'Authentication Realm'  },
+const PRIMARY_TABS = [
+  { id:'courses',         label:'Courses',              Icon: BookOpen,      description:'Manage course metadata, moderators, and course content entry points.' },
+  { id:'deployment',      label:'Deployment',           Icon: Rocket,        description:'Review backups, rollback targets, and deployment support actions.' },
+  { id:'learner-tracker', label:'Learner Tracker',      Icon: GraduationCap, description:'Track learner, team, and manager progress across courses.' },
+  { id:'help-settings',   label:'Help Settings',        Icon: Settings,      description:'Configure global and course-specific help contact details.' },
+  { id:'ai-provider',     label:'AI Provider',          Icon: Bot,           description:'Manage the installed Ollama integration and AI Tutor provider settings.' },
 ];
+
+const AUTH_TABS = [
+  { id:'okta-users',  label:'Okta Users',           Icon: Users,     description:'Manage Okta-sourced users, roles, manager sync, and transfers.' },
+  { id:'local-users', label:'Internal Security',    Icon: UserCog,   description:'Create and maintain internal password-based users for the platform.' },
+  { id:'auth-realm',  label:'Authentication Realm', Icon: KeyRound,  description:'Configure the Okta/OIDC realm and management API access used by sign-in.' },
+];
+
+const TAB_META = [...PRIMARY_TABS, ...AUTH_TABS];
 
 export default function AdminPanel() {
   const auth = getAuth();
@@ -1461,44 +1501,89 @@ export default function AdminPanel() {
   const isLight = theme === 'light';
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'okta-users';
-  const [activeTab, setActiveTab] = useState(TABS.some(t => t.id === initialTab) ? initialTab : 'okta-users');
+  const [activeTab, setActiveTab] = useState(TAB_META.some(t => t.id === initialTab) ? initialTab : 'okta-users');
+  const activeMeta = TAB_META.find(t => t.id === activeTab) || AUTH_TABS[0];
+  const isAuthTab = AUTH_TABS.some(t => t.id === activeTab);
+
+  const sidebarItem = (tab, nested = false) => {
+    const active = activeTab === tab.id;
+    const Icon = tab.Icon;
+    return (
+      <button
+        key={tab.id}
+        onClick={() => setActiveTab(tab.id)}
+        className={`w-full flex items-center gap-3 rounded-xl text-left transition-all ${nested ? 'px-3 py-2 text-sm' : 'px-3.5 py-2.5 text-sm'}`}
+        style={{
+          background: active ? 'rgba(59,130,246,0.22)' : 'transparent',
+          border: active ? '1px solid rgba(96,165,250,0.32)' : '1px solid transparent',
+          color: active ? '#dbeafe' : '#cbd5e1',
+        }}>
+        <Icon size={nested ? 16 : 17} className={active ? 'text-cyan-300' : 'text-slate-400'} />
+        <span className="font-medium">{tab.label}</span>
+      </button>
+    );
+  };
 
   return (
-    <div className="min-h-screen px-4 py-8 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <Link to="/courses" className={`transition-colors text-sm ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}>← Back</Link>
-        <div>
-          <h1 className={`font-orbitron text-2xl font-black bg-clip-text text-transparent ${isLight ? 'bg-gradient-to-r from-cyan-700 to-violet-700' : 'bg-gradient-to-r from-cyan-400 to-violet-400'}`}>
-            Administration
-          </h1>
-          <p className={`text-sm mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
-            Signed in as <span className={isLight ? 'text-cyan-700 font-semibold' : 'text-cyan-400'}>{auth?.name}</span>
-            <span className="ml-2 text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full uppercase tracking-widest">Admin</span>
-          </p>
+    <div className="min-h-screen lg:flex" style={{ background: isLight ? '#eef2f7' : '#020617' }}>
+      <aside className="lg:w-80 shrink-0 px-4 py-5 lg:px-5 lg:py-6" style={{ background: 'linear-gradient(180deg, #0f172a 0%, #111827 100%)', borderRight: '1px solid rgba(148,163,184,0.14)' }}>
+        <div className="lg:sticky lg:top-6 space-y-6">
+          <div>
+            <Link to="/courses" className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors">
+              <ArrowLeft size={15} /> Back
+            </Link>
+            <div className="mt-4 rounded-2xl p-4 border" style={{ background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(148,163,184,0.14)' }}>
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.16)', border: '1px solid rgba(96,165,250,0.24)' }}>
+                  <ShieldCheck size={21} className="text-cyan-300" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="font-orbitron text-2xl font-black bg-gradient-to-r from-cyan-300 to-violet-300 bg-clip-text text-transparent">Administration</h1>
+                  <p className="text-sm text-slate-300 mt-1">Signed in as <span className="font-semibold text-white">{auth?.name}</span></p>
+                  <span className="mt-2 inline-flex text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full uppercase tracking-widest">Admin</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[10px] font-black tracking-widest uppercase text-slate-500 px-1">Navigation</p>
+            {PRIMARY_TABS.map(tab => sidebarItem(tab))}
+          </div>
+
+          <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(148,163,184,0.12)' }}>
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <Settings size={16} className="text-cyan-300" />
+              <p className="text-sm font-semibold text-white">Settings</p>
+            </div>
+            <div className="mt-2 px-1">
+              <p className="text-[10px] font-black tracking-widest uppercase text-slate-500 mb-2">Authentication</p>
+              <div className="space-y-1.5">
+                {AUTH_TABS.map(tab => sidebarItem(tab, true))}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </aside>
 
-      {/* Tab nav */}
-      <div className="flex flex-wrap gap-1 mb-6 p-1 rounded-xl w-fit max-w-full" style={{ background: isLight ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.06)', boxShadow: isLight ? '0 1px 6px rgba(0,0,0,0.06)' : 'none' }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
-            style={{ background: activeTab===t.id ? (isLight ? 'rgba(8,145,178,0.15)' : 'rgba(6,182,212,0.2)') : 'transparent', color: activeTab===t.id ? (isLight ? '#0891b2' : '#67e8f9') : (isLight ? '#475569' : '#64748b'), border: activeTab===t.id ? (isLight ? '1px solid rgba(8,145,178,0.35)' : '1px solid rgba(6,182,212,0.35)') : '1px solid transparent' }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-6 rounded-2xl px-5 py-4" style={{ background: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(15,23,42,0.78)', border: isLight ? '1px solid rgba(100,116,139,0.16)' : '1px solid rgba(148,163,184,0.12)', boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.06)' : 'none' }}>
+            <p className={`text-[11px] font-bold uppercase tracking-[0.24em] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{isAuthTab ? 'Settings / Authentication' : 'Administration Workspace'}</p>
+            <h2 className={`mt-1 text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{activeMeta.label}</h2>
+            <p className={`mt-1 text-sm ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{activeMeta.description}</p>
+          </div>
 
-      {/* Tab content */}
-      {activeTab==='okta-users'      && <OktaUsersTab/>}
-      {activeTab==='local-users'     && <LocalUsersTab/>}
-      {activeTab==='courses'         && <CoursesTab/>}
-      {activeTab==='deployment'      && <DeploymentTab/>}
-      {activeTab==='learner-tracker' && <LearnerTracker asTab={true}/>}
-      {activeTab==='help-settings'   && <HelpSettingsTab/>}
-      {activeTab==='ai-provider'     && <AIProviderTab/>}
-      {activeTab==='auth-realm'      && <AuthRealmTab/>}
+          {activeTab==='okta-users'      && <OktaUsersTab/>}
+          {activeTab==='local-users'     && <LocalUsersTab/>}
+          {activeTab==='courses'         && <CoursesTab/>}
+          {activeTab==='deployment'      && <DeploymentTab/>}
+          {activeTab==='learner-tracker' && <LearnerTracker asTab={true}/>}
+          {activeTab==='help-settings'   && <HelpSettingsTab/>}
+          {activeTab==='ai-provider'     && <AIProviderTab/>}
+          {activeTab==='auth-realm'      && <AuthRealmTab/>}
+        </div>
+      </main>
     </div>
   );
 }

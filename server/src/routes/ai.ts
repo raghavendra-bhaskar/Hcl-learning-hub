@@ -24,6 +24,60 @@ async function readConfig() {
   return row ? configSchema.parse(JSON.parse(row.value)) : defaults;
 }
 
+function ensureAiAdmin(req: any, res: any) {
+  if (!req.user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return false;
+  }
+  if (req.user.role !== 'ADMIN') {
+    res.status(403).json({ error: 'Forbidden: administrator access required' });
+    return false;
+  }
+  return true;
+}
+
+function handle(handler: RequestHandler): RequestHandler {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(error => {
+      if (error instanceof z.ZodError) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid AI request.' });
+      const message = error instanceof Error ? error.message : '';
+
+      const safeMessage = message.startsWith('Ollama ') || message.startsWith('The endpoint ')
+        || message.startsWith('AI ') || message.startsWith('The AI ')
+        || message.startsWith('Could not ') || message.startsWith('No web ')
+        || message.startsWith('Enter ') || message.startsWith('Use ')
+        || message.startsWith('Select ')
+        ? message : 'AI service unavailable. Check Ollama connectivity, the selected chat model, and the backend database.';
+      res.status(503).json({ error: safeMessage });
+    });
+  };
+}
+
+const discoverModelsSchema = z.object({ endpoint: endpointSchema }).strict();
+
+aiRouter.get('/config', handle(async (req, res) => {
+  if (!ensureAiAdmin(req, res)) return;
+  res.json(await readConfig());
+}));
+
+aiRouter.put('/config', handle(async (req, res) => {
+  if (!ensureAiAdmin(req, res)) return;
+  const config = configSchema.parse(req.body);
+  await prisma.setting.upsert({
+    where: { key: CONFIG_KEY },
+    create: { key: CONFIG_KEY, value: JSON.stringify(config) },
+    update: { value: JSON.stringify(config) },
+  });
+  res.json(config);
+}));
+
+aiRouter.post('/models', handle(async (req, res) => {
+  if (!ensureAiAdmin(req, res)) return;
+  const input = discoverModelsSchema.parse(req.body);
+  const models = await discoverModels(input.endpoint);
+  res.json({ models });
+}));
+
 function moderatorSettingKey(slug: string) {
   return `course.moderators.${slug}`;
 }
@@ -57,21 +111,6 @@ async function ensureCourseAiAccess(req: any, res: any, courseId: string) {
   }
   return course;
 }
-
-const handle = (handler: RequestHandler): RequestHandler => (req, res, next) => {
-  Promise.resolve(handler(req, res, next)).catch(error => {
-    if (error instanceof z.ZodError) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid AI request.' });
-    const message = error instanceof Error ? error.message : '';
-
-    const safeMessage = message.startsWith('Ollama ') || message.startsWith('The endpoint ')
-      || message.startsWith('AI ') || message.startsWith('The AI ')
-      || message.startsWith('Could not ') || message.startsWith('No web ')
-      || message.startsWith('Enter ') || message.startsWith('Use ')
-      || message.startsWith('Select ')
-      ? message : 'AI service unavailable. Check Ollama connectivity, the selected chat model, and the backend database.';
-    res.status(503).json({ error: safeMessage });
-  });
-};
 
 const outlineSchema = z.object({
   courseId: z.string().min(1).max(100),
@@ -135,7 +174,7 @@ aiRouter.post('/course-outline', handle(async (req, res) => {
 
 const builderSchema = z.object({
   courseId: z.string().min(1).max(100),
-  outline: z.string().trim().min(20).max(12000),
+  outline: z.string().trim().max(12000).default(''),
   mode: z.enum(['create', 'modify', 'quests-only']).default('create'),
   resourceUrls: z.array(z.string().url().max(1000)).max(12).default([]),
   attachments: z.array(z.object({
@@ -145,7 +184,14 @@ const builderSchema = z.object({
     summary: z.string().trim().max(2000).default(''),
     previewText: z.string().trim().max(12000).default(''),
   }).strict()).max(8).default([]),
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (input.outline || input.resourceUrls.length > 0 || input.attachments.length > 0) return;
+  context.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Add course instructions, at least one reference URL, or at least one attachment.',
+    path: ['outline'],
+  });
+});
 
 const builderResourceSchema = z.object({
   label: z.string().trim().min(2).max(180),
@@ -181,6 +227,9 @@ const builderCleanupSchema = z.object({
   deleteAllQuests: z.boolean().default(false),
   deleteWeeks: z.array(z.string().trim().min(1).max(180)).max(24).default([]),
   deleteModules: z.array(z.string().trim().min(1).max(180)).max(48).default([]),
+  deleteTopicTitles: z.array(z.string().trim().min(1).max(240)).max(160).default([]),
+  deleteResourceLabels: z.array(z.string().trim().min(1).max(240)).max(160).default([]),
+  deleteResourceUrls: z.array(z.string().url().max(1000)).max(160).default([]),
   deleteQuestTitles: z.array(z.string().trim().min(1).max(180)).max(96).default([]),
   rationale: z.string().trim().max(1200).default(''),
 });
@@ -193,6 +242,9 @@ const builderPlanSchema = z.object({
     deleteAllQuests: false,
     deleteWeeks: [],
     deleteModules: [],
+    deleteTopicTitles: [],
+    deleteResourceLabels: [],
+    deleteResourceUrls: [],
     deleteQuestTitles: [],
     rationale: '',
   }),
@@ -236,10 +288,47 @@ function extractOutlineTopics(outline: string) {
     .map((value) => value.trim())
     .filter(Boolean)
     .flatMap((value) => value.includes(':') ? value.split(':').map((part) => part.trim()).filter(Boolean) : [value])
-    .flatMap((value) => value.split(',').map((part) => part.trim()).filter(Boolean));
+    .flatMap((value) => value.split(/,|\|/).map((part) => part.trim()).filter(Boolean));
 
-  const unique = Array.from(new Set(normalized.map((value) => value.replace(/^module\s*\d+\s*/i, '').trim()).filter(Boolean)));
+  const unique = Array.from(new Set(normalized
+    .map((value) => value.replace(/^module\s*\d+\s*/i, '').trim())
+    .filter(isInstructionalTopicCandidate)));
   return unique.length ? unique : ['Foundations', 'Core Workflow'];
+}
+
+function isInstructionalTopicCandidate(value: unknown) {
+  const cleaned = String(value || '')
+    .replace(/^[-*\d.)\s]+/, '')
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const normalized = cleaned.toLowerCase();
+  const wordCount = normalized ? normalized.split(/\s+/).length : 0;
+
+  if (!normalized || normalized.length < 4 || normalized.length > 120) return false;
+  if (!/[a-z]/i.test(normalized) || /^https?:/i.test(normalized)) return false;
+  if (GENERIC_TOPIC_KEYS.has(normalized) || /^sheet\s*\d*$/i.test(normalized)) return false;
+  if (wordCount > 12) return false;
+  if (/(delete|remove|replace|rebuild|recreate|create|build|read|review|use|keep|compare|merge|preserve|follow|update|rewrite|refresh|regenerate|upload)\b/i.test(normalized) && wordCount > 4) return false;
+  if (/(spreadsheet|attached|attachment|current modules|existing modules|old modules|learning path|google drive|second url|first url|uploaded|preview|readable)/i.test(normalized) && wordCount > 3) return false;
+  return true;
+}
+
+const GENERIC_TOPIC_KEYS = new Set([
+  'topic', 'topics', 'subtopic', 'subtopics', 'duration', 'notes', 'week', 'module', 'sheet',
+  'resource label', 'resource url', 'resource type', 'training schedule', 'knowledge transfer mode',
+]);
+
+function deriveResourceLabelFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (/drive\.google\.com/i.test(parsed.hostname)) return 'Google Drive enablement folder';
+    const segment = parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname;
+    return clampText(segment.replace(/[-_]+/g, ' ').replace(/\.[a-z0-9]{2,5}$/i, ''), parsed.hostname, 180, 2);
+  } catch {
+    return clampText(url, 'Supporting resource', 180, 2);
+  }
 }
 
 function summarizeBuilderAttachments(attachments: Array<{ name: string; type: string; sizeBytes: number; summary: string; previewText: string }>) {
@@ -258,7 +347,7 @@ function summarizeBuilderAttachments(attachments: Array<{ name: string; type: st
 }
 
 function extractDocumentationUrls(input: string) {
-  return Array.from(new Set((input.match(/https?:\/\/[^\s)\]>"']+/gi) || []).map(value => value.trim()))).slice(0, 3);
+  return Array.from(new Set((input.match(/https?:\/\/[^\s)\]>"']+/gi) || []).map(value => value.trim()))).slice(0, 12);
 }
 
 function stripUrls(input: string) {
@@ -284,7 +373,8 @@ function deriveTopicsFromDocText(text: string) {
     .map(value => value.trim())
     .filter(value => value.length >= 4 && value.length <= 120)
     .filter(value => /[a-z]/i.test(value))
-    .filter(value => !/^https?:/i.test(value));
+    .filter(value => !/^https?:/i.test(value))
+    .filter(isInstructionalTopicCandidate);
   return Array.from(new Set(segments)).slice(0, 12);
 }
 
@@ -364,11 +454,24 @@ function cleanBuilderTitle(value: unknown, fallback: string) {
   return base || fallback;
 }
 
+function preferConcreteTitle(value: unknown, fallback: string) {
+  const cleaned = cleanBuilderTitle(value, '').trim();
+  if (isInstructionalTopicCandidate(cleaned)) return cleaned;
+  return cleanBuilderTitle(fallback, fallback);
+}
+
 function normalizeBuilderKey(value: unknown) {
   return cleanBuilderTitle(value, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+}
+
+function normalizeResourceUrlKey(value: unknown) {
+  return String(value || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
 }
 
 function composeWeekTitle(moduleTitles: string[]) {
@@ -393,7 +496,8 @@ function buildExistingCourseSummary(course: any) {
     const modules = Array.isArray(week?.modules) ? week.modules : [];
     const moduleSummary = modules.slice(0, 4).map((module: any) => {
       const topics = Array.isArray(module?.topics) ? module.topics : [];
-      return `${cleanBuilderTitle(module?.title, 'Untitled Module')} (${topics.length}T/${moduleQuestCount.get(module.id) || 0}Q)`;
+      const resources = Array.isArray(module?.resources) ? module.resources : [];
+      return `${cleanBuilderTitle(module?.title, 'Untitled Module')} (${topics.length}T/${resources.length}R/${moduleQuestCount.get(module.id) || 0}Q)`;
     }).join('; ');
     return `Week ${week.weekNumber}: ${cleanBuilderTitle(week?.title, `Week ${week.weekNumber}`)} => ${moduleSummary || 'No modules yet'}`;
   }).join('\n');
@@ -414,23 +518,54 @@ function deriveCleanupHints(input: string, existingCourse: any) {
   const normalized = request.toLowerCase();
   const existingWeeks = Array.isArray(existingCourse?.weeks) ? existingCourse.weeks : [];
   const existingModules = existingWeeks.flatMap((week: any) => Array.isArray(week?.modules) ? week.modules : []);
+  const existingTopics = existingModules.flatMap((module: any) => Array.isArray(module?.topics) ? module.topics : []);
+  const existingResources = existingModules.flatMap((module: any) => Array.isArray(module?.resources) ? module.resources : []);
   const existingQuests = Array.isArray(existingCourse?.quests) ? existingCourse.quests : [];
   const namedItems = extractQuotedOrBulletedNames(request);
+  const requestedUrls = extractDocumentationUrls(request).map((value) => normalizeResourceUrlKey(value)).filter(Boolean);
 
-  const replaceExistingCourse = /(remove|delete|replace|rebuild|recreate).*(entire|whole|old|existing).*(learning path|course)|remove the old weekly learning path|replace the old weekly learning path/i.test(request);
+  const replaceExistingCourse = /(remove|delete|replace|rebuild|recreate|clear).*(entire|whole|old|existing).*(learning path|course)|remove the old weekly learning path|replace the old weekly learning path|start over from scratch/i.test(request);
+  const deleteCurrentModules = /(delete|remove|clear|drop).*(current|existing|old).*(module|modules)/i.test(request);
   const deleteAllQuests = /(delete|remove).*(all|existing).*(quest|quiz)/i.test(request);
+
   const deleteWeeks = existingWeeks
     .map((week: any) => String(week?.title || '').trim())
     .filter((title: string) => {
       const key = normalizeBuilderKey(title);
       return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
     });
-  const deleteModules = existingModules
-    .map((module: any) => String(module?.title || '').trim())
+
+  const deleteModules = [
+    ...(deleteCurrentModules ? existingModules.map((module: any) => String(module?.title || '').trim()) : []),
+    ...existingModules
+      .map((module: any) => String(module?.title || '').trim())
+      .filter((title: string) => {
+        const key = normalizeBuilderKey(title);
+        return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
+      }),
+  ];
+
+  const deleteTopicTitles = existingTopics
+    .map((topic: any) => String(topic?.content || topic?.title || '').trim())
     .filter((title: string) => {
       const key = normalizeBuilderKey(title);
       return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
     });
+
+  const deleteResourceLabels = existingResources
+    .map((resource: any) => String(resource?.label || '').trim())
+    .filter((label: string) => {
+      const key = normalizeBuilderKey(label);
+      return key && namedItems.some((item) => normalizeBuilderKey(item) === key) && /(delete|remove|drop)/i.test(request);
+    });
+
+  const deleteResourceUrls = existingResources
+    .map((resource: any) => String(resource?.url || '').trim())
+    .filter((url: string) => {
+      const key = normalizeResourceUrlKey(url);
+      return key && requestedUrls.includes(key) && /(delete|remove|drop)/i.test(request);
+    });
+
   const deleteQuestTitles = existingQuests
     .map((quest: any) => String(quest?.title || '').trim())
     .filter((title: string) => {
@@ -441,10 +576,13 @@ function deriveCleanupHints(input: string, existingCourse: any) {
   return {
     replaceExistingCourse,
     deleteAllQuests,
-    deleteWeeks: Array.from(new Set(deleteWeeks)).slice(0, 24),
-    deleteModules: Array.from(new Set(deleteModules)).slice(0, 48),
-    deleteQuestTitles: Array.from(new Set(deleteQuestTitles)).slice(0, 96),
-    rationale: normalized.includes('delete') || normalized.includes('remove') || normalized.includes('replace')
+    deleteWeeks: Array.from(new Set([...deleteWeeks])).slice(0, 24),
+    deleteModules: Array.from(new Set([...deleteModules])).slice(0, 48),
+    deleteTopicTitles: Array.from(new Set([...deleteTopicTitles])).slice(0, 160),
+    deleteResourceLabels: Array.from(new Set([...deleteResourceLabels])).slice(0, 160),
+    deleteResourceUrls: Array.from(new Set([...deleteResourceUrls])).slice(0, 160),
+    deleteQuestTitles: Array.from(new Set([...deleteQuestTitles])).slice(0, 96),
+    rationale: normalized.includes('delete') || normalized.includes('remove') || normalized.includes('replace') || normalized.includes('clear')
       ? 'Derived from explicit delete/remove/replace instructions in the request.'
       : '',
   };
@@ -459,12 +597,22 @@ function normalizeCleanupPlan(cleanup: any, input: string, existingCourse: any) 
     deleteAllQuests: data.deleteAllQuests || hinted.deleteAllQuests,
     deleteWeeks: Array.from(new Set([...(data.deleteWeeks || []), ...hinted.deleteWeeks])).slice(0, 24),
     deleteModules: Array.from(new Set([...(data.deleteModules || []), ...hinted.deleteModules])).slice(0, 48),
+    deleteTopicTitles: Array.from(new Set([...(data.deleteTopicTitles || []), ...hinted.deleteTopicTitles])).slice(0, 160),
+    deleteResourceLabels: Array.from(new Set([...(data.deleteResourceLabels || []), ...hinted.deleteResourceLabels])).slice(0, 160),
+    deleteResourceUrls: Array.from(new Set([...(data.deleteResourceUrls || []), ...hinted.deleteResourceUrls])).slice(0, 160),
     deleteQuestTitles: Array.from(new Set([...(data.deleteQuestTitles || []), ...hinted.deleteQuestTitles])).slice(0, 96),
     rationale: clampText(data.rationale || hinted.rationale || '', '', 1200, 0),
   };
 }
 
-function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: string[], weekTopicTargets: number[], mode: 'create' | 'modify' | 'quests-only') {
+function normalizeBuilderPlan(
+  plan: any,
+  courseTitle: string,
+  outlineTopics: string[],
+  weekTopicTargets: number[],
+  mode: 'create' | 'modify' | 'quests-only',
+  fallbackResource?: { label: string; type: 'youtube' | 'playlist' | 'video' | 'read' | 'ibm' | 'link'; url: string } | null,
+) {
   const weeks = Array.isArray(plan?.weeks) ? plan.weeks : [];
 
   const flattenedTopics = weeks.flatMap((week: any) =>
@@ -478,7 +626,7 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
 
   const normalizedTopicPool = outlineTopics.map((seedTitle, topicIndex) => {
     const topic = flattenedTopics[topicIndex] || {};
-    const title = cleanBuilderTitle(topic?.title, seedTitle);
+    const title = preferConcreteTitle(topic?.title, seedTitle);
     const content = clampText(
       topic?.content,
       `${title} overview for ${courseTitle}. Include practical learning guidance before the learner attempts practice.`,
@@ -493,11 +641,14 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
         type: ['youtube', 'playlist', 'video', 'read', 'ibm', 'link'].includes(resource?.type) ? resource.type : (/youtube\.com|youtu\.be/i.test(resource?.url || '') ? 'youtube' : 'link'),
         url: String(resource.url).trim().slice(0, 1000),
       }));
+    const topicResources = resources.length
+      ? resources
+      : fallbackResource ? [{ ...fallbackResource }] : [];
     const quest = topic?.quest || {};
     return {
       title,
       content,
-      resources,
+      resources: topicResources,
       quest: {
         title: cleanBuilderTitle(quest?.title, title),
         scenario: clampText(quest?.scenario, `You have studied ${title} in ${courseTitle}. Choose the best practice step to apply what you learned.`, 1200, 20),
@@ -518,18 +669,18 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
     const primaryTitle = weekTopics[0]?.title || outlineTopics[weekIndex] || `Week ${weekIndex + 1}`;
     const sourceWeek = weeks[weekIndex] || {};
     const moduleTitles = weekTopics.map((topic) => topic.title).filter(Boolean);
-    const cleanedSourceWeekTitle = cleanBuilderTitle(sourceWeek?.title, primaryTitle);
+    const cleanedSourceWeekTitle = preferConcreteTitle(sourceWeek?.title, '');
     const combinedWeekTitle = composeWeekTitle(moduleTitles);
     const useCombinedWeekTitle = moduleTitles.length > 1
       && (!cleanedSourceWeekTitle || normalizeBuilderKey(cleanedSourceWeekTitle) === normalizeBuilderKey(moduleTitles[0]));
     return {
       title: useCombinedWeekTitle
         ? combinedWeekTitle
-        : cleanBuilderTitle(sourceWeek?.title, mode === 'quests-only' ? combinedWeekTitle : primaryTitle),
+        : preferConcreteTitle(sourceWeek?.title, mode === 'quests-only' ? combinedWeekTitle : primaryTitle),
       modules: weekTopics.map((topic, moduleIndex) => {
         const sourceModule = sourceWeek?.modules?.[moduleIndex] || {};
         return {
-          title: cleanBuilderTitle(sourceModule?.title, topic.title),
+          title: preferConcreteTitle(sourceModule?.title, topic.title),
           topics: [topic],
         };
       }),
@@ -545,6 +696,9 @@ function normalizeBuilderPlan(plan: any, courseTitle: string, outlineTopics: str
       deleteAllQuests: false,
       deleteWeeks: [],
       deleteModules: [],
+      deleteTopicTitles: [],
+      deleteResourceLabels: [],
+      deleteResourceUrls: [],
       deleteQuestTitles: [],
       rationale: '',
       ...(plan?.cleanup || {}),
@@ -576,6 +730,7 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
               id: true,
               title: true,
               topics: { orderBy: { order: 'asc' }, select: { content: true } },
+              resources: { orderBy: { order: 'asc' }, select: { label: true, url: true } },
             },
           },
         },
@@ -593,6 +748,7 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
   );
   const documentationUrls = Array.from(new Set([...extractDocumentationUrls(input.outline), ...(input.resourceUrls || [])]));
   const documentationSources = await resolveDocumentationSources(documentationUrls);
+
   const attachmentTopics = (input.attachments || [])
     .flatMap((attachment) => extractOutlineTopics([attachment.summary, attachment.previewText].filter(Boolean).join('\n')))
     .filter(Boolean);
@@ -600,22 +756,40 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
     ...extractOutlineTopics(stripUrls(input.outline)),
     ...attachmentTopics,
     ...documentationSources.flatMap(source => source.topics),
+    ...documentationSources.map(source => cleanBuilderTitle(source.title, '')).filter(Boolean),
+    ...(input.attachments || []).map((attachment) => cleanBuilderTitle(String(attachment.name || '').replace(/\.[^.]+$/, ''), '')).filter(Boolean),
   ])).slice(0, 12);
 
+  const fallbackTopics = requestedTopics.length
+    ? requestedTopics
+    : Array.from(new Set([
+      ...existingModuleTitles,
+      cleanBuilderTitle(course.title, 'Course Foundations'),
+      'Core Workflow',
+      'Troubleshooting',
+    ])).slice(0, 12);
+
   const outlineTopics = input.mode === 'quests-only'
-    ? (existingModuleTitles.length ? existingModuleTitles.slice(0, 12) : requestedTopics.slice(0, 12))
+    ? (existingModuleTitles.length ? existingModuleTitles.slice(0, 12) : fallbackTopics.slice(0, 12))
     : input.mode === 'modify'
-      ? Array.from(new Set([...requestedTopics, ...existingModuleTitles])).slice(0, 12)
-      : requestedTopics.slice(0, 12);
+      ? Array.from(new Set([...fallbackTopics, ...existingModuleTitles])).slice(0, 12)
+      : fallbackTopics.slice(0, 12);
 
   const weekTopicTargets = buildWeekTopicTargets(outlineTopics.length);
   const existingCourseSummary = buildExistingCourseSummary(course);
+  const suppliedResources = documentationUrls.map((url) => {
+    const resolved = documentationSources.find((source) => normalizeResourceUrlKey(source.url) === normalizeResourceUrlKey(url));
+    if (resolved) return { label: resolved.title, type: 'ibm' as const, url: resolved.url };
+    return { label: deriveResourceLabelFromUrl(url), type: /ibm\.com\/docs/i.test(url) ? 'ibm' as const : 'link' as const, url };
+  });
   const resources = input.mode === 'quests-only'
     ? []
     : [
-      ...documentationSources.map(source => ({ label: source.title, type: 'ibm' as const, url: source.url })),
+      ...suppliedResources,
       ...await searchCourseResources(course.title, outlineTopics.slice(0, 4).join(', ')),
     ].filter((resource, index, all) => all.findIndex(item => item.url === resource.url) === index).slice(0, 12);
+
+  const fallbackResource = resources.find((resource) => resource.type === 'ibm' || resource.type === 'read' || resource.type === 'link') || null;
   const resourceText = resources.length
     ? resources.map((resource, index) => `${index + 1}. ${resource.label} | ${resource.url}`).join('\n')
     : 'No web results were available. Do not invent URLs; leave resources empty.';
@@ -636,14 +810,18 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
     messages: [{ role: 'system', content: [
       'You are the HCL Software Learning Hub full course designer.',
       'Use the AI Quest style: progressive learning, compact topics, scenario-based learning, one quiz quest per topic.',
-      'Return JSON only in this exact shape: {"learningMap":"...","diagram":"...","cleanup":{"replaceExistingCourse":false,"deleteAllQuests":false,"deleteWeeks":[],"deleteModules":[],"deleteQuestTitles":[],"rationale":"..."},"weeks":[{"title":"...","modules":[{"title":"...","topics":[{"title":"...","content":"...","resources":[{"label":"...","type":"read|youtube|link","url":"..."}],"quest":{"title":"...","scenario":"...","optionA":"...","optionB":"...","optionC":"...","optionD":"...","correct":"A|B|C|D","explanation":"..."}}]}]}]}.',
+      'Return JSON only in this exact shape: {"learningMap":"...","diagram":"...","cleanup":{"replaceExistingCourse":false,"deleteAllQuests":false,"deleteWeeks":[],"deleteModules":[],"deleteTopicTitles":[],"deleteResourceLabels":[],"deleteResourceUrls":[],"deleteQuestTitles":[],"rationale":"..."},"weeks":[{"title":"...","modules":[{"title":"...","topics":[{"title":"...","content":"...","resources":[{"label":"...","type":"read|youtube|link|ibm|playlist|video","url":"..."}],"quest":{"title":"...","scenario":"...","optionA":"...","optionB":"...","optionC":"...","optionD":"...","correct":"A|B|C|D","explanation":"..."}}]}]}]}.',
       `BUILDER MODE: ${input.mode}.`,
       `Create exactly ${weekTopicTargets.length} weeks. Use this module distribution per week: ${weekTopicTargets.map((count, index) => `Week ${index + 1}=${count} modules`).join(', ')}.`,
       'Each outline topic must appear once. Create exactly 1 topic per module. Keep each topic teachable in 8 to 20 minutes.',
       'learningMap explains the progression. diagram is Mermaid flowchart text only, no markdown fences.',
       'Use concise titles without Week/Module prefixes. Each topic needs one learn-and-practice quest with four options and one correct answer.',
+      'Never use request sentences, cleanup commands, attachment filenames, spreadsheet header labels, or raw URLs as week, module, or topic titles.',
+      'Treat instructions such as remove current modules, read the attached spreadsheet, or use the second URL for enablement as control instructions, not curriculum headings.',
+      'If the request asks for a dedicated final week for version-wise enablement or recordings, create one concise final week title and keep version identifiers inside the module, topic, or resource names.',
       'The REQUEST is the highest-priority source of truth. Follow it exactly, especially for keep, delete, replace, compare, split, or separate-enablement instructions.',
-      'Reconcile and unify all three context sources together: direct instructions, product documentation URLs, and uploaded attachments. Do not ignore any of the three when they are supplied.',
+      'Any one source can be enough to build the course: REQUEST text, product documentation URLs, or uploaded attachments.',
+      'When more than one source is supplied, compare them, merge overlapping ideas, preserve direct user instructions, and use the combined evidence to create the structure.',
       'If the request names modules or weeks explicitly, preserve those names unless the request explicitly asks you to replace them.',
       input.mode === 'quests-only'
         ? 'Quest-only mode: keep the existing week and module structure. Regenerate only learn content and quiz quests.'
@@ -653,6 +831,8 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
       'If product documentation URLs are supplied, infer the module list from the documentation headings, workflows, and terminology before filling any missing areas from the free-text request.',
       'If local attachments are supplied, use their summaries and extracted previews as additional context. If an attachment has no readable preview, use only its filename and summary metadata.',
       'If the request asks to delete or replace content, populate the cleanup object precisely. Use replaceExistingCourse when the old learning path or whole course should be removed before rebuilding.',
+      'If the request asks to delete a topic or resource, populate cleanup.deleteTopicTitles, cleanup.deleteResourceLabels, and cleanup.deleteResourceUrls precisely.',
+      'Each module should include at least one product-document or supporting resource whenever a supplied or discovered resource exists.',
       'Use only the supplied candidate URLs. Do not invent or modify URLs. A topic may have zero resources if none fit.',
       `COURSE: ${course.title}\nDESCRIPTION: ${course.description || ''}\nREQUEST: ${input.outline}\nOUTLINE TOPICS:\n${outlineTopics.map((topic, index) => `${index + 1}. ${topic}`).join('\n')}\nEXISTING COURSE STRUCTURE:\n${existingCourseSummary || 'No existing course content.'}\nHEURISTIC CLEANUP HINTS:\n${JSON.stringify(cleanupHints, null, 2)}\nDOCUMENTATION SOURCES:\n${documentationText}\nATTACHMENTS:\n${attachmentsText}\nCANDIDATE RESOURCES:\n${resourceText}`,
     ].join('\n') }],
@@ -663,7 +843,7 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
   try {
     plan = parseAiJsonPayload(result.message?.content);
   } catch { throw new Error('The AI returned an invalid full course plan. Try a smaller outline.'); }
-  const normalizedPlan = normalizeBuilderPlan(plan, course.title, outlineTopics, weekTopicTargets, input.mode);
+  const normalizedPlan = normalizeBuilderPlan(plan, course.title, outlineTopics, weekTopicTargets, input.mode, fallbackResource);
   const parsed = builderPlanSchema.safeParse({
     ...normalizedPlan,
     cleanup: normalizeCleanupPlan(normalizedPlan.cleanup, input.outline, course),

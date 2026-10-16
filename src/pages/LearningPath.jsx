@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ChevronRight, Play, ExternalLink, X, BookOpen, Layers } from 'lucide-react';
 import { LEARNING_PATH_NOTE, LEARNING_PATH_WEEKS } from '../data/learningPath.js';
 
+// This page is the strategic AI learning-path view that sits above individual
+// AI Quest quests. It helps learners understand the week-by-week curriculum,
+// recommended study order, and supporting resources before they dive into the
+// scenario-based quest and quiz flows.
 // ── helpers ──────────────────────────────────────────────────────────────────
 function getEmbedUrl(url) {
   if (!url) return null;
@@ -21,6 +25,8 @@ const TYPE_META = {
 };
 
 // ── ResourceButton ────────────────────────────────────────────────────────────
+// Resource buttons preserve context by choosing whether a resource can be shown
+// inline inside the course experience or should open externally.
 function ResourceButton({ res, onVideo }) {
   const meta = TYPE_META[res.type] || TYPE_META.read;
   const embedUrl = getEmbedUrl(res.url);
@@ -64,6 +70,8 @@ function ResourceButton({ res, onVideo }) {
 }
 
 // ── ModuleCard ────────────────────────────────────────────────────────────────
+// Module cards break a week into compact, expandable learning units so the page
+// can show both high-level curriculum structure and detailed resource lists.
 function ModuleCard({ mod, onVideo }) {
   const [open, setOpen] = useState(false);
 
@@ -145,6 +153,8 @@ function ModuleCard({ mod, onVideo }) {
 }
 
 // ── VideoModal ────────────────────────────────────────────────────────────────
+// The modal keeps video learning material inside the path flow so the learner
+// can review content without losing their current week/module context.
 function VideoModal({ info, onClose }) {
   if (!info) return null;
   return (
@@ -213,6 +223,8 @@ function VideoModal({ info, onClose }) {
 }
 
 // ── Main LearningPath page ────────────────────────────────────────────────────
+// This route is mounted from the AI Quest learning-path navigation and acts as
+// the curriculum map for the AI transformation course before quest execution.
 export default function LearningPath() {
   const navigate = useNavigate();
   const [selectedWeek, setSelectedWeek] = useState(0);

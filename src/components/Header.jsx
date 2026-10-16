@@ -1,24 +1,21 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Trophy, Map, Home, Zap, UserCircle, Moon, Sun } from 'lucide-react';
+import { Map, Home, Zap } from 'lucide-react';
 import { useAppStore } from '../App.jsx';
 import { getNextLevel } from '../data/index.js';
-import AvatarDisplay from './AvatarDisplay.jsx';
 
 export default function Header() {
   const store = useAppStore();
-  const { totalXP, levelInfo, playerName, avatar, theme, setTheme } = store;
+  const { aiQuestXP, levelInfo, theme } = store;
   const isLight = theme === 'light';
   const location = useLocation();
-  const nextLevel = getNextLevel(totalXP);
+  const nextLevel = getNextLevel(aiQuestXP);
   const progress = nextLevel
-    ? ((totalXP - levelInfo.minXP) / (nextLevel.minXP - levelInfo.minXP)) * 100
+    ? ((aiQuestXP - levelInfo.minXP) / (nextLevel.minXP - levelInfo.minXP)) * 100
     : 100;
 
   const navLinks = [
-    { to: '/ai-quest', icon: Home, label: 'Home' },
+    { to: '/courses', icon: Home, label: 'Course Hub' },
     { to: '/paths', icon: Map, label: 'Quests' },
-    { to: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
-    { to: '/avatar', icon: UserCircle, label: 'Avatar' },
   ];
 
   return (
@@ -49,14 +46,6 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={() => setTheme(isLight ? 'dark' : 'light')}
-            className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${isLight ? 'text-amber-600 hover:text-amber-700' : 'text-slate-300 hover:text-white'}`}
-            style={{ border: isLight ? '1px solid rgba(100,116,139,0.3)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? 'rgba(203,213,225,0.9)' : 'rgba(255,255,255,0.03)' }}
-            title={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
-          >
-            {isLight ? <Moon size={14} /> : <Sun size={14} />}
-          </button>
           <div className="flex items-center gap-2">
             <span className="text-lg">{levelInfo.icon}</span>
             <div className="hidden md:block">
@@ -64,7 +53,7 @@ export default function Header() {
                 <span className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{levelInfo.title}</span>
                 <span className="flex items-center gap-0.5 text-xs font-bold text-yellow-400">
                   <Zap size={10} />
-                  {totalXP.toLocaleString()} XP
+                  {aiQuestXP.toLocaleString()} XP
                 </span>
               </div>
               <div className="w-28 h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -75,18 +64,6 @@ export default function Header() {
               </div>
             </div>
           </div>
-          {playerName && (
-            <Link to="/avatar" title="Edit Avatar">
-              {avatar
-                ? <AvatarDisplay avatar={avatar} size="xs" />
-                : (
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500 to-violet-500 flex items-center justify-center text-sm font-bold">
-                    {playerName[0]?.toUpperCase()}
-                  </div>
-                )
-              }
-            </Link>
-          )}
         </div>
       </div>
     </header>

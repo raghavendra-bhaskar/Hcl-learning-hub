@@ -7,6 +7,10 @@ import Header from '../components/Header.jsx';
 import { CertificationPanel, LabLaunchCard } from '../components/ExternalHandoff.jsx';
 import { getCertification, getQuestLab } from '../data/externalLinks.js';
 
+// The results page is the final step of an AI Quest run. It persists the quest
+// completion into the shared store, celebrates strong performance, explains what
+// the learner got right or wrong, and points them to the next course actions
+// such as labs, certifications, replays, or the wider leaderboard.
 function Firework({ show }) {
   useEffect(() => {
     if (!show) return;
@@ -20,6 +24,8 @@ function Firework({ show }) {
   return null;
 }
 
+// This route is mounted after the quiz flow and acts as the learner-facing
+// summary for both progress tracking and reflection on the finished quest.
 export default function Results() {
   const { questId } = useParams();
   const navigate = useNavigate();

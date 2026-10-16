@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
   ArrowLeft, Plus, Trash2, ChevronDown, Edit2, Check, X,
-  Save, ExternalLink, GripVertical, Pencil,
+  Save, ExternalLink, GripVertical, Pencil, Copy,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
@@ -58,12 +58,46 @@ const normalizeBuilderKey = (value) => cleanBuilderDisplayTitle(value, '')
 const TEXT_ATTACHMENT_EXTENSIONS = /\.(txt|md|csv|json|ya?ml|xml|html?|js|jsx|ts|tsx|py|java|sql|log|ini|cfg)$/i;
 const SPREADSHEET_ATTACHMENT_EXTENSIONS = /\.(xlsx|xls|xlsm|xlsb|ods|csv)$/i;
 const SPREADSHEET_MIME_PATTERN = /(spreadsheet|excel|sheet|csv|opendocument)/i;
+const COURSE_TEMPLATE_FILENAME = 'course-builder-template.csv';
+const COURSE_TEMPLATE_ROWS = [
+  ['Week', 'Module', 'Topic', 'Resource Label', 'Resource URL', 'Resource Type', 'Notes'],
+  ['Week 1', 'Module 1', 'Topic 1', 'Product documentation overview', 'https://www.ibm.com/docs/example', 'ibm', 'Use official product docs as the default module resource.'],
+  ['Week 1', 'Module 1', 'Topic 2', 'Architecture guide', 'https://www.ibm.com/docs/example-architecture', 'ibm', 'Add learner notes, prerequisites, or delete instructions in the AI builder text box.'],
+  ['Week 1', 'Module 2', 'Topic 3', 'Hands-on tutorial', 'https://www.ibm.com/docs/example-tutorial', 'read', 'One row per topic is easiest for the builder to understand.'],
+  ['Week 2', 'Module 1', 'Topic 4', 'Workshop recording', 'https://example.com/workshop', 'video', 'You can repeat Week and Module names across rows.'],
+  ['Week 2', 'Module 2', 'Topic 5', 'Reference article', 'https://example.com/reference', 'link', 'Optional: leave resource columns blank if the builder should infer them from the product document.'],
+];
+
+function buildCsvLine(values) {
+  return values
+    .map((value) => {
+      const escaped = String(value ?? '').replace(/"/g, '""');
+      return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+    })
+    .join(',');
+}
+
+function downloadTextFile(filename, text, mimeType = 'text/plain;charset=utf-8') {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 function formatAttachmentSize(sizeBytes) {
   if (!sizeBytes) return '0 B';
   if (sizeBytes < 1024) return `${sizeBytes} B`;
   if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`;
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalizeResourceUrl(value) {
+  return String(value || '').trim().replace(/\/+$/, '').toLowerCase();
 }
 
 function normalizeAttachmentPreview(value) {
@@ -199,14 +233,14 @@ function InlineEdit({ value, onSave, placeholder = 'Click to edit', multiline = 
   return (
     <span onDoubleClick={() => { setDraft(value || ''); setEditing(true); }}
       className={`cursor-text group ${className}`} title="Double-click to edit">
-      {value || <span className="text-slate-600 italic text-sm">{placeholder}</span>}
+      {value || <span className="text-slate-500 italic text-sm">{placeholder}</span>}
       <Edit2 size={10} className="inline ml-1.5 text-slate-700 opacity-0 group-hover:opacity-60 transition-opacity" />
     </span>
   );
 }
 
 // ── Resource row ─────────────────────────────────────────────────────────────
-function ResourceRow({ res, onUpdate, onDelete }) {
+function ResourceRow({ res, onUpdate, onDelete, isLight }) {
   const [editing, setEditing] = useState(!res.label);
   const [label, setLabel] = useState(res.label || '');
   const [type, setType]   = useState(res.type  || 'link');
@@ -226,7 +260,7 @@ function ResourceRow({ res, onUpdate, onDelete }) {
   const typeMeta = RESOURCE_TYPES.find(t => t.id === type) || RESOURCE_TYPES[RESOURCE_TYPES.length - 1];
 
   return (
-    <div className="rounded-lg border border-white/7 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+    <div className="rounded-lg border overflow-hidden" style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }}>
       {editing ? (
         <div className="p-3 space-y-2">
           <div className="flex gap-2">
@@ -253,13 +287,13 @@ function ResourceRow({ res, onUpdate, onDelete }) {
         <div className="flex items-center gap-3 px-3 py-2.5">
           <span style={{ color: typeMeta.color }} className="text-sm flex-shrink-0">{typeMeta.icon}</span>
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-slate-300 truncate">{res.label}</p>
-            {res.url && <p className="text-[10px] text-slate-600 truncate font-mono">{res.url}</p>}
+            <p className={`text-xs truncate ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{res.label}</p>
+            {res.url && <p className={`text-[10px] truncate font-mono ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{res.url}</p>}
           </div>
           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
             style={{ background: typeMeta.color + '20', color: typeMeta.color }}>{typeMeta.label}</span>
-          <button onClick={() => setEditing(true)} className="text-slate-600 hover:text-slate-300 flex-shrink-0"><Edit2 size={12} /></button>
-          <button onClick={() => onDelete(res.id)} className="text-slate-700 hover:text-red-400 flex-shrink-0"><Trash2 size={12} /></button>
+          <button onClick={() => setEditing(true)} className={`flex-shrink-0 ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-600 hover:text-slate-300'}`}><Edit2 size={12} /></button>
+          <button onClick={() => onDelete(res.id)} className={`flex-shrink-0 ${isLight ? 'text-slate-400 hover:text-red-500' : 'text-slate-700 hover:text-red-400'}`}><Trash2 size={12} /></button>
         </div>
       )}
     </div>
@@ -267,7 +301,7 @@ function ResourceRow({ res, onUpdate, onDelete }) {
 }
 
 // ── Module section ────────────────────────────────────────────────────────────
-function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
+function ModuleSection({ mod, moduleNumber, onUpdate, onDelete, isLight }) {
   const [open, setOpen]           = useState(false);
   const [newTopic, setNewTopic]   = useState('');
   const [topics, setTopics]       = useState(mod.topics    || []);
@@ -316,28 +350,28 @@ function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
 
   return (
     <div className="rounded-xl border overflow-hidden"
-      style={{ border: open ? `1px solid ${modColor}30` : '1px solid rgba(255,255,255,0.06)', background: open ? modColor + '05' : 'transparent' }}>
+      style={{ border: open ? `1px solid ${modColor}30` : (isLight ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(255,255,255,0.06)'), background: open ? modColor + '05' : 'transparent' }}>
       <div className="flex items-center gap-3 px-4 py-3">
         <IconPicker value={mod.icon || '📖'} options={MODULE_ICONS}
           onChange={async icon => { try { const m = await api.put(`/courses-api/modules/${mod.id}`, { icon }); onUpdate(m); } catch {} }} />
         <div className="flex-1 min-w-0">
           <div className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: modColor }}>Module {moduleNumber}</div>
           <InlineEdit value={mod.title} placeholder="Module title"
-            className="font-semibold text-white text-sm"
+            className={`font-semibold text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}
             onSave={async t => { try { const m = await api.put(`/courses-api/modules/${mod.id}`, { title: t }); onUpdate(m); } catch {} }} />
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <ColorPicker value={modColor}
             onChange={async color => { try { const m = await api.put(`/courses-api/modules/${mod.id}`, { color }); onUpdate(m); } catch {} }} />
-          <button onClick={() => setOpen(v => !v)} className="text-slate-600 hover:text-slate-300 ml-2">
+          <button onClick={() => setOpen(v => !v)} className={`ml-2 ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-600 hover:text-slate-300'}`}>
             <ChevronDown size={15} style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: '0.2s' }} />
           </button>
-          <button onClick={() => onDelete(mod.id)} className="text-slate-700 hover:text-red-400"><Trash2 size={14} /></button>
+          <button onClick={() => onDelete(mod.id)} className={isLight ? 'text-slate-400 hover:text-red-500' : 'text-slate-700 hover:text-red-400'}><Trash2 size={14} /></button>
         </div>
       </div>
 
       {open && (
-        <div className="border-t border-white/5 px-4 pb-4 pt-4 grid md:grid-cols-2 gap-6">
+        <div className="px-4 pb-4 pt-4 grid md:grid-cols-2 gap-6" style={{ borderTop: isLight ? '1px solid rgba(148,163,184,0.16)' : '1px solid rgba(255,255,255,0.05)' }}>
           {/* Topics */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Topics Covered</p>
@@ -345,12 +379,12 @@ function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
               {topics.map(t => (
                 <div key={t.id} className="flex items-start gap-2 group">
                   <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ background: modColor }} />
-                  <span className="flex-1 text-xs text-slate-400 leading-relaxed">{t.content}</span>
+                  <span className={`flex-1 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{t.content}</span>
                   <button onClick={() => deleteTopic(t.id)}
-                    className="opacity-0 group-hover:opacity-100 text-slate-700 hover:text-red-400 flex-shrink-0 transition-opacity"><X size={11} /></button>
+                    className={`opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity ${isLight ? 'text-slate-400 hover:text-red-500' : 'text-slate-700 hover:text-red-400'}`}><X size={11} /></button>
                 </div>
               ))}
-              {topics.length === 0 && <p className="text-xs text-slate-700 italic">No topics yet</p>}
+              {topics.length === 0 && <p className={`text-xs italic ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>No topics yet</p>}
             </div>
             <div className="flex gap-2">
               <input value={newTopic} onChange={e => setNewTopic(e.target.value)}
@@ -368,9 +402,9 @@ function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Resources</p>
             <div className="space-y-1.5 mb-3">
               {resources.map(r => (
-                <ResourceRow key={r.id} res={r} onUpdate={updateResource} onDelete={deleteResource} />
+                <ResourceRow key={r.id} res={r} onUpdate={updateResource} onDelete={deleteResource} isLight={isLight} />
               ))}
-              {resources.length === 0 && !addingRes && <p className="text-xs text-slate-700 italic">No resources yet</p>}
+              {resources.length === 0 && !addingRes && <p className={`text-xs italic ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>No resources yet</p>}
               {addingRes && <AddResourceForm onSave={saveNewResource} onCancel={() => setAddingRes(false)} />}
             </div>
             {!addingRes && (
@@ -388,7 +422,7 @@ function ModuleSection({ mod, moduleNumber, onUpdate, onDelete }) {
 
 function AddResourceForm({ onSave, onCancel }) {
   const [label, setLabel] = useState('');
-  const [type, setType]   = useState('youtube');
+  const [type, setType]   = useState('link');
   const [url, setUrl]     = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -425,7 +459,7 @@ function AddResourceForm({ onSave, onCancel }) {
 }
 
 // ── Week section ──────────────────────────────────────────────────────────────
-function WeekSection({ week, accentColor, onUpdateWeek, onDeleteWeek, onReload }) {
+function WeekSection({ week, accentColor, onUpdateWeek, onDeleteWeek, onReload, isLight }) {
   const [modules, setModules]       = useState(week.modules || []);
   const [addingModule, setAddingModule] = useState(false);
   const [newModTitle, setNewModTitle]   = useState('');
@@ -464,19 +498,19 @@ function WeekSection({ week, accentColor, onUpdateWeek, onDeleteWeek, onReload }
           Week {week.weekNumber}
         </div>
         <InlineEdit value={week.title} placeholder="Week theme/title"
-          className="flex-1 text-sm font-semibold text-white"
+          className={`flex-1 text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}
           onSave={async t => { try { const w = await api.put(`/courses-api/weeks/${week.id}`, { title: t }); onUpdateWeek(w); } catch {} }} />
         <button onClick={() => onDeleteWeek(week.id)} title="Delete week"
-          className="text-slate-700 hover:text-red-400 transition-colors"><Trash2 size={15} /></button>
+          className={`transition-colors ${isLight ? 'text-slate-400 hover:text-red-500' : 'text-slate-700 hover:text-red-400'}`}><Trash2 size={15} /></button>
       </div>
 
       <div className="space-y-3">
         {modules.map((mod, mi) => (
           <ModuleSection key={mod.id} mod={mod} moduleNumber={mi + 1}
-            onUpdate={updateModule} onDelete={deleteModule} />
+            onUpdate={updateModule} onDelete={deleteModule} isLight={isLight} />
         ))}
         {modules.length === 0 && (
-          <p className="text-xs text-slate-700 italic text-center py-3">No modules yet — add one below</p>
+          <p className={`text-xs italic text-center py-3 ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>No modules yet — add one below</p>
         )}
       </div>
 
@@ -663,13 +697,36 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
 
   const currentModuleCount = weeks.reduce((count, week) => count + (Array.isArray(week.modules) ? week.modules.length : 0), 0);
   const activeMode = BUILDER_MODES.find(item => item.id === mode) || BUILDER_MODES[0];
+  const hasBuilderInput = outline.trim().length > 0 || resourceUrls.some(value => value.trim()) || attachments.length > 0;
   const cleanupSummary = plan?.cleanup ? [
     plan.cleanup.replaceExistingCourse ? 'Replace existing course structure' : '',
     plan.cleanup.deleteAllQuests ? 'Delete all existing quests' : '',
     ...(plan.cleanup.deleteWeeks || []).map(title => `Delete week: ${title}`),
     ...(plan.cleanup.deleteModules || []).map(title => `Delete module: ${title}`),
+    ...(plan.cleanup.deleteTopicTitles || []).map(title => `Delete topic: ${title}`),
+    ...(plan.cleanup.deleteResourceLabels || []).map(label => `Delete resource: ${label}`),
+    ...(plan.cleanup.deleteResourceUrls || []).map(url => `Delete resource URL: ${url}`),
     ...(plan.cleanup.deleteQuestTitles || []).map(title => `Delete quest: ${title}`),
   ].filter(Boolean) : [];
+
+  const downloadTemplate = () => {
+    try {
+      const csv = `${COURSE_TEMPLATE_ROWS.map(buildCsvLine).join('\n')}\n`;
+      downloadTextFile(COURSE_TEMPLATE_FILENAME, csv, 'text/csv;charset=utf-8');
+    } catch (e) {
+      setError(e?.message || 'Could not download the template');
+    }
+  };
+
+  const copyDiagram = async () => {
+    if (!plan?.diagram) return;
+    try {
+      if (!navigator?.clipboard?.writeText) throw new Error('Clipboard access is not available in this browser');
+      await navigator.clipboard.writeText(plan.diagram);
+    } catch (e) {
+      setError(e?.message || 'Could not copy the course diagram');
+    }
+  };
 
   const generate = async () => {
     setBusy(true); setError('');
@@ -755,6 +812,20 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
         }
       };
 
+      const removeTopicById = async (moduleId, topicId) => {
+        await api.delete(`/courses-api/topics/${topicId}`);
+        const week = workingWeeks.find(item => (item.modules || []).some(module => module.id === moduleId));
+        const module = week?.modules?.find(item => item.id === moduleId);
+        if (module) module.topics = (module.topics || []).filter(topic => topic.id !== topicId);
+      };
+
+      const removeResourceById = async (moduleId, resourceId) => {
+        await api.delete(`/courses-api/resources/${resourceId}`);
+        const week = workingWeeks.find(item => (item.modules || []).some(module => module.id === moduleId));
+        const module = week?.modules?.find(item => item.id === moduleId);
+        if (module) module.resources = (module.resources || []).filter(resource => resource.id !== resourceId);
+      };
+
       const removeModuleById = async (moduleId) => {
         await removeQuestsForModule(moduleId);
         await api.delete(`/courses-api/modules/${moduleId}`);
@@ -778,6 +849,9 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
       const cleanup = plan?.cleanup || {};
       const weekDeleteKeys = new Set((cleanup.deleteWeeks || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
       const moduleDeleteKeys = new Set((cleanup.deleteModules || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+      const topicDeleteKeys = new Set((cleanup.deleteTopicTitles || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+      const resourceDeleteKeys = new Set((cleanup.deleteResourceLabels || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
+      const resourceDeleteUrls = new Set((cleanup.deleteResourceUrls || []).map(url => normalizeResourceUrl(url)).filter(Boolean));
       const questDeleteKeys = new Set((cleanup.deleteQuestTitles || []).map(title => normalizeBuilderKey(title)).filter(Boolean));
 
       if (cleanup.replaceExistingCourse) {
@@ -803,10 +877,26 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
             if (moduleDeleteKeys.has(normalizeBuilderKey(module.title))) await removeModuleById(module.id);
           }
         }
+
+        for (const week of [...workingWeeks]) {
+          for (const module of [...(week.modules || [])]) {
+            for (const topic of [...(module.topics || [])]) {
+              if (topicDeleteKeys.has(normalizeBuilderKey(topic.content))) await removeTopicById(module.id, topic.id);
+            }
+            for (const resource of [...(module.resources || [])]) {
+              const matchesLabel = resourceDeleteKeys.has(normalizeBuilderKey(resource.label));
+              const matchesUrl = resourceDeleteUrls.has(normalizeResourceUrl(resource.url));
+              if (matchesLabel || matchesUrl) await removeResourceById(module.id, resource.id);
+            }
+          }
+        }
       }
 
       let nextWeekNumber = workingWeeks.length + 1;
       let nextQuestOrder = workingQuests.reduce((max, quest) => Math.max(max, Number(quest.order ?? -1)), -1) + 1;
+      const fallbackResource = plan?.documentationSources?.[0]?.url
+        ? { label: plan.documentationSources[0].title || 'Product document', type: 'ibm', url: plan.documentationSources[0].url }
+        : plan?.discoveredResources?.find(resource => resource?.url) || null;
 
       const replaceWeek = (updatedWeek) => {
         const index = workingWeeks.findIndex(week => week.id === updatedWeek.id);
@@ -854,7 +944,9 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
 
           const primaryTopic = generatedModule.topics?.[0];
           if (!primaryTopic) continue;
-          const moduleResources = Array.isArray(primaryTopic.resources) ? primaryTopic.resources : [];
+          const moduleResources = Array.isArray(primaryTopic.resources) && primaryTopic.resources.length
+            ? primaryTopic.resources
+            : fallbackResource ? [fallbackResource] : [];
 
           if (mode !== 'quests-only') {
             if (Array.isArray(module.topics) && module.topics[0]) {
@@ -932,6 +1024,7 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
           {open ? 'Close' : 'Build full course'}
         </button>
       </div>
+
       {open && <div className="mt-4 space-y-3">
         <div className="grid gap-2 md:grid-cols-3">
           {BUILDER_MODES.map(item => (
@@ -951,11 +1044,20 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
           <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Current course structure</p>
           <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>{weeks.length} week{weeks.length === 1 ? '' : 's'} · {currentModuleCount} module{currentModuleCount === 1 ? '' : 's'} · duplicate module names will update existing content instead of creating extra copies.</p>
         </div>
+        <div className="rounded-xl border px-4 py-3 space-y-2" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
+          <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>How the inputs work</p>
+          <div className={`text-[11px] space-y-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
+            <p><strong>Instructions</strong> define what to create, compare, keep, or delete.</p>
+            <p><strong>Reference URLs</strong> are treated as product documents and should be enough on their own to build the course.</p>
+            <p><strong>Attachments</strong> like spreadsheets, PDFs, screenshots, and notes are also enough on their own. When you provide more than one source, the builder compares and merges them.</p>
+            <p><strong>Delete commands</strong> can target weeks, modules, topics, resources, or quests by name.</p>
+          </div>
+        </div>
         <div className="rounded-xl border px-4 py-3 space-y-3" style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.02)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Reference URLs</p>
-              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Add multiple documentation or tutorial links for the builder to use.</p>
+              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Add product documentation or tutorial links. URL-only input is supported.</p>
             </div>
             <button onClick={addResourceUrl} type="button" className="px-3 py-1.5 rounded-lg text-[11px] font-bold border"
               style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
@@ -976,14 +1078,22 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className={`text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Attachments</p>
-              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Upload screenshots, spreadsheets, PDFs, or notes to guide the builder. Text files are previewed automatically.</p>
+              <p className={`text-[10px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Upload screenshots, spreadsheets, PDFs, or notes. Attachment-only input is supported, and spreadsheets are previewed automatically.</p>
             </div>
-            <label className="px-3 py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer"
-              style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
-              Upload files
-              <input type="file" multiple onChange={onAttachmentChange} className="hidden" />
-            </label>
+            <div className="flex items-center gap-2">
+              <button onClick={downloadTemplate} type="button" className="px-3 py-1.5 rounded-lg text-[11px] font-bold border"
+                style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
+                Download template
+              </button>
+              <label className="px-3 py-1.5 rounded-lg text-[11px] font-bold border cursor-pointer"
+                style={{ color: isLight ? '#0f766e' : '#67e8f9', borderColor: isLight ? 'rgba(8,145,178,0.28)' : 'rgba(34,211,238,0.30)', background: isLight ? 'rgba(236,254,255,0.96)' : 'rgba(6,182,212,0.10)' }}>
+                Upload files
+                <input type="file" multiple onChange={onAttachmentChange} className="hidden" />
+              </label>
+            </div>
           </div>
+          <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Template columns: <code>Week</code>, <code>Module</code>, <code>Topic</code>, <code>Resource Label</code>, <code>Resource URL</code>, <code>Resource Type</code>, <code>Notes</code>.</p>
+          <p className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Template source file in this repo: <code>public/templates/course-builder-template.csv</code>. The button downloads the same CSV directly from your browser.</p>
           {attachments.length > 0 ? <div className="space-y-2">
             {attachments.map((attachment, index) => <div key={`${attachment.name}-${index}`} className="flex items-start gap-3 rounded-xl px-3 py-2 border"
               style={{ background: isLight ? 'rgba(248,250,252,0.95)' : 'rgba(255,255,255,0.03)', borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.08)' }}>
@@ -998,12 +1108,12 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
         </div>
         <textarea value={outline} onChange={e => setOutline(e.target.value)} rows={5} maxLength={12000}
           placeholder={mode === 'quests-only'
-            ? 'Example: Recreate all duplicate AWS quests, keep the existing modules, improve scenario quality, and make each quest look like the AI Training experience.'
+            ? 'Example: Recreate all duplicate AWS quests, keep the existing modules, improve scenario quality, and delete the old resource "Legacy PDF".'
             : mode === 'modify'
-              ? 'Example: Improve the AWS course by removing duplicate modules, expanding security and observability, and rewriting weak quests.'
-              : 'Example: Teach AWS fundamentals, IAM, networking, EC2, containers, observability, cost control, security, and a production deployment exercise.'}
+              ? 'Example: Improve the AWS course by removing duplicate modules, deleting topic "Old IAM Basics", deleting resource "Legacy PDF", expanding security and observability, and rewriting weak quests.'
+              : 'Example: Teach AWS fundamentals, IAM, networking, EC2, containers, observability, cost control, security, and a production deployment exercise. If a module or resource is outdated, say delete it explicitly.'}
           className="w-full rounded-xl px-3 py-2.5 text-sm resize-y focus:outline-none" style={inputStyle} />
-        <button onClick={generate} disabled={busy || outline.trim().length < 20}
+        <button onClick={generate} disabled={busy || !hasBuilderInput}
           className="px-4 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40" style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
           {busy && !plan ? 'Researching resources and building course…' : mode === 'quests-only' ? 'Generate Quest Refresh Preview' : mode === 'modify' ? 'Generate Course Update Preview' : 'Generate Full Course Preview'}
         </button>
@@ -1022,8 +1132,14 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
               <p className={`mt-2 whitespace-pre-wrap text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{plan.learningMap}</p>
             </div>
             <div className="rounded-lg border p-3" style={{ borderColor: isLight ? 'rgba(124,58,237,0.20)' : 'rgba(196,181,253,0.20)', background: isLight ? 'rgba(245,243,255,0.95)' : 'rgba(167,139,250,0.05)' }}>
-              <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>Course diagram</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>Course diagram</p>
+                <button onClick={copyDiagram} type="button" className={`inline-flex items-center gap-1 text-[10px] font-semibold ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>
+                  <Copy size={12} /> Copy diagram
+                </button>
+              </div>
               <pre className={`mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{plan.diagram}</pre>
+              <p className={`mt-2 text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>This diagram is shown only in the AI preview right now. Applying the course updates does not add it to the saved course page yet.</p>
             </div>
           </div>
           {plan.weeks.map((week, weekIndex) => <div key={weekIndex}>
@@ -1037,13 +1153,17 @@ function AICourseOutlinePanel({ course, weeks, onCreated, isLight }) {
           </button>
         </div>}
         {error && <p role="alert" className={`text-xs ${isLight ? 'text-red-600' : 'text-red-300'}`}>{error}</p>}
-        <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>The builder searches public web results for candidate resources and uses the configured model to structure the course. Review technical accuracy, licensing, and links before publishing.</p>
+        <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>The builder compares your instructions, product URLs, and attachments together when multiple sources are supplied. It searches public web results for candidate resources and uses the configured model to structure the course. Review technical accuracy, licensing, and links before publishing.</p>
       </div>}
     </div>
   );
 }
 
 // ── Main CourseEditor page ────────────────────────────────────────────────────
+// This shared editor powers authoring for database-backed courses. Admins and
+// assigned moderators use it to shape the course structure, modules, resources,
+// quests, and AI-assisted content generation flows that later surface across
+// the learner-facing course home, learn, path, quests, and quiz pages.
 export default function CourseEditor() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -1164,7 +1284,7 @@ export default function CourseEditor() {
         <div className="space-y-6">
           {weeks.map(week => (
             <WeekSection key={week.id} week={week} accentColor={accent}
-              onUpdateWeek={updateWeek} onDeleteWeek={deleteWeek} onReload={() => {}} />
+              onUpdateWeek={updateWeek} onDeleteWeek={deleteWeek} onReload={() => {}} isLight={isLight} />
           ))}
 
           {weeks.length === 0 && (

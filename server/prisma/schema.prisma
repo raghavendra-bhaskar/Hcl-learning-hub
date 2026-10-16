@@ -87,6 +87,7 @@ model Course {
   emoji           String        @default("📚")
   accentColor     String        @default("#06b6d4")
   status          String        @default("live")  // live | coming-soon
+  category        String        @default("technology") // process | product | technology
   order           Int           @default(0)
   instructorName  String?
   instructorEmail String?

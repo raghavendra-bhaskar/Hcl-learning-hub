@@ -32,6 +32,10 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 ### Course Presentation Updates
 
 - Course hero headings use smaller responsive typography across the Course Hub, AI Quest, DevOps Loop, and database-backed course pages.
+- Course landing pages keep the hero focused on overview content; standalone hero XP panels were removed.
+- AI Quest header navigation now keeps only `Course Hub` and `Quests`, while level progress remains available in header-based experiences such as path pages.
+- Avatar Editor now has corrected light-mode styling for cards, inputs, actions, and preview surfaces.
+- Course level titles now support course-specific titles and icons instead of relying on one global title ladder for every course.
 - AI Quest and DevOps Loop no longer show the separate Continue Mission and Leaderboard hero buttons; those actions remain available in their learning arsenal/navigation.
 - Every database-backed course receives the shared six-feature arsenal (quests, leaderboard, avatar, XP, expert explanations, and scenario-based learning) plus a `Get <course title> Certified` CNAPP LMS catalog link using the course slug as the certification identifier.
 - AI Tutor hides the configured model name from learners and keeps retrieved source links inside a collapsed disclosure. Source citations in the answer remain available for context.
@@ -88,6 +92,49 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 | **Identity & Manager Mapping** | Token claims (`managerEmail`, `managerId`, `groups`) extracted into auth context |
 | **External Handoff Query Params** | Passes `learnerId`, `learnerEmail`, `managerId`, `managerEmail` to CNAPP LMS & labs |
 | **Federated Sign-out** | Clears local storage and invokes Okta SSO token revocation |
+
+### Role-based access model
+
+| Access type | Definition |
+|---|---|
+| **Administrator** | Full platform control, including administration pages, user management, course creation/deletion/reorder, moderator assignment, and full course editing rights |
+| **Manager** | Team-progress role with Learner Tracker access and subordinate/learner visibility workflows |
+| **Learner** | Default end-user role for course consumption, quizzes, results, avatar editing, personal progress, and learning-path experiences |
+| **Moderator** | A **course-scoped editor permission**, not a separate Prisma `Role` enum value; assigned by administrators per course so a user can edit only the courses they moderate |
+
+#### What each role can do
+
+- **Administrator**
+  - Open the administration area.
+  - Manage users and platform settings.
+  - Create, reorder, update, and delete DB-backed courses.
+  - Assign or remove moderators for specific courses.
+  - Edit every course regardless of assignment.
+
+- **Manager**
+  - Open the Learner Tracker.
+  - Review the progress of assigned learners and teams.
+  - Use manager-focused visibility/reporting workflows.
+
+- **Learner**
+  - Access the Course Hub and live courses.
+  - Complete learning content, quizzes, results, and avatar customization.
+  - Earn XP, badges, and progress within supported courses.
+
+- **Moderator**
+  - Edit only the courses explicitly assigned to them.
+  - Maintain course structure/content and quest content for those assigned courses.
+  - Does not replace the core platform role; moderator access is additive and scoped.
+
+### Course categories
+
+| Category | Definition | Typical use |
+|---|---|---|
+| `technology` | Technical platforms, engineering topics, tools, architecture, or implementation content | AI, DevOps, cloud, APIs, observability, Kubernetes |
+| `process` | Workflow, governance, support practice, delivery model, or operational method content | support flow, change management, release operations, service process |
+| `product` | Product-centric capability, feature, or business-usage learning | HCL product enablement, product walkthroughs, product specialization |
+
+Runtime normalization defaults unknown or missing categories to `technology`.
 
 ### Backend Technology Stack (`server/`)
 | Technology | Details |
@@ -297,7 +344,7 @@ AI-Quest/
 │   │   ├── AvatarEditor.jsx          # Commander avatar builder + custom image upload & naming
 │   │   │
 │   │   ── AI Quest Module ──
-│   │   ├── Home.jsx                  # AI Quest home: hero, commander stats, arsenal, Get Certified card
+│   │   ├── Home.jsx                  # AI Quest home: hero, learning-path spotlight, grouped quest paths
 │   │   ├── Paths.jsx                 # 6 AI Quest learning paths with quest cards
 │   │   ├── QuestDetail.jsx           # Quest detail: preview, objectives, lab launch, Learn / Practice CTA
 │   │   ├── SolutionCenter.jsx        # Full-screen Learn: arch diagram (SVG) + step nav + videos
@@ -307,7 +354,7 @@ AI-Quest/
 │   │   └── Leaderboard.jsx           # Team XP rankings with animated avatar row
 │   │
 │   │   ── DevOps Loop Module ──
-│   │   ├── DevOpsHome.jsx            # DevOps home: hero, commander card (orange), arsenal grid
+│   │   ├── DevOpsHome.jsx            # DevOps home: hero, path spotlight, grouped DevOps quest paths
 │   │   ├── DevOpsPaths.jsx           # 6 DevOps paths with Learn + Practice buttons per quest
 │   │   ├── DevOpsQuestDetail.jsx     # DevOps quest detail: Learn First + Practice CTA + lab card
 │   │   ├── DevOpsSolutionCenter.jsx  # Full-screen Learn: DevOps tool chain SVG + steps + videos
@@ -316,7 +363,7 @@ AI-Quest/
 │   │   └── DevOpsLearningPath.jsx    # 4-week DevOps Loop curriculum (8 modules)
 │   │
 │   └── data/                         # Static content: all question banks + learn content
-│       ├── index.js                  # AI Quest: exports QUESTS (21), LEVELS, getLevelInfo()
+│       ├── index.js                  # AI Quest: exports QUESTS (21) plus AI Quest-compatible level helpers
 │       ├── questsP1.js               # AI Quest: paths 1-2, quests 1-7 (~7 quests × 6 Qs)
 │       ├── questsP2.js               # AI Quest: paths 3-4, quests 8-14
 │       ├── questsP3.js               # AI Quest: paths 5-6, quests 15-21
@@ -395,7 +442,7 @@ AI-Quest/
 /avatar                             → AvatarEditor (commander builder & image upload)
 
 ── AI Quest ──────────────────────────────────────────────────────
-/ai-quest                           → Home (module landing + Get AI Certified)
+/ai-quest                           → Home (module landing with path spotlight + grouped quests)
 /paths                              → Paths (6 paths, 21 quest cards)
 /quest/:questId                     → QuestDetail (preview + Lab Launch + Learn/Practice)
 /solution/:questId                  → SolutionCenter (full-screen Learn)
@@ -424,7 +471,7 @@ AI-Quest/
   tutorialShown: false,    // First-time tutorial flag
 
   // AI Quest module
-  totalXP: 0,              // Cumulative XP (7 levels: AI Rookie → AI Grandmaster)
+  totalXP: 0,              // Aggregate XP stored for the user across hub experiences
   completedQuests: {},     // { questId: { score, xpEarned, completedAt } }
   earnedBadges: [],        // Array of unlocked badge objects
 
@@ -432,13 +479,24 @@ AI-Quest/
   devopsTotalXP: 0,        // DevOps cumulative XP
   devopsCompletedQuests:{},// { questId: { score, xpEarned, completedAt, badge } }
 
+  // DB-backed shared course progress
+  courseCompletedQuests: {}, // { [courseSlug]: { [questId]: { score, xpEarned, completedAt, title } } }
+
   // Leaderboard (seeded mock team, not persisted)
   teamMembers: [ ... ]     // 5 fictional team members with preset XP/avatars
 }
 ```
 **Persistence:** Every state change auto-saves to `localStorage['ai-quest-progress']` via `useEffect`. Only `teamMembers` is excluded from persistence (always uses defaults).
 
-### XP & Level System (AI Quest)
+### XP & Level System
+
+The platform now supports **course-specific level titles and icons**.
+
+- **AI Quest** keeps the AI-specific title ladder.
+- **DevOps Loop** uses a DevOps-specific title ladder.
+- **DB-backed courses** derive titles/icons from the course identity and category.
+
+#### AI Quest reference ladder
 
 | Level | Title | XP Range |
 |---|---|---|
@@ -508,9 +566,10 @@ AI-Quest/
    - Bottom: "Dive into Certifications" card with direct handoff to CNAPP LMS catalog
 
 4. Module Home (AI Quest / DevOps Loop)
-   - Commander status card (XP progress bar, avatar, name, level)
-   - 4-stat metrics grid (quests completed, XP, badges, % completion)
-   - Learning Arsenal grid with direct "Get AI Certified" card (AI Quest) or "Start Path" (DevOps)
+   - Hero overview for the selected course
+   - Learning-path spotlight card
+   - Grouped quest paths with completion visibility
+   - Header or downstream pages surface level progress where relevant
 
 5. Learning Paths & Mission Launch
    - 6 paths × 3-4 quests each
@@ -572,7 +631,7 @@ npm run dev        # → http://localhost:4000
 > "The hub provides a clean side rail for quick navigation, platform highlights, and an integrated Help Session trigger. Live modules include AI Quest and DevOps Loop, with direct links into the CNAPP LMS Certification catalog."
 
 **4. AI Quest Home** *(1 min)*
-> "The AI Quest module home features commander profile stats, the AI Transformation curriculum, and a dedicated 'Get AI Certified' enrollment banner."
+> "The AI Quest module home now focuses on a clean hero, an AI Transformation path spotlight, and grouped quest paths that let learners jump directly into the relevant content."
 
 **5. Learning Paths & Sci-Fi Mission Launch** *(1 min)*
 > "Navigating to learning paths or quests triggers a custom-animated mission launch sequence with dynamic CTA indicators ('Enter Quest', 'Enter Practice', 'Enter Learning')."

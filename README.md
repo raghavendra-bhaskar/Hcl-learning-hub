@@ -9,6 +9,65 @@ The **HCL Software Learning Hub** is a scenario-based, gamified training platfor
 - API server: `4000`
 - Shared DB-backed course system for AI Quest, DevOps Loop, and custom courses
 
+## Roles and access model
+
+The Learning Hub uses a mix of **platform roles** and **course-scoped editing permissions**.
+
+### Platform roles
+
+| Role | Purpose | Main access |
+|---|---|---|
+| **Administrator** | Full platform owner | User administration, course creation/deletion/reorder, moderator assignment, deployment controls, platform configuration, learner/manager visibility |
+| **Manager** | Team progress owner | Learner Tracker access, subordinate/learner visibility, team progress review, manager workflows |
+| **Learner** | Primary end user | Course Hub access, learning paths, quests, quizzes, results, avatar editing, personal progress, badges, AI Tutor/Help where enabled |
+| **Moderator** | Course editor for assigned courses | Not a separate database role; this is a **course-level permission** assigned by an administrator so a user can edit only selected DB-backed courses |
+
+### Functional access by role
+
+#### Administrator
+
+- Can open the administration area and manage users.
+- Can create, update, reorder, and delete database-backed courses.
+- Can assign or remove course moderators for individual courses.
+- Can edit any course, regardless of moderator assignment.
+- Can manage platform configuration such as deployment-related administration and course settings.
+- Can view learner progress across the platform.
+
+#### Manager
+
+- Can open the Learner Tracker.
+- Can review the learning progress of assigned learners and team members.
+- Can use manager-related workflows for subordinate visibility and reporting.
+- Cannot perform full platform administration unless also granted administrator access.
+
+#### Learner
+
+- Can sign in, create/edit an avatar, and use the Course Hub.
+- Can open course pages, learning paths, learning content, quizzes, and results.
+- Can earn XP, badges, and course progress.
+- Can access personal learning experiences such as Help Session, AI Tutor, and personal learning paths where available.
+- Cannot access administration-only controls.
+
+#### Moderator
+
+- Moderator is a **scoped editor assignment**, not a standalone Prisma `Role` enum value.
+- A moderator is typically an existing learner, manager, or administrator who is granted edit rights for one or more specific courses.
+- Can edit only the courses assigned to them by an administrator.
+- Can update course structure/content for those assigned courses, including quest-related authoring flows.
+- Cannot create/delete every course or manage users unless they also have administrator access.
+
+## Course categories
+
+Database-backed courses use three normalized category values:
+
+| Category | What it means | Typical examples |
+|---|---|---|
+| `technology` | Technical product, platform, engineering, tooling, or architecture content | AI, DevOps, Kubernetes, cloud platforms, APIs, observability |
+| `process` | Workflow, governance, delivery method, operating model, or support-process learning | incident management, release flow, change process, service operations |
+| `product` | Product-specific enablement focused on features, capabilities, workflows, and business usage | HCL product training, product walkthroughs, product specialist tracks |
+
+If no category is provided, the runtime defaults the course category to `technology`.
+
 ## Minimum system requirements
 
 These apply to the server that hosts the Learning Hub (Docker/Podman host). The
@@ -666,6 +725,11 @@ Full operator documentation: [packaging/README.md](packaging/README.md) and
 ## Recent changes
 
 - AI Quest and DevOps Loop landing pages were simplified to match shared course pages.
+- Hero XP/level panels were removed from course landing pages so the landing view stays focused on overview content.
+- AI Quest header navigation now keeps only `Course Hub` and `Quests`, removing the separate `Leaderboard` and `Avatar` entries.
+- Avatar Editor light-mode styling was refreshed for cards, inputs, buttons, and preview panels.
+- Course levels now support course-specific titles and icons instead of relying on one global level title set.
+- AI Quest, DevOps Loop, and DB-backed courses now resolve level titles through shared course-level helper logic.
 - Opening hero text on course pages was reduced for better fit and consistency.
 - Shared course learning pages now use an AI Quest-style layout with left-side navigation and a right-side detail/video frame.
 - Module learning videos now play inside the right-side frame for shared course learn pages.

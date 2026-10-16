@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { createDatabaseBackup } from '../lib/dbBackup.js';
 import { requireRole } from '../middleware/requireRole.js';
@@ -7,6 +8,13 @@ import { requireRole } from '../middleware/requireRole.js';
 export const coursesRouter = Router();
 
 const moderatorSettingKey = (slug: string) => `course.moderators.${slug}`;
+const categorySettingKey = (courseId: string) => `course.category.${courseId}`;
+
+function normalizeCourseCategory(category?: string | null) {
+  return category === 'process' || category === 'product' || category === 'technology'
+    ? category
+    : 'technology';
+}
 
 function parseModeratorIds(value?: string | null): string[] {
   if (!value) return [];
@@ -34,6 +42,29 @@ async function getModeratorMap(slugs: string[]): Promise<Record<string, string[]
     map[slug] = parseModeratorIds(row.value);
   });
   return map;
+}
+
+async function getCategoryOverrideMap(courseIds: string[]): Promise<Record<string, string>> {
+  if (!courseIds.length) return {};
+  const rows = await (prisma as any).setting.findMany({
+    where: { key: { in: courseIds.map(categorySettingKey) } },
+  });
+  const map: Record<string, string> = {};
+  rows.forEach((row: any) => {
+    const courseId = String(row.key || '').replace(/^course\.category\./, '');
+    map[courseId] = normalizeCourseCategory(row.value);
+  });
+  return map;
+}
+
+async function persistCategoryOverride(courseId: string, category?: string | null) {
+  const normalized = normalizeCourseCategory(category);
+  await (prisma as any).setting.upsert({
+    where: { key: categorySettingKey(courseId) },
+    update: { value: normalized },
+    create: { key: categorySettingKey(courseId), value: normalized },
+  });
+  return normalized;
 }
 
 function canEditCourse(user: Express.Request['user'], moderatorIds: string[]) {
@@ -104,7 +135,42 @@ async function ensureCourseEditor(req: any, res: any, slug: string | null) {
 
 async function decorateCourse(course: any, user: Express.Request['user']) {
   const moderatorIds = await getModeratorIdsBySlug(course.slug);
-  return { ...course, moderatorIds, canEdit: canEditCourse(user, moderatorIds) };
+  const categoryMap = await getCategoryOverrideMap([course.id]);
+  return {
+    ...course,
+    category: categoryMap[course.id] || normalizeCourseCategory(course.category),
+    moderatorIds,
+    canEdit: canEditCourse(user, moderatorIds),
+  };
+}
+
+function isUnknownCategoryArgumentError(error: unknown) {
+  return /unknown argument [`'"]?category[`'"]?/i.test(String((error as any)?.message || ''));
+}
+
+function isMissingCategoryColumnError(error: unknown) {
+  return (error as any)?.code === 'P2022' || /column .*category.* does not exist/i.test(String((error as any)?.message || ''));
+}
+
+async function syncCourseCategoryColumn(courseId: string, category: string) {
+  await (prisma as any).$executeRaw(
+    Prisma.sql`UPDATE "Course" SET "category" = ${category}, "updatedAt" = NOW() WHERE "id" = ${courseId}`,
+  );
+}
+
+async function applyCategoryFallback(courseId: string, data: Record<string, any>) {
+  const normalizedCategory = persistCategoryOverride(courseId, data.category);
+  const { category, ...rest } = data;
+  const hasOtherFields = Object.keys(rest).length > 0;
+  const updatedCourse = hasOtherFields
+    ? await (prisma as any).course.update({ where: { id: courseId }, data: rest })
+    : await (prisma as any).course.findUnique({ where: { id: courseId } });
+  try {
+    if (category !== undefined) await syncCourseCategoryColumn(courseId, category);
+  } catch (syncError: any) {
+    if (!isMissingCategoryColumnError(syncError)) throw syncError;
+  }
+  return { ...(updatedCourse || {}), category: await normalizedCategory };
 }
 
 const courseInclude = {
@@ -133,9 +199,15 @@ coursesRouter.get('/', async (req, res) => {
     },
   });
   const moderatorMap = await getModeratorMap(courses.map((course: any) => course.slug));
+  const categoryMap = await getCategoryOverrideMap(courses.map((course: any) => course.id));
   res.json(courses.map((course: any) => {
     const moderatorIds = moderatorMap[course.slug] || [];
-    return { ...course, moderatorIds, canEdit: canEditCourse(req.user, moderatorIds) };
+    return {
+      ...course,
+      category: categoryMap[course.id] || normalizeCourseCategory(course.category),
+      moderatorIds,
+      canEdit: canEditCourse(req.user, moderatorIds),
+    };
   }));
 });
 
@@ -191,6 +263,7 @@ const courseSchema = z.object({
   emoji:           z.string().optional(),
   accentColor:     z.string().optional(),
   status:          z.enum(['live', 'coming-soon']).optional(),
+  category:        z.enum(['process', 'product', 'technology']).optional(),
   order:           z.number().optional(),
   instructorName:  z.string().optional(),
   instructorEmail: z.string().optional(),
@@ -214,14 +287,36 @@ coursesRouter.post('/', requireRole('ADMIN'), async (req, res) => {
       helpSpaceName:   p.data.helpSpaceName   || s['help.spaces.generic.name'] || '',
       helpSpaceHint:   p.data.helpSpaceHint   || s['help.spaces.generic.hint'] || '',
     };
-    const course = await (prisma as any).course.create({ data: { ...p.data, ...helpDefaults } });
-    res.json(course);
+    const course = await (prisma as any).course.create({ data: { ...p.data, category: p.data.category || 'technology', ...helpDefaults } });
+    if (p.data.category) await persistCategoryOverride(course.id, p.data.category);
+    res.json({ ...course, category: normalizeCourseCategory(p.data.category || course.category) });
   } catch (e: any) {
+    if (p.data.category && (isUnknownCategoryArgumentError(e) || isMissingCategoryColumnError(e))) {
+      try {
+        const settings = await (prisma as any).setting.findMany();
+        const s: Record<string, string> = {};
+        settings.forEach((r: any) => { s[r.key] = r.value; });
+        const helpDefaults = {
+          instructorName:  p.data.instructorName  || s['help.instructor.name']  || '',
+          instructorEmail: p.data.instructorEmail || s['help.instructor.email'] || '',
+          helpSpaceUrl:    p.data.helpSpaceUrl    || s['help.spaces.generic.url']  || '',
+          helpSpaceName:   p.data.helpSpaceName   || s['help.spaces.generic.name'] || '',
+          helpSpaceHint:   p.data.helpSpaceHint   || s['help.spaces.generic.hint'] || '',
+        };
+        const { category, ...rest } = p.data;
+        const course = await (prisma as any).course.create({ data: { ...rest, ...helpDefaults } });
+        await persistCategoryOverride(course.id, category);
+        return res.json({ ...course, category: normalizeCourseCategory(category) });
+      } catch (fallbackError: any) {
+        console.error('[courses] create category fallback failed:', fallbackError);
+        return res.status(500).json({ error: fallbackError instanceof Error ? fallbackError.message : 'Failed to create course' });
+      }
+    }
     if (e.code === 'P2002') return res.status(409).json({ error: 'Slug already in use' });
-    throw e;
+    console.error('[courses] create failed:', e);
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'Failed to create course' });
   }
 });
-
 // ── Bulk reorder courses (ADMIN) — must be before /:id ───────────────────────
 coursesRouter.put('/reorder', requireRole('ADMIN'), async (req, res) => {
   const { orders } = req.body; // [{ id, order }]
@@ -237,8 +332,25 @@ coursesRouter.put('/:id', async (req, res) => {
   if (!(await ensureCourseEditor(req, res, await getCourseSlugById(req.params.id)))) return;
   const p = courseSchema.partial().safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten() });
-  const course = await (prisma as any).course.update({ where: { id: req.params.id }, data: p.data });
-  res.json(course);
+  const data = { ...p.data } as Record<string, any>;
+  try {
+    const course = await (prisma as any).course.update({ where: { id: req.params.id }, data });
+    if (data.category !== undefined) await persistCategoryOverride(req.params.id, data.category);
+    res.json({ ...course, category: data.category !== undefined ? normalizeCourseCategory(data.category) : normalizeCourseCategory(course.category) });
+  } catch (error: any) {
+    if (error?.code === 'P2002') return res.status(409).json({ error: 'Course slug already in use' });
+    if (data.category !== undefined && (isUnknownCategoryArgumentError(error) || isMissingCategoryColumnError(error))) {
+      try {
+        return res.json(await applyCategoryFallback(req.params.id, data));
+      } catch (fallbackError: any) {
+        if (fallbackError?.code === 'P2002') return res.status(409).json({ error: 'Course slug already in use' });
+        console.error('[courses] update category fallback failed:', fallbackError);
+        return res.status(500).json({ error: fallbackError instanceof Error ? fallbackError.message : 'Failed to update course category' });
+      }
+    }
+    console.error('[courses] update failed:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Failed to update course' });
+  }
 });
 
 // ── Delete course (ADMIN) ─────────────────────────────────────────────────────

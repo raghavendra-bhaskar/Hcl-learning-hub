@@ -65,11 +65,55 @@ export default function AIProviderTab() {
   };
   const inputClass = `w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none disabled:opacity-40 ${isLight ? 'text-slate-900 bg-white border border-slate-300' : 'text-white bg-space-950 border border-white/20'}`;
 
+  const installedIntegration = config ? {
+    name: 'Ollama',
+    provider: 'OLLAMA',
+    endpoint: config.endpoint || 'http://localhost:11434',
+    model: config.model || 'No model selected',
+    enabled: !!config.enabled,
+  } : null;
+
   if (!config) return <p role={error ? 'alert' : 'status'} className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{error || 'Loading AI Provider...'}</p>;
 
   return (
     <div className="max-w-2xl" style={{ letterSpacing: 0 }}>
       <h2 className={`font-orbitron text-lg font-bold mb-6 ${isLight ? 'text-slate-900' : 'text-white'}`}>AI Provider Settings</h2>
+      <div className="mb-6 rounded-2xl overflow-hidden" style={{ background: isLight ? '#ffffff' : 'rgba(3,10,20,0.72)', border: isLight ? '1px solid rgba(100,116,139,0.18)' : '1px solid rgba(255,255,255,0.08)', boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.06)' : 'none' }}>
+        <div className="px-4 py-3 border-b" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.06)' }}>
+          <p className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>Installed Integrations</p>
+          <p className="text-[11px] text-slate-500 mt-1">The platform keeps one installed Ollama integration active for AI Tutor and course-side AI features.</p>
+        </div>
+        <div className="p-4">
+          <div className="rounded-2xl p-4" style={{ background: isLight ? 'rgba(239,246,255,0.8)' : 'rgba(8,47,73,0.28)', border: isLight ? '1px solid rgba(14,165,233,0.18)' : '1px solid rgba(34,211,238,0.18)' }}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🦙</span>
+                  <p className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{installedIntegration.name}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ background: installedIntegration.enabled ? 'rgba(16,185,129,0.14)' : 'rgba(245,158,11,0.14)', border: installedIntegration.enabled ? '1px solid rgba(16,185,129,0.28)' : '1px solid rgba(245,158,11,0.28)', color: installedIntegration.enabled ? '#10b981' : '#f59e0b' }}>
+                    {installedIntegration.enabled ? 'Installed' : 'Configured'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">Provider: {installedIntegration.provider}</p>
+              </div>
+              <div className="text-right">
+                <p className={`text-xs font-semibold ${isLight ? 'text-slate-700' : 'text-slate-200'}`}>{installedIntegration.model}</p>
+                <p className="text-[11px] text-slate-500">Current model</p>
+              </div>
+            </div>
+            <div className="mt-3 grid sm:grid-cols-2 gap-3">
+              <div className="rounded-xl px-3 py-2" style={{ background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Endpoint</p>
+                <p className={`mt-1 text-xs break-all ${isLight ? 'text-slate-900' : 'text-white'}`}>{installedIntegration.endpoint}</p>
+              </div>
+              <div className="rounded-xl px-3 py-2" style={{ background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Usage</p>
+                <p className={`mt-1 text-xs ${isLight ? 'text-slate-900' : 'text-white'}`}>AI Tutor, AI Help, and course-side generation flows</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       <form onSubmit={save} className="space-y-5">
         <div className="rounded-lg px-4 py-3 text-sm"
           style={{ background: isLight ? 'rgba(251,191,36,0.14)' : 'rgba(251,191,36,0.10)', border: isLight ? '1px solid rgba(217,119,6,0.28)' : '1px solid rgba(251,191,36,0.30)', color: isLight ? '#92400e' : '#fef3c7' }}>

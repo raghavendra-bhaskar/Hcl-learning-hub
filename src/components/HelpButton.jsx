@@ -4,6 +4,7 @@ import { X, MessageCircleQuestion, Settings } from 'lucide-react';
 import { getAuth } from '../pages/LoginPage.jsx';
 import { api } from '../lib/api.js';
 import AITutor from './AITutor.jsx';
+import { useAppStore } from '../App.jsx';
 
 const DEFAULTS = {
   moderatorName:  'Raghavendra B',
@@ -34,8 +35,10 @@ export default function HelpButton() {
   const [cfg, setCfg]   = useState(DEFAULTS);
   const location = useLocation();
   const navigate  = useNavigate();
+  const { theme } = useAppStore();
   const auth = getAuth();
   const isAdmin = auth?.role === 'ADMIN';
+  const isLight = theme === 'light';
 
   // Resolve slug: /c/:slug routes or platform routes
   const dbCourseSlugMatch = location.pathname.match(/^\/c\/([^/]+)/);
@@ -119,15 +122,15 @@ export default function HelpButton() {
       {/* ── Floating Help Button ── */}
       <button
         onClick={() => setOpen(true)}
-        className="group fixed bottom-5 right-4 z-50 flex items-center justify-center gap-2 h-10 w-10 hover:w-40 px-3 overflow-hidden rounded-full text-white shadow-lg transition-all duration-300 ease-out active:scale-95"
+        className={`group fixed bottom-5 right-4 z-50 flex items-center justify-center gap-2 h-10 w-10 hover:w-40 px-3 overflow-hidden rounded-full shadow-lg transition-all duration-300 ease-out active:scale-95 ${isLight ? 'text-slate-900' : 'text-white'}`}
         style={{
-          background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-          boxShadow: '0 0 14px rgba(124,58,237,0.45), 0 3px 10px rgba(0,0,0,0.3)',
-          border: '1px solid rgba(167,139,250,0.4)',
+          background: isLight ? 'linear-gradient(135deg, rgba(224,231,255,0.98), rgba(237,233,254,0.98))' : 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+          boxShadow: isLight ? '0 10px 30px rgba(100,116,139,0.22)' : '0 0 14px rgba(124,58,237,0.45), 0 3px 10px rgba(0,0,0,0.3)',
+          border: isLight ? '1px solid rgba(124,58,237,0.18)' : '1px solid rgba(167,139,250,0.4)',
         }}
         title="Help Session"
       >
-        <MessageCircleQuestion size={17} className="shrink-0" />
+        <MessageCircleQuestion size={17} className={`shrink-0 ${isLight ? 'text-violet-700' : ''}`} />
         <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold opacity-0 transition-all duration-300 group-hover:max-w-[7rem] group-hover:opacity-100">
           Help Session
         </span>
@@ -140,14 +143,14 @@ export default function HelpButton() {
           <div
             className="fixed right-4 bottom-16 z-[100] w-[min(22rem,calc(100vw-2rem))] max-h-[70vh] overflow-y-auto rounded-2xl p-4 text-center"
             style={{
-              background: 'linear-gradient(160deg, #0b1220 0%, #0d1a2e 100%)',
-              border: '1.5px solid rgba(124,58,237,0.5)',
-              boxShadow: '0 18px 44px rgba(0,0,0,0.52), 0 0 28px rgba(124,58,237,0.14)',
+              background: isLight ? 'linear-gradient(160deg, rgba(255,255,255,0.99) 0%, rgba(248,250,252,0.99) 100%)' : 'linear-gradient(160deg, #0b1220 0%, #0d1a2e 100%)',
+              border: isLight ? '1.5px solid rgba(100,116,139,0.18)' : '1.5px solid rgba(124,58,237,0.5)',
+              boxShadow: isLight ? '0 18px 44px rgba(15,23,42,0.16)' : '0 18px 44px rgba(0,0,0,0.52), 0 0 28px rgba(124,58,237,0.14)',
             }}
           >
             {/* Close */}
             <button onClick={() => setOpen(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-all">
+              className={`absolute top-4 right-4 w-8 h-8 rounded-full flex items-center justify-center transition-all ${isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/70' : 'text-slate-400 hover:text-white hover:bg-white/10'}`}>
               <X size={16} />
             </button>
 
@@ -158,7 +161,7 @@ export default function HelpButton() {
                 if (dbCourseSlug) navigate(`/admin/courses/${dbCourseSlug}/edit`);
                 else navigate('/admin?tab=help-settings');
               }}
-                className="absolute top-4 right-14 w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:text-violet-400 hover:bg-white/5 transition-all"
+                className={`absolute top-4 right-14 w-8 h-8 rounded-full flex items-center justify-center transition-all ${isLight ? 'text-slate-500 hover:text-violet-700 hover:bg-violet-100' : 'text-slate-600 hover:text-violet-400 hover:bg-white/5'}`}
                 title={dbCourseSlug ? 'Edit Course Help Settings' : 'Edit Global Help Settings'}>
                 <Settings size={14} />
               </button>
@@ -178,14 +181,14 @@ export default function HelpButton() {
 
             {/* Icon */}
             <div className="w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-3"
-              style={{ background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(79,70,229,0.3))', border: '1px solid rgba(167,139,250,0.4)' }}>
-              <MessageCircleQuestion size={20} style={{ color: '#a78bfa' }} />
+              style={{ background: isLight ? 'linear-gradient(135deg, rgba(224,231,255,0.9), rgba(237,233,254,0.9))' : 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(79,70,229,0.3))', border: isLight ? '1px solid rgba(124,58,237,0.18)' : '1px solid rgba(167,139,250,0.4)' }}>
+              <MessageCircleQuestion size={20} style={{ color: isLight ? '#6d28d9' : '#a78bfa' }} />
             </div>
 
-            <h2 className="font-orbitron text-base font-bold text-white mb-2">Need Help?</h2>
+            <h2 className={`font-orbitron text-base font-bold mb-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>Need Help?</h2>
             <AITutor mode={selectedIsCourse ? 'course' : 'help'} courseSlug={selectedIsCourse ? dbCourseSlug : undefined}
               title={selectedIsCourse ? `${selectedTitle} AI Help` : 'AI Help'} onNavigate={() => setOpen(false)} />
-            <p className="text-slate-400 text-xs leading-relaxed mb-4">
+            <p className={`text-xs leading-relaxed mb-4 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
               {selectedIsDevOps
                 ? 'Questions about DevOps Loop installation, quests, or curriculum? Reach out via the DevOps Loop Support Google Space.'
                 : selectedIsAIQuest
@@ -198,30 +201,30 @@ export default function HelpButton() {
             {/* Logged-in user card */}
             {(auth?.name || auth?.email) && (
               <div className="flex items-center gap-3 rounded-xl p-3 mb-4 text-left"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(255,255,255,0.03)', border: isLight ? '1px solid rgba(148,163,184,0.18)' : '1px solid rgba(255,255,255,0.07)' }}>
                 <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-black flex-shrink-0 text-white"
                   style={{ background: 'linear-gradient(135deg, #06b6d4, #7c3aed)' }}>
                   {(auth.name?.[0] || '?').toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-white font-semibold text-sm truncate">{auth.name}</p>
-                  {auth.email && <p className="text-slate-500 text-xs truncate font-mono">{auth.email}</p>}
+                  <p className={`font-semibold text-sm truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{auth.name}</p>
+                  {auth.email && <p className={`text-xs truncate font-mono ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>{auth.email}</p>}
                 </div>
-                <span className="ml-auto text-[10px] text-slate-600 shrink-0">You</span>
+                <span className={`ml-auto text-[10px] shrink-0 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>You</span>
               </div>
             )}
 
             {/* Moderator card */}
             <div className="flex items-center gap-4 rounded-xl p-4 mb-4 text-left"
-              style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)' }}>
+              style={{ background: isLight ? 'rgba(245,243,255,0.92)' : 'rgba(124,58,237,0.08)', border: isLight ? '1px solid rgba(139,92,246,0.22)' : '1px solid rgba(124,58,237,0.25)' }}>
               <div className="w-11 h-11 rounded-full flex items-center justify-center text-lg font-black flex-shrink-0 text-white"
                 style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', border: '2px solid rgba(167,139,250,0.5)' }}>
                 {(moderator.name?.[0] || 'R').toUpperCase()}
               </div>
               <div className="min-w-0">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-0.5">Moderator</p>
-                <p className="text-white font-bold text-sm">{moderator.name}</p>
-                <p className="text-slate-400 text-xs">{moderator.title}</p>
+                <p className={`text-[9px] font-bold uppercase tracking-widest mb-0.5 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Moderator</p>
+                <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}>{moderator.name}</p>
+                <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{moderator.title}</p>
                 <p className="text-xs mt-0.5 font-mono truncate" style={{ color: '#a78bfa' }}>{moderator.email}</p>
               </div>
             </div>
@@ -237,7 +240,7 @@ export default function HelpButton() {
               <span className="text-[10px] font-normal opacity-80">{space.hint}</span>
             </button>
 
-            <p className="text-xs text-slate-600 mt-4">
+            <p className={`text-xs mt-4 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>
               Google Chat will open in a new tab — sign in with your HCL account.
             </p>
           </div>

@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, Map, ShieldCheck, Search, BookOpen, Sparkles } from 'lucide-react';
+import { ChevronRight, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, ShieldCheck, Search, BookOpen, Sparkles } from 'lucide-react';
 import { clearAuth, getAuth, signOut } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
 import { api } from '../lib/api.js';
@@ -9,14 +9,25 @@ import { DEVOPS_QUESTS } from '../data/devopsIndex.js';
 import AvatarDisplay from '../components/AvatarDisplay.jsx';
 import HCLSoftwareWordmark from '../components/HCLSoftwareWordmark.jsx';
 
+// This page is the Course Hub for the entire learning platform.
+// It combines hard-coded flagship courses (AI Quest and DevOps Loop) with
+// database-managed courses, adds filtering/search/progress awareness, and is
+// the main entry point learners and moderators use before entering a course.
 const COURSE_FILTERS = [
-  { id: 'all', label: 'Courses', description: 'All technology tracks' },
-  { id: 'live', label: 'Live', description: 'Ready to launch now' },
-  { id: 'coming-soon', label: 'Coming Soon', description: 'Planned or locked tracks' },
+  { id: 'all', label: 'All Courses', description: 'Browse every learning category' },
+  { id: 'process', label: 'Process', description: 'Process-focused learning tracks' },
+  { id: 'product', label: 'Product', description: 'Product enablement and product skills' },
+  { id: 'technology', label: 'Technology', description: 'Technology and platform training' },
 ];
 
+const COURSE_CATEGORY_META = {
+  process: { label: 'Process', color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.24)' },
+  product: { label: 'Product', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.24)' },
+  technology: { label: 'Technology', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.24)' },
+};
+
 const PLATFORM_FEATURES = [
-  { icon: '⚡', title: 'XP & Leveling',       desc: 'Earn XP for correct answers on every quest. Unlock exclusive badges as you progress.' },
+  { icon: '⚡', title: 'points & Leveling',       desc: 'Earn Points for correct answers on every quest. Unlock exclusive badges as you progress.' },
   { icon: '💡', title: 'Expert Explanations', desc: 'Every answer includes an expert explanation drawn from official docs — learn why.' },
   { icon: '🎭', title: 'Scenario-Based',      desc: 'Every question is a real workplace scenario. Learn what to actually do, not memorize.' },
 ];
@@ -31,6 +42,7 @@ const COURSES = [
     topics: ['DevOps Plan', 'DevOps Control', 'DevOps Build', 'DevOps Deploy', 'DevOps Test', 'DevOps Measure'],
     color: '#f97316',
     status: 'live',
+    category: 'technology',
     route: '/devops-loop',
     badge: '8 Modules',
     totalQuests: 21,
@@ -44,6 +56,7 @@ const COURSES = [
     topics: ['Generative AI', 'Machine Learning', 'NLP', 'RAG Systems', 'AI Security', 'Prompt Engineering', 'Python & APIs'],
     color: '#06b6d4',
     status: 'live',
+    category: 'technology',
     route: '/ai-quest',
     badge: '21 Quests',
     totalQuests: 21,
@@ -51,8 +64,15 @@ const COURSES = [
 ];
 
 const statusPriority = (status) => status === 'live' ? 0 : 1;
+const categoryPriority = (category) => ({ process: 0, product: 1, technology: 2 }[category] ?? 2);
+const normalizeCourseCategory = (category) => ['process', 'product', 'technology'].includes(String(category || '').toLowerCase())
+  ? String(category).toLowerCase()
+  : 'technology';
 const HARD_CODED_SLUGS = new Set(COURSES.map(course => course.id));
 
+// Moderators can be assigned to specific courses without having global admin
+// access. This sheet gives them a direct jump to the course editor for only the
+// courses they are allowed to maintain.
 function ModeratedCoursesSheet({ courses, onClose, onSelect, isLight }) {
   return (
     <div className="fixed inset-0 z-[80]" style={{ background: 'rgba(0,0,0,0.52)', backdropFilter: 'blur(4px)' }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -84,6 +104,9 @@ function ModeratedCoursesSheet({ courses, onClose, onSelect, isLight }) {
   );
 }
 
+// Learners can save a course into a personal learning path from the hub before
+// opening it. This modal loads the user's saved paths and posts the selected
+// course metadata so planning and execution stay connected in one workflow.
 function PathEnrollModal({ course, onClose, isLight }) {
   const navigate = useNavigate();
   const [paths, setPaths]       = useState([]);
@@ -187,6 +210,9 @@ function PathEnrollModal({ course, onClose, isLight }) {
   );
 }
 
+// Each course card summarizes what the learner can expect before entering the
+// course. The card also branches into admin-only editing, drag-and-drop course
+// ordering for database courses, and learner-focused preview/enrollment actions.
 function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart, onDragOver, onDrop, onDragEnd, onOpen, onNavigateEdit, onEnroll }) {
   const cardRef = useRef(null);
   const [showRight, setShowRight] = useState(true);
@@ -199,7 +225,10 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
 
   const isLive = course.status === 'live';
   const boxAccent = course.color || course.accentColor || '#06b6d4';
+  const categoryMeta = COURSE_CATEGORY_META[normalizeCourseCategory(course.category)] || COURSE_CATEGORY_META.technology;
   const topics = (course.topics || []).slice(0, 6);
+  const previewTopics = topics.slice(0, 4);
+  const courseBrief = course.desc || course.description || course.subtitle || 'Explore the next set of modules, resources, and quests in this course.';
   const draggable = isAdmin && course.source === 'db';
   const dragIdValue = dragId === course.id;
   const dropIdValue = dragOverId === course.id;
@@ -215,7 +244,7 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
       onDrop={draggable ? event => onDrop(event, course.id) : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
       onClick={() => onOpen(course)}
-      className={`group relative rounded-2xl border p-4 transition-all duration-200 min-h-[126px] overflow-visible ${isLive ? 'cursor-pointer hover:-translate-y-1 active:scale-[0.99] hover:z-30' : 'cursor-default'} ${dragIdValue ? 'opacity-40' : ''} ${dropIdValue ? 'ring-2 ring-cyan-400' : ''}`}
+      className={`group relative rounded-2xl border p-4 transition-all duration-200 min-h-[138px] overflow-visible ${isLive ? 'cursor-pointer hover:-translate-y-1 active:scale-[0.99] hover:z-30' : 'cursor-default'} ${dragIdValue ? 'opacity-40' : ''} ${dropIdValue ? 'ring-2 ring-cyan-400' : ''}`}
       style={{
         background: isLight
           ? (isLive ? '#ffffff' : 'rgba(248,250,252,0.85)')
@@ -237,10 +266,8 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
               </button>
             )}
             <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-wider"
-              style={isLive
-                ? { background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)' }
-                : { background: 'rgba(100,116,139,0.12)', color: isLight ? '#475569' : '#94a3b8', border: '1px solid rgba(100,116,139,0.2)' }}>
-              {isLive ? 'LIVE' : 'COMING SOON'}
+              style={{ background: categoryMeta.bg, color: categoryMeta.color, border: `1px solid ${categoryMeta.border}` }}>
+              {categoryMeta.label}
             </span>
           </div>
           <div className="flex items-start gap-3">
@@ -255,20 +282,37 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
               </h3>
             </div>
           </div>
-          {course.subtitle && <p className={`mt-3 text-[12px] leading-relaxed whitespace-normal break-words ${isLight ? 'text-slate-700' : 'text-white'}`}>{course.subtitle}</p>}
+          <p className={`mt-3 text-[12px] leading-relaxed whitespace-normal break-words ${isLight ? 'text-slate-700' : 'text-white'}`}
+            style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {course.subtitle || courseBrief}
+          </p>
         </div>
       </div>
 
       <div
-        className={`hidden xl:block absolute top-0 w-80 rounded-2xl p-4 opacity-0 pointer-events-none translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto transition-all duration-200 z-40 ${showRight ? 'left-[calc(100%+0.75rem)]' : 'right-[calc(100%+0.75rem)]'} `}
+        className={`hidden xl:block absolute top-0 w-[26rem] rounded-2xl p-5 opacity-0 pointer-events-none translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto transition-all duration-200 z-40 ${showRight ? 'left-[calc(100%+0.75rem)]' : 'right-[calc(100%+0.75rem)]'} `}
         style={{ background: isLight ? '#ffffff' : 'rgba(7,15,28,0.98)', border: isLight ? `1px solid rgba(100,116,139,0.2)` : `1px solid ${boxAccent}30`, boxShadow: isLight ? '0 8px 32px rgba(0,0,0,0.14)' : '0 18px 44px rgba(0,0,0,0.24)' }}>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.18em] font-bold mb-1" style={{ color: boxAccent }}>What you'll learn next</p>
+            <h4 className={`font-orbitron text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</h4>
+          </div>
+          <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold tracking-wider flex-shrink-0"
+            style={{ background: categoryMeta.bg, color: categoryMeta.color, border: `1px solid ${categoryMeta.border}` }}>
+            {categoryMeta.label}
+          </span>
+        </div>
+        <p className={`text-[12px] leading-6 mb-4 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}
+          style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {courseBrief}
+        </p>
         {course.subtitle && <p className={`text-[11px] font-semibold mb-3 ${isLight ? 'text-slate-800' : 'text-white'}`}>{course.subtitle}</p>}
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {topics.map(topic => (
-            <span key={topic} className="text-[10px] px-2 py-0.5 rounded font-medium"
-              style={{ background: boxAccent + '14', color: boxAccent, border: `1px solid ${boxAccent}28` }}>
-              {topic}
-            </span>
+        <div className="space-y-2.5 mb-4">
+          {previewTopics.map(topic => (
+            <div key={topic} className="flex items-start gap-2">
+              <span className="text-xs mt-0.5" style={{ color: boxAccent }}>✓</span>
+              <span className={`text-[12px] leading-5 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{topic}</span>
+            </div>
           ))}
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -304,6 +348,9 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
   );
 }
 
+// CourseSelect is implemented as the shared landing page behind `/courses`.
+// It merges static and API-provided course metadata, computes learner progress,
+// offers resume targets, and exposes role-based controls for admins/moderators.
 export default function CourseSelect() {
   const navigate = useNavigate();
   const auth = getAuth();
@@ -387,7 +434,7 @@ export default function CourseSelect() {
     return score;
   };
 
-  const matchesFilter = (status) => courseFilter === 'all' || status === courseFilter;
+  const matchesFilter = (category) => courseFilter === 'all' || normalizeCourseCategory(category) === courseFilter;
   const activeFilter = COURSE_FILTERS.find(filter => filter.id === courseFilter) || COURSE_FILTERS[0];
   const dbCourseMap = Object.fromEntries((storeDbCourses || []).map(course => [course.slug, course]));
 
@@ -398,6 +445,7 @@ export default function CourseSelect() {
       source: 'db',
       desc: course.description,
       subtitle: course.tagline,
+      category: normalizeCourseCategory(course.category),
       topics: (course.weeks || []).flatMap(week => (week.modules || []).map(module => module.title)).slice(0, 6),
       sortOrder: typeof course.order === 'number' ? course.order : 100 + index,
       badge: course._count?.weeks ? `${course._count.weeks} Week${course._count.weeks === 1 ? '' : 's'}` : 'Course Track',
@@ -415,6 +463,7 @@ export default function CourseSelect() {
     color: dbCourseMap[course.id]?.accentColor || course.color,
     accentColor: dbCourseMap[course.id]?.accentColor || course.accentColor || course.color,
     status: dbCourseMap[course.id]?.status || course.status,
+    category: normalizeCourseCategory(dbCourseMap[course.id]?.category || course.category),
     canEdit: Boolean(dbCourseMap[course.id]?.canEdit),
     moderatorIds: dbCourseMap[course.id]?.moderatorIds || [],
     order: dbCourseMap[course.id]?.order,
@@ -426,8 +475,9 @@ export default function CourseSelect() {
 
   const visibleCourses = useMemo(() => allCourses
     .map(course => ({ ...course, searchScore: scoreSearch(course) }))
-    .filter(course => course.searchScore > 0 && matchesFilter(course.status))
-    .sort((a, b) => statusPriority(a.status) - statusPriority(b.status)
+    .filter(course => course.searchScore > 0 && matchesFilter(course.category))
+    .sort((a, b) => categoryPriority(a.category) - categoryPriority(b.category)
+      || statusPriority(a.status) - statusPriority(b.status)
       || b.searchScore - a.searchScore
       || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
       || a.title.localeCompare(b.title)), [allCourses, courseSearch, courseFilter]);
@@ -484,6 +534,9 @@ export default function CourseSelect() {
   const currentLearning = myLearning[0] || null;
   const totalVisibleCount = visibleCourses.length;
 
+  // Resume logic is intentionally course-aware because AI Quest, DevOps Loop,
+  // and database courses store progress in different structures and route to
+  // different entry pages when the learner continues from the hub.
   const getResumeTarget = (course) => {
     const courseKey = course.slug || course.id;
     const progressMap = course.progressMap || {};
@@ -693,9 +746,8 @@ export default function CourseSelect() {
                   </div>
                   <div className="py-1 max-h-[70vh] overflow-y-auto">
                     <button onClick={() => { setProfileOpen(false); navigate('/avatar'); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-xs transition-colors text-left ${isLight ? 'text-slate-700 hover:bg-slate-300/50 hover:text-slate-900' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Pencil size={13} className="text-cyan-400" />Edit Commander</button>
-                    {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors text-left"><ShieldCheck size={13} className="text-red-400" />User Management</button>}
-                    {(auth?.role === 'ADMIN' || auth?.role === 'MANAGER') && <button onClick={() => { setProfileOpen(false); navigate('/tracker'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 transition-colors text-left"><GraduationCap size={13} className="text-amber-400" />Learner Tracker</button>}
-                    {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin?tab=courses'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-violet-300 hover:bg-violet-500/10 hover:text-violet-200 transition-colors text-left"><Map size={13} className="text-violet-400" />Courses</button>}
+                    {auth?.role === 'ADMIN' && <button onClick={() => { setProfileOpen(false); navigate('/admin'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors text-left"><ShieldCheck size={13} className="text-red-400" />Settings</button>}
+                    {auth?.role === 'MANAGER' && <button onClick={() => { setProfileOpen(false); navigate('/tracker'); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs text-amber-300 hover:bg-amber-500/10 hover:text-amber-200 transition-colors text-left"><GraduationCap size={13} className="text-amber-400" />Learner Tracker</button>}
                     {showModeratedCoursesEntry && (
                       <>
                         <div className="my-1 border-t" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }} />
@@ -737,7 +789,7 @@ export default function CourseSelect() {
             <div className="min-w-0">
               <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
                 <div>
-                  <p className={`font-orbitron text-xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Technology Tracks</p>
+                  <p className={`font-orbitron text-xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Course Hub</p>
                   <p className="text-xs text-slate-500">{totalVisibleCount} result{totalVisibleCount !== 1 ? 's' : ''} · {activeFilter.description}</p>
                 </div>
               </div>

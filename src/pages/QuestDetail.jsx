@@ -8,6 +8,10 @@ import QuestBrief from '../components/QuestBrief.jsx';
 import { LabLaunchCard } from '../components/ExternalHandoff.jsx';
 import { getQuestLab } from '../data/externalLinks.js';
 
+// This page is the AI Quest quest overview shown before a learner starts the
+// guided solution flow or the quiz. It explains the business scenario, reward,
+// learning outcomes, and completion state so the purpose of each quest is clear
+// before the learner commits to the practice flow.
 export default function QuestDetail() {
   const { questId } = useParams();
   const navigate = useNavigate();

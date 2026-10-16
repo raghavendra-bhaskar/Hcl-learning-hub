@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, BookOpen, Clock, Award, Trash2, ChevronRight, Edit2, Search, Moon, Sun } from 'lucide-react';
+import { ArrowLeft, Plus, BookOpen, Clock, Award, Trash2, ChevronRight, Edit2, Search } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
 
@@ -18,7 +18,7 @@ function totalMins(items) {
 
 export default function LearningPathsPage() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useAppStore();
+  const { theme } = useAppStore();
   const isLight = theme === 'light';
 
   const [paths, setPaths]         = useState([]);
@@ -70,19 +70,18 @@ export default function LearningPathsPage() {
       <header className="sticky top-0 z-40 backdrop-blur-md border-b"
         style={{ background: isLight ? 'rgba(203,213,225,0.94)' : 'rgba(3,10,20,0.92)', borderColor: isLight ? 'rgba(71,85,105,0.22)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-4">
-          <button onClick={() => navigate('/courses')}
+          <button onClick={() => navigate(-1)}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
-            <ArrowLeft size={14} /> Course Hub
+            <ArrowLeft size={14} /> Back
+          </button>
+          <span className="text-slate-500">/</span>
+          <button onClick={() => navigate('/courses')}
+            className={`text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
+            Home
           </button>
           <span className="text-slate-500">/</span>
           <span className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Learning Paths</span>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => setTheme(isLight ? 'dark' : 'light')}
-              className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-all ${isLight ? 'text-amber-600' : 'text-slate-300'}`}
-              style={{ border: isLight ? '1px solid rgba(100,116,139,0.3)' : '1px solid rgba(255,255,255,0.07)', background: isLight ? 'rgba(203,213,225,0.9)' : 'rgba(255,255,255,0.03)' }}
-              title={isLight ? 'Dark mode' : 'Light mode'}>
-              {isLight ? <Moon size={13} /> : <Sun size={13} />}
-            </button>
             <button onClick={() => setCreating(true)}
               className="flex items-center gap-1.5 text-xs font-bold text-white px-4 py-2 rounded-xl transition-all hover:opacity-90 active:scale-95"
               style={{ background: 'linear-gradient(135deg, #7c3aed, #06b6d4)' }}>

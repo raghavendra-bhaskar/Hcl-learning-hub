@@ -5,6 +5,14 @@ import { api } from '../lib/api.js';
 import { canEmbedResource, getEmbedUrl, isNativeVideoResource, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 import { useAppStore } from '../App.jsx';
 
+// This is the shared "Learn" page for database-backed courses. Any generated
+// or admin-authored course quest can route here to show scenario context,
+// learning topics, and supporting resources before the learner takes the quiz.
+
+// The page is intentionally defensive because generated quest payloads may not
+// always have a perfect shape. The normalization helpers below protect the page
+// from blank screens when course content is incomplete or inconsistently stored.
+
 // Resource types that can be embedded inline
 const EMBEDDABLE = ['youtube', 'video', 'playlist'];
 
@@ -18,6 +26,47 @@ function cleanDisplayTitle(value, fallback = '') {
     .trim() || fallback;
 }
 
+// Normalize flexible quest topic JSON so generated courses cannot break the page.
+function normalizeTopicEntry(topic, index) {
+  if (typeof topic === 'string') {
+    return { id: `topic-${index}`, content: topic, isSolutionRequest: false };
+  }
+  if (!topic || typeof topic !== 'object') {
+    return { id: `topic-${index}`, content: '', isSolutionRequest: false };
+  }
+  return {
+    ...topic,
+    id: topic.id || `topic-${index}`,
+    content: String(topic.content ?? topic.text ?? topic.body ?? ''),
+    isSolutionRequest: Boolean(topic.isSolutionRequest),
+  };
+}
+
+// Normalize flexible quest resource JSON so generated courses cannot break the page.
+function normalizeResourceEntry(resource, index) {
+  if (!resource) return null;
+  if (typeof resource === 'string') {
+    const label = resource.trim();
+    if (!label) return null;
+    return { id: `resource-${index}`, label, url: '', type: 'link', order: null };
+  }
+  if (!resource || typeof resource !== 'object') {
+    return { id: `resource-${index}`, label: `Resource ${index + 1}`, url: '', type: 'link', order: null };
+  }
+  const parsedOrder = Number(resource.order);
+  return {
+    ...resource,
+    id: resource.id || `resource-${index}`,
+    label: String(resource.label ?? resource.title ?? `Resource ${index + 1}`),
+    url: String(resource.url ?? ''),
+    type: resource.type || 'link',
+    order: Number.isFinite(parsedOrder) ? parsedOrder : null,
+  };
+}
+
+// The route is intentionally defensive because generated quest payloads may not
+// always have a perfect shape. The normalization helpers above protect the page
+// from blank screens when course content is incomplete or inconsistently stored.
 export default function CourseLearnPage() {
   const { slug, questId } = useParams();
   const navigate = useNavigate();
@@ -65,6 +114,67 @@ export default function CourseLearnPage() {
       finally { setLoading(false); }
     })();
   }, [slug, questId]);
+  const accent    = course?.accentColor || '#06b6d4';
+  const isLight   = theme === 'light';
+  const accentBg  = { background: accent + '18', border: `1px solid ${accent}30`, color: accent };
+  const accentBtn = { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 4px 20px ${accent}40` };
+  const displayQuestTitle = cleanDisplayTitle(quest?.title, quest?.title || 'Learning Quest');
+
+  // Normalize flexible quest topic/resource JSON so generated courses cannot break the page.
+  const allTopicsRaw = (Array.isArray(quest?.learnTopics) ? quest.learnTopics : []).map(normalizeTopicEntry);
+  const solutionRequest = allTopicsRaw.find(topic => topic.isSolutionRequest && topic.content)?.content || '';
+  const inlineTopics = allTopicsRaw.filter(topic => !topic.isSolutionRequest && topic.content);
+
+  // Prefer inline quest content first, then fall back to the linked module content.
+  const hasInlineTopics = inlineTopics.length > 0;
+  const topics = (hasInlineTopics ? inlineTopics : (module?.topics || []).map(normalizeTopicEntry))
+    .filter(topic => topic.content);
+  const resources = ((Array.isArray(quest?.learnResources) && quest.learnResources.length > 0)
+    ? quest.learnResources
+    : (module?.resources || []))
+    .map(normalizeResourceEntry)
+    .filter(resource => resource.label || resource.url);
+
+  // Build the linear slide deck used by the left navigator and the main content panel.
+  const slides = [
+    { type: 'scenario', content: String(quest?.scenario || 'No scenario available yet.'), label: 'Scenario' },
+    ...topics.map((t, i) => ({ type: 'topic', content: t.content, label: `Step ${i + 1}`, id: t.id })),
+  ];
+  const totalSlides = slides.length;
+  const current     = slides[slide] || slides[0];
+
+  // Resolve resources per step; if generated content has no explicit order, keep resources visible instead of blanking the page.
+  const hasOrderedResources = resources.some(resource => resource.order !== null);
+  const slideResources = slide === 0
+    ? resources.filter(resource => !hasOrderedResources || resource.order === 0)
+    : resources.filter(resource => !hasOrderedResources || resource.order === slide - 1);
+  const firstEmbeddableResource = slideResources.find(r => canEmbedResource(r)) || null;
+  const frameResource = slideResources.find(r => r.id === activeResource?.id)
+    || firstEmbeddableResource
+    || null;
+  const frameEmbedUrl = frameResource ? getEmbedUrl(frameResource) : null;
+  const frameUseNativeVideo = frameResource ? isNativeVideoResource(frameResource) : false;
+  const frameResolvedUrl = frameResource ? resolvePlayableUrl(frameResource) : '';
+
+  useEffect(() => {
+    if (slideResources.length === 0) {
+      if (activeResource !== null) setActiveResource(null);
+      return;
+    }
+
+    const selectedStillVisible = slideResources.some(r => r.id === activeResource?.id);
+    if (selectedStillVisible) return;
+
+    setActiveResource(firstEmbeddableResource);
+  }, [activeResource, firstEmbeddableResource, slideResources]);
+
+  // YouTube search URL for current step
+  const ytSearchQuery = encodeURIComponent(`${course?.title || ''} ${quest?.title || ''} ${slide > 0 ? topics[slide - 1]?.content?.slice(0, 40) || '' : ''}`).trim();
+  const ytSearchUrl = `https://www.youtube.com/results?search_query=${ytSearchQuery}`;
+
+  // Navigation
+  const questIndex = allQuests.findIndex(q => q.id === questId);
+  const nextQuest  = questIndex >= 0 && questIndex < allQuests.length - 1 ? allQuests[questIndex + 1] : null;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -74,67 +184,33 @@ export default function CourseLearnPage() {
   if (error || !quest || !course) return (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4">
       <p className="text-red-400">{error || 'Not found'}</p>
-      <button onClick={() => navigate(`/c/${slug}/quests`)} className="text-cyan-400 text-sm">← Back to Quests</button>
+      <button onClick={() => navigate('/courses')} className="text-cyan-400 text-sm">← Back to Course Hub</button>
     </div>
   );
 
-  const accent    = course.accentColor || '#06b6d4';
-  const isLight   = theme === 'light';
-  const accentBg  = { background: accent + '18', border: `1px solid ${accent}30`, color: accent };
-  const accentBtn = { background: `linear-gradient(135deg, ${accent}, ${accent}cc)`, boxShadow: `0 4px 20px ${accent}40` };
-  const displayQuestTitle = cleanDisplayTitle(quest.title, quest.title || 'Learning Quest');
-
-  // Extract solution request (stored as learnTopic with isSolutionRequest flag)
-  const allTopicsRaw = Array.isArray(quest?.learnTopics) ? quest.learnTopics : [];
-  const solutionRequest = allTopicsRaw.find(t => t.isSolutionRequest)?.content || '';
-  const inlineTopics = allTopicsRaw.filter(t => !t.isSolutionRequest);
-
-  // Prefer inline learnTopics/learnResources; fall back to linked module
-  const hasInlineTopics = inlineTopics.length > 0;
-  const topics    = hasInlineTopics ? inlineTopics : (module?.topics || []);
-  const resources = (Array.isArray(quest?.learnResources) && quest.learnResources.length > 0)
-    ? quest.learnResources
-    : (module?.resources || []);
-
-  const slides = [
-    { type: 'scenario', content: quest.scenario, label: 'Scenario' },
-    ...topics.map((t, i) => ({ type: 'topic', content: t.content, label: `Step ${i + 1}`, id: t.id })),
-  ];
-  const totalSlides = slides.length;
-  const current     = slides[slide] || slides[0];
-
-  // Resources for current slide (topic): match by order to topic index
-  const slideResources = slide === 0
-    ? resources.filter(r => r.order === 0)
-    : resources.filter(r => r.order === slide - 1);
-  const frameResource = slideResources.find(r => r.id === activeResource?.id)
-    || slideResources.find(r => canEmbedResource(r))
-    || null;
-  const frameEmbedUrl = frameResource ? getEmbedUrl(frameResource) : null;
-  const frameUseNativeVideo = frameResource ? isNativeVideoResource(frameResource) : false;
-  const frameResolvedUrl = frameResource ? resolvePlayableUrl(frameResource) : '';
-
-  // YouTube search URL for current step
-  const ytSearchQuery = encodeURIComponent(`${course.title} ${quest.title} ${slide > 0 ? topics[slide - 1]?.content?.slice(0, 40) || '' : ''}`).trim();
-  const ytSearchUrl = `https://www.youtube.com/results?search_query=${ytSearchQuery}`;
-
-  // Navigation
-  const questIndex = allQuests.findIndex(q => q.id === questId);
-  const nextQuest  = questIndex >= 0 && questIndex < allQuests.length - 1 ? allQuests[questIndex + 1] : null;
-
   return (
     <div className="min-h-screen flex flex-col" style={{ background: isLight ? 'linear-gradient(160deg, #f8fafc 0%, #f1f5f9 55%, #eef2ff 100%)' : undefined }}>
-      {/* Header */}
+      {/* Header with consistent course title and direct actions for Course Home and Quests. */}
       <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5 flex-shrink-0"
         style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(3,10,20,0.92)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate(`/c/${slug}/quests`)}
+          <button onClick={() => navigate('/courses')}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
-            <ArrowLeft size={14} /> Quests
+            <ArrowLeft size={14} /> Back
           </button>
           <span className={isLight ? 'text-slate-300' : 'text-slate-700'}>/</span>
-          <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-slate-300'}`}>{quest.title}</span>
+          <span className={`text-xs font-bold font-orbitron truncate ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</span>
           <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => navigate(`/c/${slug}`)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors border ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)' }}>
+              Course Home
+            </button>
+            <button onClick={() => navigate(`/c/${slug}/quests`)}
+              className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors border ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
+              style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)' }}>
+              Quests
+            </button>
             <button onClick={() => navigate(`/c/${slug}/quiz/${questId}`)}
               className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
               style={accentBtn}>
@@ -179,7 +255,7 @@ export default function CourseLearnPage() {
                   className={`w-full text-left rounded-xl px-3 py-2.5 text-xs transition-all ${slide === i ? 'font-bold' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
                   style={slide === i ? { ...accentBg, fontWeight: 700 } : { background: isLight ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid transparent' }}>
                   <span className="text-[10px] font-bold uppercase tracking-widest block mb-0.5 opacity-60">{s.label}</span>
-                  <span className="line-clamp-2 leading-snug">{s.content.slice(0, 70)}{s.content.length > 70 ? '…' : ''}</span>
+                  <span className="line-clamp-2 leading-snug">{String(s.content || '').slice(0, 70)}{String(s.content || '').length > 70 ? '…' : ''}</span>
                 </button>
               ))}
             </div>
@@ -216,102 +292,102 @@ export default function CourseLearnPage() {
           </aside>
 
           {/* ── Right panel: slide content ───────────────────────────── */}
-          <div className="flex-1 min-w-0 flex flex-col gap-4">
-            {/* Slide content card */}
-            <div className="glass-card rounded-2xl p-6 flex-shrink-0"
-              style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.8)' : accent + '05' }}>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full" style={accentBg}>
-                  {current.label}
-                </span>
-                <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{slide + 1} / {totalSlides}</span>
-                {/* YouTube search for this step */}
-                <a href={ytSearchUrl} target="_blank" rel="noopener noreferrer"
-                  className={`ml-auto flex items-center gap-1 text-[10px] transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-600 hover:text-red-400'}`}
-                  title="Find related videos on YouTube">
-                  <span className="text-[11px]">▶</span> Find Videos
-                </a>
+          <div className={`flex-1 min-w-0 ${slideResources.length > 0 ? 'grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] xl:items-start' : 'flex flex-col gap-4'}`}>
+            <div className="min-w-0 flex flex-col gap-4">
+              <div className="glass-card rounded-2xl p-6 flex-shrink-0"
+                style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.8)' : accent + '05' }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full" style={accentBg}>
+                    {current.label}
+                  </span>
+                  <span className={`text-[10px] ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{slide + 1} / {totalSlides}</span>
+                  <a href={ytSearchUrl} target="_blank" rel="noopener noreferrer"
+                    className={`ml-auto flex items-center gap-1 text-[10px] transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-600 hover:text-red-400'}`}
+                    title="Find related videos on YouTube">
+                    <span className="text-[11px]">▶</span> Find Videos
+                  </a>
+                </div>
+                <p className={`leading-relaxed text-sm whitespace-pre-wrap ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{current.content}</p>
               </div>
-              <p className={`leading-relaxed text-sm whitespace-pre-wrap ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{current.content}</p>
+
+              {!module && slides.length <= 1 && (
+                <div className="glass-card rounded-2xl p-8 text-center" style={isLight ? { background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
+                  <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>No learning content is linked to this quest yet.</p>
+                  <p className={`text-xs mt-1 ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>The admin can link a module to this quest in the Course Editor.</p>
+                </div>
+              )}
             </div>
 
-            {/* Inline resources for this slide */}
             {slideResources.length > 0 && (
-              <div className="glass-card rounded-2xl overflow-hidden flex-1 min-h-[360px]"
-                style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(3,10,20,0.7)' }}>
-                <div className="px-4 py-3 flex items-center gap-2 border-b"
-                  style={{ background: isLight ? 'rgba(15,23,42,0.04)' : accent + '08', borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
-                  <span className="text-sm">{frameResource ? (frameUseNativeVideo ? '🎬' : '▶') : '📚'}</span>
-                  <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>{frameResource ? frameResource.label : 'Step Resources'}</span>
-                </div>
-
-                {frameResource ? (
-                  frameUseNativeVideo ? (
-                    <video src={resolvePlayableUrl(frameResource)} controls className="w-full bg-black min-h-[320px]" />
-                  ) : frameEmbedUrl ? (
-                    <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
-                      <iframe src={frameEmbedUrl} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen title={frameResource.label} />
-                    </div>
-                  ) : (
-                    <div className="p-6 flex flex-col items-center justify-center gap-4 min-h-[320px] text-center">
-                      <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>This resource cannot be embedded inside the page.</p>
-                      <a
-                        href={frameResolvedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isLight ? 'text-white' : 'text-white'}`}
-                        style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
-                        <Play size={14} /> Open resource in new tab
-                      </a>
-                    </div>
-                  )
-                ) : (
-                  <div className="p-5 space-y-3">
-                    {slideResources.map(r => (
-                      <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
-                        className={`flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white hover:border-white/20'}`}
-                        style={isLight ? { background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
-                        <span>{r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}</span>
-                        {r.label}
-                        <span className={`ml-auto text-xs ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>↗</span>
-                      </a>
-                    ))}
+              <div className="xl:sticky xl:top-[5.75rem]">
+                <div className="glass-card rounded-2xl overflow-hidden min-h-[360px] xl:min-h-[420px]"
+                  style={{ borderColor: isLight ? 'rgba(100,116,139,0.14)' : accent + '20', background: isLight ? 'rgba(255,255,255,0.82)' : 'rgba(3,10,20,0.7)' }}>
+                  <div className="px-4 py-3 flex items-center gap-2 border-b"
+                    style={{ background: isLight ? 'rgba(15,23,42,0.04)' : accent + '08', borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
+                    <span className="text-sm">{frameResource ? (frameUseNativeVideo ? '🎬' : '▶') : '📚'}</span>
+                    <span className={`text-xs font-semibold truncate ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>{frameResource ? frameResource.label : 'Step Resources'}</span>
                   </div>
-                )}
 
-                {slideResources.length > 1 && (
-                  <div className="px-4 py-3 border-t flex flex-wrap gap-2" style={{ borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
-                    {slideResources.map(r => {
-                      const embeddable = canEmbedResource(r);
-                      const selected = frameResource?.id === r.id;
-                      return embeddable ? (
-                        <button key={r.id} onClick={() => setActiveResource(r)}
-                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                          style={selected
-                            ? { background: accent + '20', color: isLight ? '#0f172a' : accent, border: `1px solid ${accent}40` }
-                            : { background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
-                          {r.label}
-                        </button>
-                      ) : (
-                        <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
-                          className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
-                          style={{ background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
-                          {r.label} ↗
+                  {frameResource ? (
+                    frameUseNativeVideo ? (
+                      <video src={resolvePlayableUrl(frameResource)} controls className="w-full bg-black min-h-[320px] xl:min-h-[360px]" />
+                    ) : frameEmbedUrl ? (
+                      <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+                        <iframe src={frameEmbedUrl} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen title={frameResource.label} />
+                      </div>
+                    ) : (
+                      <div className="p-6 flex flex-col items-center justify-center gap-4 min-h-[320px] text-center">
+                        <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>This resource cannot be embedded inside the page.</p>
+                        <a
+                          href={frameResolvedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${isLight ? 'text-white' : 'text-white'}`}
+                          style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
+                          <Play size={14} /> Open resource in new tab
                         </a>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-5 space-y-3">
+                      {slideResources.map(r => (
+                        <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
+                          className={`flex items-center gap-3 glass-card rounded-xl px-4 py-3 text-sm transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white hover:border-white/20'}`}
+                          style={isLight ? { background: 'rgba(255,255,255,0.72)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
+                          <span>{r.type === 'oreilly' ? '📕' : r.type === 'ibm' ? '📘' : r.type === 'udemy' ? '🎓' : '🔗'}</span>
+                          {r.label}
+                          <span className={`ml-auto text-xs ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>↗</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
-            {/* No module linked */}
-            {!module && slides.length <= 1 && (
-              <div className="glass-card rounded-2xl p-8 text-center" style={isLight ? { background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
-                <p className={`text-sm ${isLight ? 'text-slate-700' : 'text-slate-600'}`}>No learning content is linked to this quest yet.</p>
-                <p className={`text-xs mt-1 ${isLight ? 'text-slate-500' : 'text-slate-700'}`}>The admin can link a module to this quest in the Course Editor.</p>
+                  {slideResources.length > 1 && (
+                    <div className="px-4 py-3 border-t flex flex-wrap gap-2" style={{ borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.08)' }}>
+                      {slideResources.map(r => {
+                        const embeddable = canEmbedResource(r);
+                        const selected = frameResource?.id === r.id;
+                        return embeddable ? (
+                          <button key={r.id} onClick={() => setActiveResource(r)}
+                            className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                            style={selected
+                              ? { background: accent + '20', color: isLight ? '#0f172a' : accent, border: `1px solid ${accent}40` }
+                              : { background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
+                            {r.label}
+                          </button>
+                        ) : (
+                          <a key={r.id} href={resolvePlayableUrl(r)} target="_blank" rel="noopener noreferrer"
+                            className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                            style={{ background: isLight ? 'rgba(255,255,255,0.72)' : 'rgba(255,255,255,0.04)', color: isLight ? '#475569' : '#94a3b8', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
+                            {r.label} ↗
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

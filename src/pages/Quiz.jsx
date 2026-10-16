@@ -6,6 +6,10 @@ import { getQuest, getPath } from '../data/index.js';
 import Header from '../components/Header.jsx';
 import AITutor from '../components/AITutor.jsx';
 
+// This page is the AI Quest practice and assessment screen. It turns each
+// scenario-based quest into an interactive quiz, shows immediate feedback, and
+// accumulates XP so the learner can connect theory from the solution view to a
+// measurable course outcome.
 export default function Quiz() {
   const { questId } = useParams();
   const navigate = useNavigate();

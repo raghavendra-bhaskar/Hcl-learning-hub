@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ChevronRight, Play, ExternalLink, X, BookOpen, Layers } from 'lucide-react';
 import { DEVOPS_LEARNING_PATH_NOTE, DEVOPS_LEARNING_PATH_WEEKS } from '../data/devopsLearningPath.js';
 
+// This page is the curated, static DevOps learning-path experience used by the
+// classic DevOps Loop journey. It explains the recommended week-by-week study
+// order before the learner drills into individual quests, resources, and labs.
 function getEmbedUrl(url) {
   if (!url) return null;
   const m = url.match(/youtube\.com\/watch\?v=([^&]+)/);
@@ -19,6 +22,8 @@ const TYPE_META = {
   workshop: { icon: '🛠️', label: 'Workshop',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
 };
 
+// Resource buttons decide whether the learner should stay in-context via an
+// embedded player or leave the app for an external reference link.
 function ResourceButton({ res, onVideo }) {
   const meta = TYPE_META[res.type] || TYPE_META.read;
   const embedUrl = getEmbedUrl(res.url);
@@ -61,6 +66,8 @@ function ResourceButton({ res, onVideo }) {
   );
 }
 
+// The modal keeps video resources inside the learning experience so learners do
+// not lose their place while working through the DevOps curriculum.
 function VideoModal({ video, onClose }) {
   if (!video) return null;
   const embedUrl = video.embedUrl;
@@ -112,6 +119,9 @@ function VideoModal({ video, onClose }) {
   );
 }
 
+// DevOpsLearningPath is routed from the DevOps course area and acts as the
+// structured study guide for the broader course. It groups content into weeks,
+// exposes expandable modules, and connects each module to videos and readings.
 export default function DevOpsLearningPath() {
   const navigate = useNavigate();
   const [openMods, setOpenMods] = useState({ 'devops-mod-1': true });

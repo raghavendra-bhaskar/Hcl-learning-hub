@@ -1,0 +1,6 @@
+Week,Module,Topic,Resource Label,Resource URL,Resource Type,Notes
+Week 1,Module 1,"Topic 1",Product documentation overview,https://www.ibm.com/docs/example,ibm,"Use official product docs as the default module resource."
+Week 1,Module 1,"Topic 2",Architecture guide,https://www.ibm.com/docs/example-architecture,ibm,"Add learner notes, prerequisites, or delete instructions in the AI builder text box."
+Week 1,Module 2,"Topic 3",Hands-on tutorial,https://www.ibm.com/docs/example-tutorial,read,"One row per topic is easiest for the builder to understand."
+Week 2,Module 1,"Topic 4",Workshop recording,https://example.com/workshop,video,"You can repeat Week and Module names across rows."
+Week 2,Module 2,"Topic 5",Reference article,https://example.com/reference,link,"Optional: leave resource columns blank if the builder should infer them from the product document."

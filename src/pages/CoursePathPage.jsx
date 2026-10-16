@@ -198,6 +198,7 @@ function ModuleCard({ mod, onVideo, defaultOpen = false }) {
   );
 }
 
+// Shared learning-path page used by AI Quest, DevOps Loop, and DB-backed courses.
 export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
   const params = useParams();
   const slug = forcedSlug || params.slug;
@@ -247,8 +248,7 @@ export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
   const weeks = course.weeks || [];
   const moduleCount = weeks.reduce((sum, w) => sum + (w.modules?.length || 0), 0);
   const week = weeks[selectedWeek] || null;
-  const targetBackPath = backPath || `/c/${slug}`;
-  const targetBackLabel = backLabel || course.title;
+  const targetHomePath = backPath || `/c/${slug}`;
   const toneColor = isLight ? '#0f172a' : accent;
   const softAccentBg = isLight ? 'rgba(15,23,42,0.06)' : accent + '14';
   const subtlePanel = isLight ? 'rgba(255,255,255,0.74)' : 'rgba(3,10,20,0.7)';
@@ -257,6 +257,7 @@ export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
     <div className="min-h-screen pb-20" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
       <VideoModal video={video} onClose={() => setVideo(null)} />
 
+      {/* Header with the course title, Course Hub back action, and Course Home shortcut. */}
       <div
         className="sticky top-0 z-40 flex items-center gap-4 px-4 py-3"
         style={{
@@ -266,11 +267,15 @@ export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
         }}
       >
         <button
-          onClick={() => navigate(targetBackPath)}
+          onClick={() => navigate('/courses')}
           className={`flex items-center gap-2 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
         >
-          <ArrowLeft size={14} /> {targetBackLabel}
+          <ArrowLeft size={14} /> Back
         </button>
+
+        <span className="text-slate-500 text-xs">/</span>
+
+        <span className={`text-xs font-bold font-orbitron ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</span>
 
         <div className="flex-1 text-center">
           <p className="text-[11px] font-bold tracking-widest uppercase" style={{ color: toneColor, fontFamily: "'Courier New', monospace" }}>
@@ -278,7 +283,14 @@ export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(targetHomePath)}
+            className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors border ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
+            style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)' }}
+          >
+            Course Home
+          </button>
           <Layers size={12} style={{ color: accent }} />
           <span className="text-[11px] text-slate-500">{weeks.length} Weeks · {moduleCount} Modules</span>
         </div>

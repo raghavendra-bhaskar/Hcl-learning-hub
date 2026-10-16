@@ -19,7 +19,7 @@ const TABS = [
 
 export default function AvatarEditor() {
   const navigate = useNavigate();
-  const { playerName, setPlayerName, avatar: savedAvatar, setAvatar, tutorialShown, markTutorialShown } = useAppStore();
+  const { playerName, setPlayerName, avatar: savedAvatar, setAvatar, tutorialShown, markTutorialShown, theme } = useAppStore();
   const [showTutorial, setShowTutorial] = useState(false);
 
   const [nameInput, setNameInput] = useState(playerName || getAuth()?.name || '');
@@ -34,6 +34,7 @@ export default function AvatarEditor() {
 
   const currentPreset = AVATAR_PRESETS[previewIndex];
   const currentBadge = BADGE_COLORS.find(b => b.id === avatar.badgeColorId) || BADGE_COLORS[0];
+  const isLight = theme === 'light';
 
   const updateAvatar = (patch) => setLocalAvatar(prev => ({ ...prev, ...patch }));
 
@@ -90,16 +91,18 @@ export default function AvatarEditor() {
 
   return (
     <>
-    <div className="min-h-screen bg-gradient-to-br from-space-950 via-space-900 to-space-800 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 58%, #eef2ff 100%)' : undefined }}>
       {/* Stars background */}
       <div className="fixed inset-0 pointer-events-none">
         {Array.from({ length: 60 }, (_, i) => (
           <div
             key={i}
-            className="absolute bg-white rounded-full opacity-40"
+            className="absolute rounded-full"
             style={{
               left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%`,
               width: `${Math.random() * 2 + 1}px`, height: `${Math.random() * 2 + 1}px`,
+              background: isLight ? 'rgba(148,163,184,0.35)' : '#ffffff',
+              opacity: isLight ? 0.4 : 0.4,
               animation: `twinkle ${Math.random() * 3 + 2}s ease-in-out infinite`,
               animationDelay: `${Math.random() * 4}s`,
             }}
@@ -110,28 +113,29 @@ export default function AvatarEditor() {
       <div className="relative z-10 w-full max-w-5xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-sm font-medium mb-4">
+          <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-sm font-medium mb-4 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`}
+            style={{ borderColor: isLight ? 'rgba(6,182,212,0.24)' : 'rgba(6,182,212,0.30)', background: isLight ? 'rgba(6,182,212,0.10)' : 'rgba(6,182,212,0.10)' }}>
             ✨ Avatar Creator
           </div>
-          <h1 className="font-orbitron text-4xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent mb-2">
+          <h1 className={`font-orbitron text-4xl font-black bg-clip-text text-transparent mb-2 ${isLight ? 'bg-gradient-to-r from-cyan-700 to-violet-700' : 'bg-gradient-to-r from-cyan-400 to-violet-400'}`}>
             Create Your Commander
           </h1>
-          <p className="text-slate-400 text-sm">Choose your appearance. You can change it anytime later.</p>
+          <p className={`text-sm ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Choose your appearance. You can change it anytime later.</p>
         </div>
 
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Left panel — editor */}
-          <div className="lg:col-span-3 glass-card rounded-3xl border border-white/5 overflow-hidden">
+          <div className="lg:col-span-3 glass-card rounded-3xl border overflow-hidden" style={{ background: isLight ? 'rgba(255,255,255,0.88)' : undefined, borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)', boxShadow: isLight ? '0 18px 60px rgba(15,23,42,0.10)' : undefined }}>
             {/* Tab bar */}
-            <div className="flex border-b border-white/5">
+            <div className="flex" style={{ borderBottom: isLight ? '1px solid rgba(100,116,139,0.12)' : '1px solid rgba(255,255,255,0.05)' }}>
               {TABS.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex-1 flex flex-col items-center gap-1 py-3 text-xs font-semibold uppercase tracking-wider transition-all ${
                     activeTab === tab.id
-                      ? 'bg-cyan-500/10 text-cyan-400 border-b-2 border-cyan-400'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/3'
+                      ? (isLight ? 'bg-cyan-500/10 text-cyan-700 border-b-2 border-cyan-600' : 'bg-cyan-500/10 text-cyan-400 border-b-2 border-cyan-400')
+                      : isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/90' : 'text-slate-500 hover:text-slate-300 hover:bg-white/3'
                   }`}
                 >
                   <span className="text-lg">{tab.icon}</span>
@@ -144,7 +148,7 @@ export default function AvatarEditor() {
               {/* ── CHARACTER PRESETS ── */}
               {activeTab === 'character' && (
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-4">Choose Your Class</p>
+                  <p className={`text-xs uppercase tracking-widest mb-4 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Choose Your Class</p>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -193,9 +197,9 @@ export default function AvatarEditor() {
                             onChange={e => updateAvatar({ customClassName: e.target.value.slice(0, 24) })}
                             placeholder="Name your class"
                             maxLength={24}
-                            className="w-full bg-transparent border-b border-white/10 focus:border-cyan-400/60 text-xs text-center text-slate-200 placeholder-slate-600 focus:outline-none py-1"
+                            className={`w-full bg-transparent border-b focus:border-cyan-400/60 text-xs text-center focus:outline-none py-1 ${isLight ? 'border-slate-300 text-slate-700 placeholder-slate-400' : 'border-white/10 text-slate-200 placeholder-slate-600'}`}
                           />
-                          <p className="text-[10px] text-slate-600 mt-1 leading-tight">Tap image to replace</p>
+                          <p className={`text-[10px] mt-1 leading-tight ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Tap image to replace</p>
                         </>
                       ) : (
                         <button
@@ -205,8 +209,8 @@ export default function AvatarEditor() {
                           <div className="w-14 h-14 rounded-xl border border-dashed border-slate-500 flex items-center justify-center mx-auto mb-2 text-slate-400 group-hover:border-cyan-400 group-hover:text-cyan-400 transition-colors">
                             <Upload size={22} />
                           </div>
-                          <p className="text-xs font-semibold text-cyan-300 leading-tight">Upload Your own Avatar</p>
-                          <p className="text-[10px] text-slate-500 mt-1 leading-tight">Upload PNG or JPEG</p>
+                          <p className={`text-xs font-semibold leading-tight ${isLight ? 'text-cyan-700' : 'text-cyan-300'}`}>Upload Your own Avatar</p>
+                          <p className={`text-[10px] mt-1 leading-tight ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Upload PNG or JPEG</p>
                         </button>
                       )}
                     </div>
@@ -218,7 +222,7 @@ export default function AvatarEditor() {
                         className={`relative group rounded-2xl p-4 border transition-all text-center ${
                           avatar.presetId === preset.id && !avatar.customImage
                             ? `border-cyan-400/60 bg-cyan-500/10 ${currentBadge.glow} shadow-lg`
-                            : 'border-white/8 hover:border-white/20 hover:bg-white/3'
+                            : isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50' : 'border-white/8 hover:border-white/20 hover:bg-white/3'
                         }`}
                       >
                         {avatar.presetId === preset.id && !avatar.customImage && (
@@ -227,8 +231,8 @@ export default function AvatarEditor() {
                           </div>
                         )}
                         <div className="text-3xl mb-2">{preset.emoji}</div>
-                        <p className="text-xs font-semibold text-slate-300 leading-tight">{preset.label}</p>
-                        <p className="text-[10px] text-slate-600 mt-1 leading-tight hidden group-hover:block">{preset.description}</p>
+                        <p className={`text-xs font-semibold leading-tight ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{preset.label}</p>
+                        <p className={`text-[10px] mt-1 leading-tight hidden group-hover:block ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{preset.description}</p>
                       </button>
                     ))}
                   </div>
@@ -238,7 +242,7 @@ export default function AvatarEditor() {
               {/* ── SKIN TONE ── */}
               {activeTab === 'skin' && (
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-4">Skin Tone</p>
+                  <p className={`text-xs uppercase tracking-widest mb-4 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Skin Tone</p>
                   <div className="grid grid-cols-6 gap-3 mb-6">
                     {SKIN_TONES.map(tone => (
                       <button
@@ -254,12 +258,12 @@ export default function AvatarEditor() {
                       />
                     ))}
                   </div>
-                  <div className="glass-card rounded-xl p-4 border border-white/5">
-                    <p className="text-xs text-slate-500 mb-2">Selected</p>
+                  <div className="glass-card rounded-xl p-4 border" style={{ background: isLight ? 'rgba(248,250,252,0.9)' : undefined, borderColor: isLight ? 'rgba(100,116,139,0.12)' : 'rgba(255,255,255,0.05)' }}>
+                    <p className={`text-xs mb-2 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Selected</p>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg border border-white/20" style={{ backgroundColor: avatar.skinTone }} />
-                      <span className="text-sm text-slate-300 font-mono">{avatar.skinTone}</span>
-                      <span className="text-xs text-slate-500 ml-auto">
+                      <div className="w-8 h-8 rounded-lg border" style={{ backgroundColor: avatar.skinTone, borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.20)' }} />
+                      <span className={`text-sm font-mono ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{avatar.skinTone}</span>
+                      <span className={`text-xs ml-auto ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
                         {SKIN_TONES.find(t => t.color === avatar.skinTone)?.label || 'Custom'}
                       </span>
                     </div>
@@ -270,7 +274,7 @@ export default function AvatarEditor() {
               {/* ── ACCESSORIES ── */}
               {activeTab === 'accessory' && (
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-4">Accessories</p>
+                  <p className={`text-xs uppercase tracking-widest mb-4 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Accessories</p>
                   <div className="grid grid-cols-4 gap-3">
                     {ACCESSORY_OPTIONS.map(acc => (
                       <button
@@ -279,14 +283,14 @@ export default function AvatarEditor() {
                         className={`flex flex-col items-center gap-2 p-4 rounded-2xl border transition-all ${
                           avatar.accessoryId === acc.id
                             ? 'border-cyan-400/60 bg-cyan-500/10'
-                            : 'border-white/8 hover:border-white/20 hover:bg-white/3'
+                            : isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50' : 'border-white/8 hover:border-white/20 hover:bg-white/3'
                         }`}
                       >
                         {avatar.accessoryId === acc.id && (
                           <div className="absolute w-3 h-3" />
                         )}
                         <span className="text-2xl">{acc.emoji || '∅'}</span>
-                        <span className="text-xs text-slate-400">{acc.label}</span>
+                        <span className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{acc.label}</span>
                         {avatar.accessoryId === acc.id && (
                           <Check size={12} className="text-cyan-400" />
                         )}
@@ -299,7 +303,7 @@ export default function AvatarEditor() {
               {/* ── COLOR THEME ── */}
               {activeTab === 'color' && (
                 <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-widest mb-4">Avatar Color Theme</p>
+                  <p className={`text-xs uppercase tracking-widest mb-4 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Avatar Color Theme</p>
                   <div className="grid grid-cols-2 gap-3">
                     {BADGE_COLORS.map(bc => (
                       <button
@@ -307,16 +311,16 @@ export default function AvatarEditor() {
                         onClick={() => updateAvatar({ badgeColorId: bc.id })}
                         className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${
                           avatar.badgeColorId === bc.id
-                            ? `${bc.border} bg-white/5 shadow-lg ${bc.glow}`
-                            : 'border-white/8 hover:border-white/20 hover:bg-white/3'
+                            ? `${bc.border} ${isLight ? 'bg-slate-50' : 'bg-white/5'} shadow-lg ${bc.glow}`
+                            : isLight ? 'border-slate-200 hover:border-slate-300 hover:bg-slate-50' : 'border-white/8 hover:border-white/20 hover:bg-white/3'
                         }`}
                       >
                         <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${bc.gradient} shrink-0 flex items-center justify-center`}>
                           {avatar.badgeColorId === bc.id && <Check size={14} className="text-white" />}
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-semibold text-white">{bc.label}</p>
-                          <p className="text-xs text-slate-500">Color Theme</p>
+                          <p className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{bc.label}</p>
+                          <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Color Theme</p>
                         </div>
                       </button>
                     ))}
@@ -329,16 +333,17 @@ export default function AvatarEditor() {
           {/* Right panel — preview */}
           <div className="lg:col-span-2 flex flex-col gap-4">
             {/* Preview card */}
-            <div className="glass-card rounded-3xl border border-white/5 p-8 flex flex-col items-center gap-6 flex-1">
-              <p className="text-xs text-slate-500 uppercase tracking-widest w-full text-center">Preview</p>
+            <div className="glass-card rounded-3xl border p-8 flex flex-col items-center gap-6 flex-1" style={{ background: isLight ? 'rgba(255,255,255,0.88)' : undefined, borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)', boxShadow: isLight ? '0 18px 60px rgba(15,23,42,0.10)' : undefined }}>
+              <p className={`text-xs uppercase tracking-widest w-full text-center ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Preview</p>
 
               {/* Character preview with navigation arrows */}
               <div className="flex items-center gap-4 w-full justify-center">
                 <button
                   onClick={handlePrev}
-                  className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all active:scale-95"
+                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all active:scale-95 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/10'}`}
+                  style={{ background: isLight ? 'rgba(248,250,252,0.92)' : 'rgba(255,255,255,0.05)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.10)' }}
                 >
-                  <ChevronLeft size={18} className="text-slate-400" />
+                  <ChevronLeft size={18} className={isLight ? 'text-slate-600' : 'text-slate-400'} />
                 </button>
 
                   {/* Large avatar preview */}
@@ -370,28 +375,29 @@ export default function AvatarEditor() {
                     </div>
 
                     <div className="text-center">
-                      <p className="font-semibold text-white text-sm">
+                      <p className={`font-semibold text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}>
                         {avatar.customImage
                           ? (avatar.customClassName?.trim() || 'Your Class')
                           : currentPreset.label}
                       </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
                         {avatar.customImage ? 'Custom uploaded image' : currentPreset.description}
                       </p>
                     </div>
 
                   {/* Skin tone dot */}
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: avatar.skinTone }} />
+                    <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: avatar.skinTone, borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(255,255,255,0.20)' }} />
                     <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${currentBadge.gradient}`} />
                   </div>
                 </div>
 
                 <button
                   onClick={handleNext}
-                  className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all active:scale-95"
+                  className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all active:scale-95 ${isLight ? 'hover:bg-slate-100' : 'hover:bg-white/10'}`}
+                  style={{ background: isLight ? 'rgba(248,250,252,0.92)' : 'rgba(255,255,255,0.05)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.10)' }}
                 >
-                  <ChevronRight size={18} className="text-slate-400" />
+                  <ChevronRight size={18} className={isLight ? 'text-slate-600' : 'text-slate-400'} />
                 </button>
               </div>
 
@@ -404,7 +410,7 @@ export default function AvatarEditor() {
                     className={`rounded-full transition-all ${
                       i === previewIndex
                         ? `w-5 h-1.5 bg-gradient-to-r ${currentBadge.gradient}`
-                        : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
+                        : isLight ? 'w-1.5 h-1.5 bg-slate-300 hover:bg-slate-400' : 'w-1.5 h-1.5 bg-white/20 hover:bg-white/40'
                     }`}
                   />
                 ))}
@@ -412,8 +418,8 @@ export default function AvatarEditor() {
             </div>
 
             {/* Name input + save */}
-            <div className="glass-card rounded-2xl border border-white/5 p-5">
-              <label className="text-xs text-slate-500 uppercase tracking-widest block mb-3">
+            <div className="glass-card rounded-2xl border p-5" style={{ background: isLight ? 'rgba(255,255,255,0.88)' : undefined, borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)', boxShadow: isLight ? '0 18px 60px rgba(15,23,42,0.10)' : undefined }}>
+              <label className={`text-xs uppercase tracking-widest block mb-3 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>
                 Commander Name
               </label>
               <input
@@ -423,21 +429,21 @@ export default function AvatarEditor() {
                 onKeyDown={e => e.key === 'Enter' && handleSave()}
                 placeholder="Enter your name..."
                 maxLength={20}
-                className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none transition-all text-sm ${
-                  nameError ? 'border-red-500/50 focus:border-red-400' : 'border-white/10 focus:border-cyan-500/50'
+                className={`w-full border rounded-xl px-4 py-3 focus:outline-none transition-all text-sm ${isLight ? 'bg-white text-slate-900 placeholder-slate-400' : 'bg-white/5 text-white placeholder-slate-600'} ${
+                  nameError ? 'border-red-500/50 focus:border-red-400' : isLight ? 'border-slate-200 focus:border-cyan-500/50' : 'border-white/10 focus:border-cyan-500/50'
                 }`}
               />
               {nameError ? (
                 <p className="text-red-400 text-xs mt-1.5">{nameError}</p>
               ) : (
-                <p className="text-slate-600 text-xs mt-1.5">{nameInput.length}/20 characters</p>
+                <p className={`text-xs mt-1.5 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>{nameInput.length}/20 characters</p>
               )}
 
               {savedAvatar ? (
                 <div className="grid grid-cols-2 gap-3 mt-4">
                   <button
                     onClick={() => navigate(-1)}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-slate-300 border border-white/10 hover:bg-white/5 transition-all active:scale-95"
+                    className={`flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold border transition-all active:scale-95 ${isLight ? 'text-slate-700 border-slate-200 hover:bg-slate-100' : 'text-slate-300 border-white/10 hover:bg-white/5'}`}
                   >
                     Cancel
                   </button>
@@ -446,7 +452,7 @@ export default function AvatarEditor() {
                     className={`flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-white transition-all active:scale-95 ${
                       nameInput.trim().length >= 2
                         ? `bg-gradient-to-r ${currentBadge.gradient} hover:opacity-90 shadow-lg ${currentBadge.glow}`
-                        : 'bg-white/10 opacity-50 cursor-not-allowed'
+                        : isLight ? 'bg-slate-200 text-slate-400 opacity-70 cursor-not-allowed' : 'bg-white/10 opacity-50 cursor-not-allowed'
                     }`}
                     disabled={nameInput.trim().length < 2}
                   >
@@ -460,7 +466,7 @@ export default function AvatarEditor() {
                   className={`w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-white transition-all active:scale-95 ${
                     nameInput.trim().length >= 2
                       ? `bg-gradient-to-r ${currentBadge.gradient} hover:opacity-90 shadow-lg ${currentBadge.glow}`
-                      : 'bg-white/10 opacity-50 cursor-not-allowed'
+                      : isLight ? 'bg-slate-200 text-slate-400 opacity-70 cursor-not-allowed' : 'bg-white/10 opacity-50 cursor-not-allowed'
                   }`}
                   disabled={nameInput.trim().length < 2}
                 >

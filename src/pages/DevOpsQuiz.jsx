@@ -5,6 +5,10 @@ import { useAppStore } from '../App.jsx';
 import { getDevOpsQuest } from '../data/devopsIndex.js';
 import AITutor from '../components/AITutor.jsx';
 
+// This page delivers the assessment phase of each classic DevOps Loop quest.
+// It walks the learner question-by-question, reveals explanations immediately,
+// awards proportional XP, and forwards the final attempt data to the results
+// page so the wider course progression can be updated consistently.
 export default function DevOpsQuiz() {
   const { questId } = useParams();
   const navigate = useNavigate();

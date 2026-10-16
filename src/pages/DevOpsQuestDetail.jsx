@@ -5,6 +5,10 @@ import { getDevOpsQuest } from '../data/devopsIndex.js';
 import { LabLaunchCard } from '../components/ExternalHandoff.jsx';
 import { getQuestLab } from '../data/externalLinks.js';
 
+// This page is the quest-level overview for the classic DevOps Loop course.
+// Learners arrive here from the DevOps learning paths to understand what a
+// quest covers, how long it takes, what reward it grants, and whether they
+// should start the guided learning view or jump directly into practice.
 export default function DevOpsQuestDetail() {
   const { questId } = useParams();
   const navigate = useNavigate();

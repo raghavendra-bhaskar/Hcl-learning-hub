@@ -4,6 +4,10 @@ import { getDevOpsQuest } from '../data/devopsIndex.js';
 import { CertificationPanel, LabLaunchCard } from '../components/ExternalHandoff.jsx';
 import { getCertification, getQuestLab } from '../data/externalLinks.js';
 
+// This page closes the classic DevOps Loop quest attempt. It translates the
+// raw quiz answers into learner-facing feedback, XP, badge outcomes, and next
+// actions so the course feels like a guided progression rather than a single
+// isolated quiz submission.
 export default function DevOpsResults() {
   const { questId } = useParams();
   const navigate = useNavigate();

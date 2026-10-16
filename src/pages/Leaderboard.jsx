@@ -12,7 +12,7 @@ const RANK_ICONS = ['🥇', '🥈', '🥉'];
 
 export default function Leaderboard() {
   const navigate = useNavigate();
-  const { leaderboard, playerName, totalXP, earnedBadges, completedQuests, levelInfo, avatar, resetProgress, theme } = useAppStore();
+  const { leaderboard, playerName, totalXP, earnedBadges, completedQuests, levelInfo, avatar, resetProgress, theme, aiQuestXP } = useAppStore();
   const isLight = theme === 'light';
 
   const completedCount = Object.keys(completedQuests).length;
@@ -63,13 +63,13 @@ export default function Leaderboard() {
               <div className="ml-auto text-right">
                 <div className="flex items-center gap-1 text-yellow-400 font-bold text-xl justify-end">
                   <Zap size={16} />
-                  {totalXP.toLocaleString()}
+                  {aiQuestXP.toLocaleString()}
                 </div>
-                <p className="text-xs text-slate-500">Total XP</p>
+                <p className="text-xs text-slate-500">AI Quest XP</p>
               </div>
             </div>
 
-            <XPBar xp={totalXP} />
+            <XPBar xp={aiQuestXP} course={{ slug: 'ai-quest' }} />
 
             <div className={`grid grid-cols-3 gap-4 mt-5 pt-5 border-t ${isLight ? 'border-slate-200' : 'border-white/5'}`}>
               <div className="text-center">

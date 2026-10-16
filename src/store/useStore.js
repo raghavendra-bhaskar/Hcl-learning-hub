@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getLevelInfo } from '../data/index.js';
+import { getLevelInfo as getCourseLevelInfo, getNextLevel as getCourseNextLevel } from '../lib/courseLevels.js';
 
 const STORAGE_KEY = 'ai-quest-progress';
 
@@ -134,7 +135,24 @@ export const useStore = () => {
     setState(s => ({ ...s, theme: theme === 'light' ? 'light' : 'dark' }));
   }, []);
 
-  const levelInfo = getLevelInfo(state.totalXP);
+  const aiQuestXP = Object.values(state.completedQuests || {}).reduce((sum, item) => sum + Number(item?.xpEarned || 0), 0);
+  const levelInfo = getLevelInfo(aiQuestXP);
+  const getCourseXP = useCallback((courseSlug) => {
+    if (!courseSlug) return 0;
+    if (courseSlug === 'ai-quest') return Object.values(state.completedQuests || {}).reduce((sum, item) => sum + Number(item?.xpEarned || 0), 0);
+    if (courseSlug === 'devops-loop') return state.devopsTotalXP;
+    return Object.values(state.courseCompletedQuests?.[courseSlug] || {}).reduce((sum, item) => sum + Number(item?.xpEarned || 0), 0);
+  }, [state.completedQuests, state.courseCompletedQuests, state.devopsTotalXP]);
+  const getCourseLevel = useCallback((course, xpOverride) => {
+    const courseSlug = typeof course === 'string' ? course : course?.slug;
+    const xp = typeof xpOverride === 'number' ? xpOverride : getCourseXP(courseSlug);
+    return getCourseLevelInfo(xp, course);
+  }, [getCourseXP]);
+  const getCourseNextLevelInfo = useCallback((course, xpOverride) => {
+    const courseSlug = typeof course === 'string' ? course : course?.slug;
+    const xp = typeof xpOverride === 'number' ? xpOverride : getCourseXP(courseSlug);
+    return getCourseNextLevel(xp, course);
+  }, [getCourseXP]);
 
   const leaderboard = [
     ...state.teamMembers,
@@ -143,5 +161,5 @@ export const useStore = () => {
       : null,
   ].filter(Boolean).sort((a, b) => b.xp - a.xp);
 
-  return { ...state, levelInfo, leaderboard, setPlayerName, setAvatar, markTutorialShown, completeQuest, completeDevOpsQuest, completeCourseQuest, resetProgress, setDbCourses, setTheme };
+  return { ...state, levelInfo, leaderboard, getCourseXP, getCourseLevel, getCourseNextLevelInfo, aiQuestXP, setPlayerName, setAvatar, markTutorialShown, completeQuest, completeDevOpsQuest, completeCourseQuest, resetProgress, setDbCourses, setTheme };
 };

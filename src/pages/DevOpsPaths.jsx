@@ -135,10 +135,24 @@ export default function DevOpsPaths() {
       >
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
           <button
-            onClick={() => navigate('/devops-loop')}
+            onClick={() => navigate('/courses')}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
           >
             <ArrowLeft size={14} />
+            Back
+          </button>
+          <span className={isLight ? 'text-slate-300' : 'text-slate-700'}>/</span>
+          <button
+            onClick={() => navigate('/devops-loop')}
+            className={`text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
+          >
+            Course Home
+          </button>
+          <span className={isLight ? 'text-slate-300' : 'text-slate-700'}>/</span>
+          <button
+            onClick={() => navigate('/devops-loop')}
+            className={`text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
+          >
             DevOps Loop
           </button>
           <span className={isLight ? 'text-slate-300' : 'text-slate-700'}>/</span>

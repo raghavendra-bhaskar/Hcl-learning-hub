@@ -9,6 +9,10 @@ import {
 } from '../data/devopsSolutionCenter.js';
 import { getEmbedUrl, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 
+// This page is the guided "Learn" experience for the classic DevOps Loop
+// quests. It walks the learner through a step-by-step architecture explanation
+// before they attempt the quiz, connecting the quest scenario to platform
+// components, reference videos, and a visual system map.
 function getYouTubeSearchEmbedUrl(url) {
   try {
     const parsed = new URL(url);
@@ -43,6 +47,9 @@ function edgePoints(fn, tn) {
 }
 
 // ── DevOps Loop orange-themed Architecture Diagram ───────────────────────────
+// The diagram is the visual teaching canvas of the page. Active nodes light up
+// for the current teaching step, and clickable nodes let a learner jump around
+// the explanation without leaving the lesson.
 function DevOpsArchDiagram({ nodes, edges, highlight, onNodeClick, nodeStepMap }) {
   const nodeById = {};
   nodes.forEach(n => { nodeById[n.id] = n; });
@@ -238,6 +245,8 @@ function Tab({ num, label, active, first, last }) {
 }
 
 // ── Main DevOpsSolutionCenter Page ───────────────────────────────────────────
+// This route lives between the DevOps quest overview and the DevOps quiz. It is
+// where the learner consumes the guided explanation content for a given quest.
 export default function DevOpsSolutionCenter() {
   const { questId } = useParams();
   const navigate    = useNavigate();
