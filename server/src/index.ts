@@ -30,6 +30,19 @@ const SEED_COURSES = [
   { slug:'openshift',     title:'OpenShift',          emoji:'🔴',  accentColor:'#ee0000', tagline:'Red Hat OpenShift',                description:'Enterprise Kubernetes — OpenShift operators, Tekton pipelines, OpenShift AI, routes, and security contexts.',      status:'coming-soon', order:160 },
 ];
 
+// Startup reads use an explicit select so the app can still boot after restoring an older VM dump
+// that predates newer optional Course columns such as category.
+const SEED_COURSE_SELECT = {
+  id: true,
+  slug: true,
+  title: true,
+  instructorName: true,
+  instructorEmail: true,
+  helpSpaceUrl: true,
+  helpSpaceName: true,
+  helpSpaceHint: true,
+};
+
 async function seedPlatformCourses() {
   try {
     const platformQuests = await getPlatformCourseQuests();
@@ -37,8 +50,8 @@ async function seedPlatformCourses() {
     const settings: Record<string, string> = {};
     settingRows.forEach((row: any) => { settings[row.key] = row.value; });
     for (const c of SEED_COURSES) {
-      const exists = await (prisma as any).course.findUnique({ where: { slug: c.slug } });
-      const course = exists || await (prisma as any).course.create({ data: c });
+      const exists = await (prisma as any).course.findUnique({ where: { slug: c.slug }, select: SEED_COURSE_SELECT });
+      const course = exists || await (prisma as any).course.create({ data: c, select: SEED_COURSE_SELECT });
       if (!exists) {
         console.log(`[seed] created platform course: ${c.title}`);
       }
@@ -62,7 +75,7 @@ async function seedPlatformCourses() {
         if (!course[key] && helpDefaults[key]) missingHelpDefaults[key] = helpDefaults[key];
       }
       if (Object.keys(missingHelpDefaults).length) {
-        await (prisma as any).course.update({ where: { id: course.id }, data: missingHelpDefaults });
+        await (prisma as any).course.update({ where: { id: course.id }, data: missingHelpDefaults, select: SEED_COURSE_SELECT });
       }
 
       const weeksCount = await (prisma as any).courseWeek.count({ where: { courseId: course.id } });

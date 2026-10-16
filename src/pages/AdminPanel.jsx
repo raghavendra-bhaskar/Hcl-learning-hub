@@ -278,9 +278,10 @@ function ManagerAssign({ userId, assignedManagers, allManagers, onSaved }) {
 const getCardStyle  = (L) => L
   ? { background: '#ffffff', border: '1px solid rgba(100,116,139,0.20)', boxShadow: '0 2px 14px rgba(0,0,0,0.07)' }
   : { background: 'rgba(3,10,20,0.60)', border: '1px solid rgba(255,255,255,0.06)' };
+// Use a solid dark select background so browser-native dropdown menus stay readable on the VM.
 const getInputStyle = (L) => L
   ? { background: '#f1f5f9', border: '1px solid rgba(100,116,139,0.28)', color: '#0f172a' }
-  : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e2e8f0' };
+  : { background: '#0f172a', border: '1px solid rgba(148,163,184,0.18)', color: '#f8fafc' };
 const getOnBlur  = (L) => (e) => (e.target.style.border = L ? '1px solid rgba(100,116,139,0.28)' : '1px solid rgba(255,255,255,0.08)');
 const onFocus    = (e) => (e.target.style.border = '1px solid rgba(6,182,212,0.4)');
 
@@ -1134,6 +1135,8 @@ const HELP_KEYS = [
 function HelpSettingsTab() {
   const { theme } = useAppStore();
   const isLight = theme === 'light';
+  // Keep a dedicated loading gate here because this tab fetches both global settings and the
+  // dynamic course list before the course-specific help editor can render safely.
   const [loading, setLoading] = useState(true);
   const [values, setValues] = useState({});
   const [courses, setCourses] = useState([]);
@@ -1306,6 +1309,97 @@ function HelpSettingsTab() {
   );
 }
 
+// This tab explains the MCP surface in-product so administrators can see what the future external
+// connection will expose before wiring VS Code or other MCP clients to the server endpoint.
+function McpIntegrationTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const endpointExample = 'https://your-hostname.example.com/mcp';
+  const sampleConfig = `{
+  "servers": {
+    "hcl-learning-hub-mcp": {
+      "uri": "${endpointExample}",
+      "type": "http"
+    }
+  },
+  "inputs": []
+}`;
+  const toolGroups = [
+    {
+      title: 'Course tools',
+      items: ['List courses', 'Create course', 'Update course metadata', 'Assign moderators'],
+    },
+    {
+      title: 'User and role tools',
+      items: ['List users', 'Update roles', 'Create internal security users', 'Reset internal passwords'],
+    },
+    {
+      title: 'Platform tools',
+      items: ['Read authentication realm', 'Update authentication realm', 'Inspect integrations status'],
+    },
+  ];
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>MCP Integration</h3>
+            <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Expose course administration and user-role workflows to VS Code or other MCP-capable clients through one authenticated HTTP endpoint.</p>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full"
+            style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.28)', color: '#f59e0b' }}>
+            Planned endpoint
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Connection modes</p>
+            <h4 className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>VS Code + MCP client</h4>
+          </div>
+          <ol className={`space-y-2 text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+            <li>1. Open VS Code and install an MCP-capable extension or GitHub Copilot MCP support.</li>
+            <li>2. Add the Learning Hub MCP endpoint by command palette or by editing `.vscode/mcp.json`.</li>
+            <li>3. Start the MCP server entry and approve browser-based sign-in when prompted.</li>
+            <li>4. Use the exposed tools for course, authentication, and role-management workflows.</li>
+          </ol>
+        </div>
+
+        <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
+          <div>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Proposed endpoint</p>
+            <h4 className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{endpointExample}</h4>
+          </div>
+          <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Use OAuth-backed administrator authentication and tool-level authorization so external callers can create or update courses without exposing unrestricted database access.</p>
+          <div className="rounded-xl p-3 border" style={{ background: isLight ? 'rgba(236,254,255,0.9)' : 'rgba(34,211,238,0.05)', borderColor: isLight ? 'rgba(8,145,178,0.18)' : 'rgba(34,211,238,0.18)' }}>
+            <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-cyan-300'}`}>Recommended controls</p>
+            <p className={`mt-2 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Require administrator role checks, audit every tool call, and require confirmation for destructive operations such as deleting courses or downgrading user access.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        {toolGroups.map(group => (
+          <div key={group.title} className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>{group.title}</p>
+            <ul className={`mt-3 space-y-2 text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+              {group.items.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+        <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Sample `.vscode/mcp.json`</p>
+        <pre className={`mt-3 rounded-xl p-4 text-xs overflow-x-auto ${isLight ? 'bg-slate-950 text-cyan-100' : 'bg-black/40 text-cyan-100'}`}>{sampleConfig}</pre>
+      </div>
+    </div>
+  );
+}
+
 function DeploymentTab() {
   const { theme } = useAppStore();
   const isLight = theme === 'light';
@@ -1452,9 +1546,9 @@ function DeploymentTab() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Rollback target version</span>
               <select value={rollbackVersion} onChange={async e => { const value = e.target.value; setRollbackVersion(value); await loadRollbackPreview(value); }}
                 className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)}>
-                <option value="">Select a recorded version</option>
+                <option value="" style={getSelectOptionStyle(isLight)}>Select a recorded version</option>
                 {releases.filter(release => release.productVersion && release.productVersion !== status?.currentVersion).map(release => (
-                  <option key={release.filePath} value={release.productVersion}>{release.productVersion} · {release.currentShortCommit || release.releaseTimestamp}</option>
+                  <option key={release.filePath} value={release.productVersion} style={getSelectOptionStyle(isLight)}>{release.productVersion} · {release.currentShortCommit || release.releaseTimestamp}</option>
                 ))}
               </select>
             </label>
@@ -1484,7 +1578,6 @@ const PRIMARY_TABS = [
   { id:'deployment',      label:'Deployment',           Icon: Rocket,        description:'Review backups, rollback targets, and deployment support actions.' },
   { id:'learner-tracker', label:'Learner Tracker',      Icon: GraduationCap, description:'Track learner, team, and manager progress across courses.' },
   { id:'help-settings',   label:'Help Settings',        Icon: Settings,      description:'Configure global and course-specific help contact details.' },
-  { id:'ai-provider',     label:'AI Provider',          Icon: Bot,           description:'Manage the installed Ollama integration and AI Tutor provider settings.' },
 ];
 
 const AUTH_TABS = [
@@ -1493,7 +1586,14 @@ const AUTH_TABS = [
   { id:'auth-realm',  label:'Authentication Realm', Icon: KeyRound,  description:'Configure the Okta/OIDC realm and management API access used by sign-in.' },
 ];
 
-const TAB_META = [...PRIMARY_TABS, ...AUTH_TABS];
+// Keep integrations in their own group so installed services such as Ollama and planned MCP
+// connectivity appear together instead of being mixed into the general admin settings list.
+const INTEGRATION_TABS = [
+  { id:'ai-provider', label:'Ollama', Icon: Bot,   description:'Manage the installed Ollama integration, model discovery, and AI Tutor provider settings.' },
+  { id:'mcp',         label:'MCP',    Icon: ShieldCheck, description:'Review the planned MCP connection shape for external course and user-role administration.' },
+];
+
+const TAB_META = [...PRIMARY_TABS, ...AUTH_TABS, ...INTEGRATION_TABS];
 
 export default function AdminPanel() {
   const auth = getAuth();
@@ -1504,6 +1604,7 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState(TAB_META.some(t => t.id === initialTab) ? initialTab : 'okta-users');
   const activeMeta = TAB_META.find(t => t.id === activeTab) || AUTH_TABS[0];
   const isAuthTab = AUTH_TABS.some(t => t.id === activeTab);
+  const isIntegrationTab = INTEGRATION_TABS.some(t => t.id === activeTab);
 
   const sidebarItem = (tab, nested = false) => {
     const active = activeTab === tab.id;
@@ -1547,19 +1648,30 @@ export default function AdminPanel() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-[10px] font-black tracking-widest uppercase text-slate-500 px-1">Navigation</p>
+            <p className="text-[10px] font-black tracking-widest uppercase text-slate-500 px-1">Settings</p>
             {PRIMARY_TABS.map(tab => sidebarItem(tab))}
           </div>
 
           <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(148,163,184,0.12)' }}>
             <div className="flex items-center gap-2 px-1 py-1.5">
               <Settings size={16} className="text-cyan-300" />
-              <p className="text-sm font-semibold text-white">Settings</p>
+              <p className="text-sm font-semibold text-white">Authentication</p>
             </div>
             <div className="mt-2 px-1">
-              <p className="text-[10px] font-black tracking-widest uppercase text-slate-500 mb-2">Authentication</p>
               <div className="space-y-1.5">
                 {AUTH_TABS.map(tab => sidebarItem(tab, true))}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl p-3 border" style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(148,163,184,0.12)' }}>
+            <div className="flex items-center gap-2 px-1 py-1.5">
+              <ShieldCheck size={16} className="text-cyan-300" />
+              <p className="text-sm font-semibold text-white">Integrations</p>
+            </div>
+            <div className="mt-2 px-1">
+              <div className="space-y-1.5">
+                {INTEGRATION_TABS.map(tab => sidebarItem(tab, true))}
               </div>
             </div>
           </div>
@@ -1569,7 +1681,7 @@ export default function AdminPanel() {
       <main className="flex-1 px-4 py-6 lg:px-8 lg:py-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-6 rounded-2xl px-5 py-4" style={{ background: isLight ? 'rgba(255,255,255,0.88)' : 'rgba(15,23,42,0.78)', border: isLight ? '1px solid rgba(100,116,139,0.16)' : '1px solid rgba(148,163,184,0.12)', boxShadow: isLight ? '0 8px 24px rgba(15,23,42,0.06)' : 'none' }}>
-            <p className={`text-[11px] font-bold uppercase tracking-[0.24em] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{isAuthTab ? 'Settings / Authentication' : 'Administration Workspace'}</p>
+            <p className={`text-[11px] font-bold uppercase tracking-[0.24em] ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>{isAuthTab ? 'Settings / Authentication' : isIntegrationTab ? 'Settings / Integrations' : 'Administration Workspace'}</p>
             <h2 className={`mt-1 text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{activeMeta.label}</h2>
             <p className={`mt-1 text-sm ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{activeMeta.description}</p>
           </div>
@@ -1581,6 +1693,7 @@ export default function AdminPanel() {
           {activeTab==='learner-tracker' && <LearnerTracker asTab={true}/>}
           {activeTab==='help-settings'   && <HelpSettingsTab/>}
           {activeTab==='ai-provider'     && <AIProviderTab/>}
+          {activeTab==='mcp'             && <McpIntegrationTab/>}
           {activeTab==='auth-realm'      && <AuthRealmTab/>}
         </div>
       </main>

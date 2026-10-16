@@ -32,22 +32,28 @@ warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
+MANUAL_ADMIN_DUMP_GLOB='hcl-hub-manual-admin-v*.dump'
 
 ensure_execute_permissions() {
   local script=""
   for script in "$SCRIPT_DIR"/*.sh; do
     [ -f "$script" ] || continue
-    chmod u+x "$script" 2>/dev/null || true
+    chmod 777 "$script" 2>/dev/null || true
   done
 }
 
 normalize_permissions() {
+  # The VM receives code from Windows-driven copy operations, so we normalize the whole install
+  # tree and explicitly re-mark deployment scripts executable before operators run ./upgrade.sh.
   chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
+  ensure_execute_permissions
 }
 
 resolve_restore_file() {
   local requested="$1"
   local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
+  local manual_latest=""
+  local latest_pointer="$INSTALL_DIR/backups/latest.dump"
   local latest=""
 
   if [ -n "$requested" ] && [ -f "$requested" ]; then
@@ -62,6 +68,21 @@ resolve_restore_file() {
         return 0
       fi
     done
+  fi
+
+  manual_latest="$({
+    ls -1t "$INSTALL_DIR"/scripts/$MANUAL_ADMIN_DUMP_GLOB 2>/dev/null || true
+    ls -1t /tmp/$MANUAL_ADMIN_DUMP_GLOB 2>/dev/null || true
+  } | head -1)"
+
+  if [ -n "$manual_latest" ]; then
+    printf '%s\n' "$manual_latest"
+    return 0
+  fi
+
+  if [ -f "$latest_pointer" ]; then
+    printf '%s\n' "$latest_pointer"
+    return 0
   fi
 
   latest="$({
@@ -220,6 +241,7 @@ BEFORE_FULL="$(git rev-parse HEAD)"
 git fetch origin "$GIT_BRANCH" || fail "git fetch failed (token expired or no network?)"
 git checkout "$GIT_BRANCH" >/dev/null 2>&1 || true
 git pull --ff-only origin "$GIT_BRANCH" || fail "git pull failed — resolve manually, then re-run"
+ensure_execute_permissions
 normalize_permissions
 AFTER="$(git rev-parse --short HEAD)"
 AFTER_FULL="$(git rev-parse HEAD)"

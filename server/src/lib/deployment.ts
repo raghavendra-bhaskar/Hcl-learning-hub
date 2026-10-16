@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +15,7 @@ const PREVIOUS_RELEASE_FILE = join(RELEASES_DIR, 'previous-release.env');
 const UPGRADE_SCRIPT = join(DEPLOY_DIR, 'upgrade.sh');
 const ROLLBACK_SCRIPT = join(DEPLOY_DIR, 'rollback.sh');
 const BASELINE_VERSION = '2';
+const MANUAL_ADMIN_BACKUP_PATTERN = /^hcl-hub-manual-admin-v\d+-\d{8}-\d{6}\.dump$/i;
 
 type RunResult = { stdout: string; stderr: string; code: number };
 
@@ -123,6 +124,15 @@ function statBackup(filePath: string): BackupInfo | null {
   };
 }
 
+function getBackupPriority(filePath: string) {
+  const fileName = filePath.split(/[/\\]/).pop() || '';
+  // Prefer the newest manually captured admin dump so upgrades restore the same backup that was
+  // explicitly taken for the VM before code changes, then fall back to latest.dump and other dumps.
+  if (MANUAL_ADMIN_BACKUP_PATTERN.test(fileName)) return 3;
+  if (fileName === 'latest.dump') return 2;
+  return 1;
+}
+
 function listBackupCandidates() {
   const directories = [BACKUPS_DIR, SCRIPTS_DIR, join(REPO_ROOT, 'server', 'backups')].filter((directory, index, all) => all.indexOf(directory) === index);
   const files: string[] = [];
@@ -133,13 +143,14 @@ function listBackupCandidates() {
       files.push(join(directory, name));
     }
   }
-  return files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+  return files.sort((a, b) => {
+    const priorityDelta = getBackupPriority(b) - getBackupPriority(a);
+    if (priorityDelta !== 0) return priorityDelta;
+    return statSync(b).mtimeMs - statSync(a).mtimeMs;
+  });
 }
 
 function findLatestBackup() {
-  const latestPointer = join(BACKUPS_DIR, 'latest.dump');
-  const pointerInfo = statBackup(latestPointer);
-  if (pointerInfo) return pointerInfo;
   const backups = listBackupCandidates();
   return backups.length ? statBackup(backups[0]) : null;
 }
@@ -270,6 +281,12 @@ export async function getRollbackPreview(targetVersion: string | undefined, fall
 function ensureRunnableScript(scriptPath: string) {
   if (!existsSync(scriptPath)) throw new Error(`Deployment script not found: ${scriptPath}`);
   if (process.platform === 'win32') throw new Error('Deployment actions can only be started from the Linux VM runtime. Use the preview here, then run the script on the VM.');
+  try {
+    chmodSync(scriptPath, 0o777);
+  } catch {
+    // The VM upgrade path already retries permission normalization inside sync.sh, so a chmod
+    // failure here should not block preview-driven upgrades unless the script is missing.
+  }
 }
 
 function timestamp() {
@@ -281,7 +298,7 @@ export function startUpgrade(versionLabel: string) {
   mkdirSync(LOGS_DIR, { recursive: true });
   const logFile = join(LOGS_DIR, `upgrade-${timestamp()}.log`);
   const latestBackup = findLatestBackup();
-  const restoreArg = latestBackup ? ` --restore ${shellQuote('latest')}` : '';
+  const restoreArg = latestBackup ? ` --restore ${shellQuote(latestBackup.filePath)}` : '';
   const child = spawn('bash', ['-lc', `sleep 2; bash ${shellQuote(UPGRADE_SCRIPT)} --version ${shellQuote(versionLabel)}${restoreArg} > ${shellQuote(logFile)} 2>&1`], {
     cwd: REPO_ROOT,
     detached: true,

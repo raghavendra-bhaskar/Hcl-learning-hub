@@ -350,6 +350,19 @@ deploy\upgrade.cmd
 running app, pull Git changes, refresh dependencies, regenerate Prisma, apply
 migrations, optionally restore a dump, and start the app again.
 
+### Administration sidebar updates
+
+- **Settings** is now the top-level admin sidebar group for course, deployment,
+  learner tracker, and help-session administration.
+- **Authentication** is a dedicated admin group for **Okta Users**,
+  **Internal Security**, and **Authentication Realm**.
+- **Integrations** is a dedicated admin group for **Ollama** and the planned
+  **MCP** connection surface.
+- The deployment rollback selector now uses explicit dark/light dropdown colors
+  so the recorded-version list remains readable on the VM browser.
+- The new `MCP_CONNECTION_GUIDE.md` file documents VS Code MCP setup by command
+  palette and by `.vscode/mcp.json`.
+
 ### VM sync and versioned rollout steps
 
 For your VM `blmycldtl596461.nonprod.hclpnp.com`, the normal source upgrade flow is:
@@ -364,12 +377,28 @@ What happens during that sync:
 
 1. A new database dump is created in `backups/`.
 2. `backups/latest.dump` is refreshed to point to the newest dump copy.
-3. The current app is stopped.
-4. The latest Git code is pulled.
-5. Dependencies and Prisma client are refreshed.
-6. Migrations run.
-7. The app restarts on the upgraded code.
-8. Rollout metadata is written into `releases/`.
+3. The newest matching `scripts/hcl-hub-manual-admin-v*.dump` is preferred as the
+   restore source for upgrade/preview work when one exists, so the VM can keep
+   using the latest manually captured admin dump.
+4. The entire `hcl-learning-hub/` tree is normalized to `777`, and deployment
+   shell scripts are re-marked executable so `deploy/upgrade.sh` and
+   `deploy/sync.sh` survive Windows-driven uploads that reset execute bits.
+5. The current app is stopped.
+6. The latest Git code is pulled.
+7. Dependencies and Prisma client are refreshed.
+8. Migrations run.
+9. The app restarts on the upgraded code.
+10. Rollout metadata is written into `releases/`.
+
+If a raw file copy resets the execute bit before you can start the sync, run the
+first recovery invocation as:
+
+```bash
+bash deploy/upgrade.sh
+```
+
+After that run, the scripts re-apply executable permissions and recursive `777`
+to the full install tree.
 
 If you want a rollback later:
 
@@ -742,7 +771,7 @@ Full operator documentation: [packaging/README.md](packaging/README.md) and
 ### Local Ollama AI Tutor
 
 1. Start Ollama on the machine reachable by the Hub API. Install a chat model, for example `ollama pull llama3.2` (run `ollama serve` only if Ollama is not already running).
-2. Sign in as an administrator and open **Administration > AI Provider**.
+2. Sign in as an administrator and open **Administration > Integrations > Ollama**.
 3. Enter `http://localhost:11434` when the API and Ollama run on the same laptop. Models are discovered automatically from `/api/tags`; models currently loaded in memory are marked **running** using `/api/ps`. Installed models need not already be loaded to select them.
 4. Select a chat-capable model, enable AI, and save. Use **Test Saved Provider** to ask a Hub question. Save another model to compare responses. Embedding-only models cannot answer chat requests.
 5. Learners can open **AI Tutor** in course quests/assessments and **AI Help** in Help Session. The pace selector and recent conversation provide session-level adaptation. Conversations are not persisted and clear when leaving the page.

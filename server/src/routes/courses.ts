@@ -144,6 +144,11 @@ async function decorateCourse(course: any, user: Express.Request['user']) {
   };
 }
 
+async function resolveCourseCategory(courseId: string, fallbackCategory?: string | null) {
+  const categoryMap = await getCategoryOverrideMap([courseId]);
+  return categoryMap[courseId] || normalizeCourseCategory(fallbackCategory);
+}
+
 function isUnknownCategoryArgumentError(error: unknown) {
   return /unknown argument [`'"]?category[`'"]?/i.test(String((error as any)?.message || ''));
 }
@@ -163,8 +168,8 @@ async function applyCategoryFallback(courseId: string, data: Record<string, any>
   const { category, ...rest } = data;
   const hasOtherFields = Object.keys(rest).length > 0;
   const updatedCourse = hasOtherFields
-    ? await (prisma as any).course.update({ where: { id: courseId }, data: rest })
-    : await (prisma as any).course.findUnique({ where: { id: courseId } });
+    ? await (prisma as any).course.update({ where: { id: courseId }, data: rest, select: courseBaseSelect })
+    : await (prisma as any).course.findUnique({ where: { id: courseId }, select: courseBaseSelect });
   try {
     if (category !== undefined) await syncCourseCategoryColumn(courseId, category);
   } catch (syncError: any) {
@@ -173,7 +178,29 @@ async function applyCategoryFallback(courseId: string, data: Record<string, any>
   return { ...(updatedCourse || {}), category: await normalizedCategory };
 }
 
-const courseInclude = {
+// Explicit course selections keep the admin panel working even when an older VM restore does not
+// yet have the newer category column, because category still falls back from the settings table.
+const courseBaseSelect = {
+  id: true,
+  slug: true,
+  title: true,
+  tagline: true,
+  description: true,
+  emoji: true,
+  accentColor: true,
+  status: true,
+  order: true,
+  instructorName: true,
+  instructorEmail: true,
+  helpSpaceUrl: true,
+  helpSpaceName: true,
+  helpSpaceHint: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const courseDetailSelect = {
+  ...courseBaseSelect,
   weeks: {
     orderBy: { weekNumber: 'asc' as const },
     include: {
@@ -189,14 +216,17 @@ const courseInclude = {
   _count: { select: { quests: true } },
 };
 
+const courseListSelect = {
+  ...courseBaseSelect,
+  weeks: { include: { modules: { include: { _count: { select: { topics: true, resources: true } } } } } },
+  _count: { select: { weeks: true } },
+};
+
 // ── List all courses ─────────────────────────────────────────────────────────
 coursesRouter.get('/', async (req, res) => {
   const courses = await (prisma as any).course.findMany({
     orderBy: { createdAt: 'asc' },
-    include: {
-      weeks: { include: { modules: { include: { _count: { select: { topics: true, resources: true } } } } } },
-      _count: { select: { weeks: true } },
-    },
+    select: courseListSelect,
   });
   const moderatorMap = await getModeratorMap(courses.map((course: any) => course.slug));
   const categoryMap = await getCategoryOverrideMap(courses.map((course: any) => course.id));
@@ -215,7 +245,7 @@ coursesRouter.get('/', async (req, res) => {
 coursesRouter.get('/:slug', async (req, res) => {
   const course = await (prisma as any).course.findUnique({
     where: { slug: req.params.slug },
-    include: courseInclude,
+    select: courseDetailSelect,
   });
   if (!course) return res.status(404).json({ error: 'Course not found' });
   res.json(await decorateCourse(course, req.user));
@@ -287,9 +317,9 @@ coursesRouter.post('/', requireRole('ADMIN'), async (req, res) => {
       helpSpaceName:   p.data.helpSpaceName   || s['help.spaces.generic.name'] || '',
       helpSpaceHint:   p.data.helpSpaceHint   || s['help.spaces.generic.hint'] || '',
     };
-    const course = await (prisma as any).course.create({ data: { ...p.data, category: p.data.category || 'technology', ...helpDefaults } });
+    const course = await (prisma as any).course.create({ data: { ...p.data, category: p.data.category || 'technology', ...helpDefaults }, select: courseBaseSelect });
     if (p.data.category) await persistCategoryOverride(course.id, p.data.category);
-    res.json({ ...course, category: normalizeCourseCategory(p.data.category || course.category) });
+    res.json({ ...course, category: await resolveCourseCategory(course.id, p.data.category || 'technology') });
   } catch (e: any) {
     if (p.data.category && (isUnknownCategoryArgumentError(e) || isMissingCategoryColumnError(e))) {
       try {
@@ -304,7 +334,7 @@ coursesRouter.post('/', requireRole('ADMIN'), async (req, res) => {
           helpSpaceHint:   p.data.helpSpaceHint   || s['help.spaces.generic.hint'] || '',
         };
         const { category, ...rest } = p.data;
-        const course = await (prisma as any).course.create({ data: { ...rest, ...helpDefaults } });
+        const course = await (prisma as any).course.create({ data: { ...rest, ...helpDefaults }, select: courseBaseSelect });
         await persistCategoryOverride(course.id, category);
         return res.json({ ...course, category: normalizeCourseCategory(category) });
       } catch (fallbackError: any) {
@@ -334,9 +364,9 @@ coursesRouter.put('/:id', async (req, res) => {
   if (!p.success) return res.status(400).json({ error: p.error.flatten() });
   const data = { ...p.data } as Record<string, any>;
   try {
-    const course = await (prisma as any).course.update({ where: { id: req.params.id }, data });
+    const course = await (prisma as any).course.update({ where: { id: req.params.id }, data, select: courseBaseSelect });
     if (data.category !== undefined) await persistCategoryOverride(req.params.id, data.category);
-    res.json({ ...course, category: data.category !== undefined ? normalizeCourseCategory(data.category) : normalizeCourseCategory(course.category) });
+    res.json({ ...course, category: await resolveCourseCategory(req.params.id, data.category || 'technology') });
   } catch (error: any) {
     if (error?.code === 'P2002') return res.status(409).json({ error: 'Course slug already in use' });
     if (data.category !== undefined && (isUnknownCategoryArgumentError(error) || isMissingCategoryColumnError(error))) {
