@@ -356,12 +356,12 @@ migrations, optionally restore a dump, and start the app again.
   learner tracker, and help-session administration.
 - **Authentication** is a dedicated admin group for **Okta Users**,
   **Internal Security**, and **Authentication Realm**.
-- **Integrations** is a dedicated admin group for **Ollama** and the planned
-  **MCP** connection surface.
+- **Integrations** is a dedicated admin group for **Ollama** and the **MCP**
+  connection surface.
 - The deployment rollback selector now uses explicit dark/light dropdown colors
   so the recorded-version list remains readable on the VM browser.
-- The new `MCP_CONNECTION_GUIDE.md` file documents VS Code MCP setup by command
-  palette and by `.vscode/mcp.json`.
+- `MCP_CONNECTION_GUIDE.md` documents how to start the local VS Code course MCP
+  bridge and connect it to the VM API; a remote HTTP MCP endpoint is not implemented.
 
 ### VM sync and versioned rollout steps
 

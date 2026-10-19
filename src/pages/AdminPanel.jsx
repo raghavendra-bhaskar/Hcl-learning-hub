@@ -1309,33 +1309,36 @@ function HelpSettingsTab() {
   );
 }
 
-// This tab explains the MCP surface in-product so administrators can see what the future external
-// connection will expose before wiring VS Code or other MCP clients to the server endpoint.
 function McpIntegrationTab() {
   const { theme } = useAppStore();
   const isLight = theme === 'light';
-  const endpointExample = 'https://your-hostname.example.com/mcp';
-  const sampleConfig = `{
-  "servers": {
-    "hcl-learning-hub-mcp": {
-      "uri": "${endpointExample}",
-      "type": "http"
-    }
-  },
-  "inputs": []
-}`;
+  const sampleConfig = JSON.stringify({
+    servers: {
+      'hcl-learning-hub-mcp': {
+        type: 'stdio',
+        command: 'node',
+        args: ['${workspaceFolder:AI-Quest}/scripts/mcp-course-server.mjs'],
+        env: {
+          HCL_HUB_API_URL: '${input:hclHubUrl}',
+          HCL_HUB_EMAIL: '${input:hclHubEmail}',
+          HCL_HUB_PASSWORD: '${input:hclHubPassword}',
+        },
+      },
+    },
+    inputs: [
+      { id: 'hclHubUrl', type: 'promptString', description: 'Learning Hub VM HTTPS URL', default: 'https://blmycldtl596461.nonprod.hclpnp.com' },
+      { id: 'hclHubEmail', type: 'promptString', description: 'Learning Hub local-account email' },
+      { id: 'hclHubPassword', type: 'promptString', description: 'Learning Hub local-account password', password: true },
+    ],
+  }, null, 2);
   const toolGroups = [
     {
       title: 'Course tools',
-      items: ['List courses', 'Create course', 'Update course metadata', 'Assign moderators'],
+      items: ['List courses', 'Get a course', 'Create course', 'Update course metadata'],
     },
     {
-      title: 'User and role tools',
-      items: ['List users', 'Update roles', 'Create internal security users', 'Reset internal passwords'],
-    },
-    {
-      title: 'Platform tools',
-      items: ['Read authentication realm', 'Update authentication realm', 'Inspect integrations status'],
+      title: 'Curriculum tools',
+      items: ['Create and update weeks', 'Create and update modules', 'Create and update topics, resources, and quests'],
     },
   ];
 
@@ -1345,11 +1348,11 @@ function McpIntegrationTab() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>MCP Integration</h3>
-            <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Expose course administration and user-role workflows to VS Code or other MCP-capable clients through one authenticated HTTP endpoint.</p>
+            <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Manage VM courses from VS Code through the local MCP bridge and existing authenticated API.</p>
           </div>
           <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full"
             style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.28)', color: '#f59e0b' }}>
-            Planned endpoint
+            Local bridge available
           </span>
         </div>
       </div>
@@ -1362,21 +1365,21 @@ function McpIntegrationTab() {
           </div>
           <ol className={`space-y-2 text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
             <li>1. Open VS Code and install an MCP-capable extension or GitHub Copilot MCP support.</li>
-            <li>2. Add the Learning Hub MCP endpoint by command palette or by editing `.vscode/mcp.json`.</li>
-            <li>3. Start the MCP server entry and approve browser-based sign-in when prompted.</li>
-            <li>4. Use the exposed tools for course, authentication, and role-management workflows.</li>
+            <li>2. Open this repository and start hcl-learning-hub-mcp in the MCP servers view.</li>
+            <li>3. Enter the VM HTTPS URL and your Learning Hub local-account email and password when prompted.</li>
+            <li>4. Use the course and curriculum tools according to your API permissions.</li>
           </ol>
         </div>
 
         <div className="rounded-2xl p-5 space-y-4" style={getCardStyle(isLight)}>
           <div>
-            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Proposed endpoint</p>
-            <h4 className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{endpointExample}</h4>
+            <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Browser sign-in</p>
+            <h4 className={`mt-2 text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Not yet available for MCP</h4>
           </div>
-          <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Use OAuth-backed administrator authentication and tool-level authorization so external callers can create or update courses without exposing unrestricted database access.</p>
+          <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Browser-based OAuth requires a deployed HTTP MCP endpoint, OAuth discovery and client registration, token validation, and API role checks. The local bridge currently uses local-account prompts instead of SSO.</p>
           <div className="rounded-xl p-3 border" style={{ background: isLight ? 'rgba(236,254,255,0.9)' : 'rgba(34,211,238,0.05)', borderColor: isLight ? 'rgba(8,145,178,0.18)' : 'rgba(34,211,238,0.18)' }}>
             <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-cyan-300'}`}>Recommended controls</p>
-            <p className={`mt-2 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Require administrator role checks, audit every tool call, and require confirmation for destructive operations such as deleting courses or downgrading user access.</p>
+            <p className={`mt-2 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>The API enforces administrator or assigned-moderator permissions. Delete and user-role tools are not exposed by this bridge.</p>
           </div>
         </div>
       </div>
@@ -1409,7 +1412,7 @@ function DeploymentTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [versionDraft, setVersionDraft] = useState('5.1');
+  const [versionDraft, setVersionDraft] = useState('6.1');
   const [rollbackVersion, setRollbackVersion] = useState('');
 
   const loadRollbackPreview = useCallback(async (version) => {
@@ -1428,9 +1431,9 @@ function DeploymentTab() {
       ]);
       setStatus(nextStatus);
       setUpgradePreview(nextUpgradePreview);
-      setVersionDraft(current => current && current !== '5.1'
+      setVersionDraft(current => current && current !== '6.1'
         ? current
-        : (nextStatus?.suggestedVersion || '5.1'));
+        : (nextStatus?.suggestedVersion || '6.1'));
       const fallbackRollbackVersion = preferredRollbackVersion
         || rollbackVersion
         || nextStatus?.previousRelease?.productVersion

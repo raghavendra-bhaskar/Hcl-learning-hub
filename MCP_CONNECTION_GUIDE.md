@@ -2,44 +2,17 @@
 
 ## Purpose
 
-Use this guide to connect Visual Studio Code to the HCL Learning Hub MCP endpoint so administrators can manage courses, authentication settings, and user-role operations from an MCP-capable client.
+Use this guide to connect Visual Studio Code to the HCL Learning Hub running on a VM and manage courses from an MCP-capable client.
 
-This guide follows the same two connection patterns documented for IBM DevOps Loop MCP:
-
-- connect by using the VS Code command palette
-- connect by editing the workspace MCP configuration file
+The workspace MCP configuration launches a local stdio bridge that calls the VM's authenticated `/api` endpoints.
 
 ## Current status
 
-The admin experience now includes **Administration > Integrations > MCP** so the planned MCP surface is visible in-product.
-
-The MCP endpoint itself must be published on the Learning Hub server before external MCP clients can connect. Use a host-specific endpoint such as:
-
-```text
-https://<your-hostname>/mcp
-```
-
-If your deployment exposes capability-specific MCP endpoints later, replace the URI with the exact endpoint for that capability.
+The separate remote HTTP MCP endpoint and browser-based OAuth flow are not implemented. Do not configure a guessed `/mcp` URL or port; use the local stdio bridge below. A normal web page at `/mcp` is not an MCP endpoint.
 
 ## What the MCP connection is intended to support
 
-Planned administrator-facing MCP tools include:
-
-- course listing
-- course creation
-- course metadata updates
-- moderator assignment
-- internal security user management
-- role updates
-- authentication realm review and updates
-- integrations status inspection
-
-Recommended guardrails:
-
-- require administrator authentication
-- require administrator authorization for every tool call
-- log every MCP action for audit review
-- require confirmation for destructive operations
+Available tools list and read courses, create courses, and add or update weeks, modules, topics, resources, and quests. Delete operations are not exposed. The Learning Hub API continues to enforce administrator or course-moderator permissions.
 
 ## Prerequisites
 
@@ -47,59 +20,25 @@ Before you connect VS Code:
 
 - install Visual Studio Code
 - install an MCP-capable extension or GitHub Copilot MCP support
-- obtain the final Learning Hub MCP server URL
-- confirm that your browser can reach the Learning Hub sign-in page
-- confirm that the signed-in account has administrator access
+- open this repository as the VS Code workspace
+- confirm that your workstation can reach the VM's HTTPS site
+- have a Learning Hub local account with administrator or course-moderator permission
 
-## Option 1: Connect by using the command palette
+## Connect VS Code to the VM
 
-1. Open VS Code.
-2. Open the workspace that you want to use with the Learning Hub MCP server.
-3. Open the command palette.
-4. Choose the command that adds or configures an MCP server.
-5. Enter the Learning Hub MCP endpoint URL.
-6. Choose one of these scopes:
-   - **Global**: the MCP server is available to all VS Code workspaces.
-   - **Workspace**: the MCP server is available only in the current workspace.
-7. If you select **Workspace**, VS Code creates `.vscode/mcp.json` automatically.
-8. Start the configured MCP server entry from the VS Code MCP servers UI.
-9. When VS Code reports that authentication is required, allow the sign-in flow.
-10. When VS Code asks to open an external site, open it.
-11. Sign in with your Learning Hub administrator account.
-12. Approve the consent prompt.
-13. Return to VS Code and confirm that the MCP tools are listed.
+1. Open this repository in VS Code and open the MCP servers view.
+2. Start `hcl-learning-hub-mcp` from this workspace's `.vscode/mcp.json`.
+3. Enter the VM URL when prompted. The default is `https://blmycldtl596461.nonprod.hclpnp.com`; the bridge adds `/api` automatically.
+4. Enter the email and password for a Learning Hub local account. The password prompt is masked and credentials are not written to `.vscode/mcp.json`.
+5. Confirm that the course tools appear. The first tool call signs in to `/api/auth/local/login`; the API checks the account's role and course permissions.
 
-## Option 2: Connect by editing `.vscode/mcp.json`
+The bridge runs on your workstation, so the VM does not need port `3333` exposed. This login method requires a Learning Hub local account; it does not perform Okta or Keycloak browser SSO. The browser authorization and device-code screens for the separate Loop MCP server do not authenticate to Learning Hub.
 
-1. Open VS Code.
-2. Open the target project folder.
-3. Create a `.vscode` folder in the workspace root if it does not already exist.
-4. Create a file named `mcp.json` inside `.vscode`.
-5. Paste a configuration like this:
+To support that browser experience for Learning Hub, the VM must first serve a real HTTP MCP endpoint with OAuth protected-resource and authorization-server discovery, a registered OAuth client, token audience and scope validation, and role checks on every course tool. Simply changing `.vscode/mcp.json` to `"type": "http"` cannot enable browser authentication.
 
-```json
-{
-  "servers": {
-    "hcl-learning-hub-mcp": {
-      "uri": "https://<your-hostname>/mcp",
-      "type": "http"
-    }
-  },
-  "inputs": []
-}
-```
+## Local demo server
 
-6. Replace `<your-hostname>` with the Learning Hub hostname or FQDN.
-7. Save the file.
-8. Open the VS Code extensions or MCP servers view.
-9. Find the `hcl-learning-hub-mcp` entry and start it.
-10. Allow the browser-based authentication prompt.
-11. Sign in and approve access.
-12. Return to VS Code and verify that the MCP tool list appears.
-
-## Option 3: Connect Windsurf or VS Code to the local demo MCP over localhost
-
-Use this when you want a local HTTP MCP entry that behaves more like a remote MCP server entry such as DevOps Loop.
+`learning-hub-demo` is a separate read-only demo and cannot update VM courses. To test its HTTP variant manually:
 
 1. Open a terminal in the workspace root.
 2. Start the localhost MCP demo server:
@@ -109,7 +48,7 @@ npm run mcp:http
 ```
 
 3. Confirm that the terminal prints a listening message for `http://127.0.0.1:3333/mcp`.
-4. Use this workspace MCP configuration:
+4. Use this workspace MCP configuration for the demo only:
 
 ```json
 {
@@ -123,28 +62,13 @@ npm run mcp:http
 }
 ```
 
-5. Save `.vscode/mcp.json`.
-6. Open the MCP servers UI in Windsurf or VS Code.
-7. Start `hcl-learning-hub-localhost-mcp`.
-8. Verify that the tool list includes these demo tools:
+5. Verify that the tool list includes these demo tools:
    - `get_deployment_defaults`
    - `list_ai_provider_options`
    - `get_workspace_version`
    - `get_mcp_demo_status`
 
-This localhost demo does not require browser sign-in because it is a development-only server running on your machine.
-
-## Authentication flow
-
-Expect a browser-based sign-in flow similar to the DevOps Loop MCP experience:
-
-- VS Code shows that the MCP server requires authentication.
-- VS Code asks to open an external website.
-- Your default browser opens the Learning Hub sign-in page.
-- After sign-in, you approve access to MCP tools and related APIs.
-- VS Code then lists the available MCP tools.
-
-If your session is idle for an extended period, you might be prompted to authenticate again.
+This localhost demo does not require sign-in and has no VM course-management access.
 
 ## Example workspace layout
 
@@ -159,26 +83,27 @@ If your session is idle for an extended period, you might be prompted to authent
 ### MCP server does not appear in VS Code
 
 - confirm that `.vscode/mcp.json` is valid JSON
-- confirm that the server entry uses the correct `uri`
+- confirm that Node.js is installed and the workspace contains `scripts/mcp-course-server.mjs`
 - confirm that the MCP client extension is installed and enabled
 
-### Browser sign-in does not complete
+### Remote `/mcp` connection reports `file:///undefined` or cannot connect
 
-- confirm that the Learning Hub hostname is reachable from your browser
-- confirm that the TLS certificate is trusted by the client machine
-- confirm that the authentication realm is configured correctly in the admin panel
+- remove the remote HTTP MCP entry and use the local stdio bridge above; this application does not serve a remote `/mcp` endpoint
+- check that the VM hostname resolves and its HTTPS port is reachable from your workstation
+- use the VM's valid HTTPS hostname and trusted certificate; do not bypass TLS certificate checks for credentials
 
-### Connected but no tools are listed
+### Login fails or tool calls return 401
 
-- confirm that the MCP endpoint is enabled on the Learning Hub server
-- confirm that the signed-in account has administrator permissions
-- confirm that server-side MCP capability registration completed successfully
-
-### Session expires unexpectedly
-
-- restart the MCP server entry in VS Code
-- repeat the browser sign-in flow
+- confirm the URL opens from your workstation and uses the VM's HTTPS hostname
+- confirm the account is a local Learning Hub account; Okta SSO credentials are not accepted by this bridge
+- restart the MCP server and re-enter the credentials if the local account password changed
+- the bridge reauthenticates once after an expired token; if login still fails, restart the server and enter the credentials again
 - verify that no proxy or gateway is terminating the session early
+
+### Tool calls return 403
+
+- confirm that the account is an administrator or is assigned as a moderator for that course
+- use `list_courses` and `get_course` to retrieve IDs and current content before making updates
 
 ## Security notes
 

@@ -29,8 +29,8 @@ export const adminRouter = Router();
 
 adminRouter.use(requireRole('ADMIN'));
 
-const LOCAL_DEPLOYMENT_BASELINE = '5';
-const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '5.1';
+const LOCAL_DEPLOYMENT_BASELINE = '6';
+const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '6.1';
 
 adminRouter.post('/db-backups', async (req, res) => {
   try {

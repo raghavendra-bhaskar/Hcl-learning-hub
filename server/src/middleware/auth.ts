@@ -96,7 +96,7 @@ async function verifyToken(token: string) {
   // Okta JWKS can contain mixed key types (signing + encryption). Some encryption keys
   // (e.g. ECDH-ES, RSA-OAEP) use algorithms that jose does not support for JWT verification.
   // Restrict to RS256/RS384/RS512/PS256/PS384/PS512/ES256/ES384/ES512 — the standard signing algs.
-  // Fall back to no restriction if all restricted algorithms fail.
+  // Fall back to the provider-declared signing algorithm if the token header uses a different allowed signing alg.
   try {
     const { payload } = await jwtVerify(token, jwks, {
       issuer:     cfg.issuer,
@@ -105,6 +105,13 @@ async function verifyToken(token: string) {
     });
     return { source: 'okta' as const, payload };
   } catch (err: any) {
+    if (err.code === 'ERR_JOSE_ALG_NOT_ALLOWED') {
+      const { payload } = await jwtVerify(token, jwks, {
+        issuer:   cfg.issuer,
+        audience: cfg.clientId,
+      });
+      return { source: 'okta' as const, payload };
+    }
     // ERR_JOSE_NOT_SUPPORTED means the JWKS has unsupported keys — treat as invalid token
     if (err.code === 'ERR_JOSE_NOT_SUPPORTED') {
       throw new Error('Okta JWT uses an unsupported algorithm. Ensure your Okta authorization server uses RS256.');

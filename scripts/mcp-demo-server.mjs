@@ -54,7 +54,7 @@ function listTools() {
 function callTool(name) {
   if (name === 'get_deployment_defaults') {
     return {
-      content: [{ type: 'text', text: JSON.stringify({ currentBaseline: '5', nextPatchExample: '5.1', rollbackUsesRecordedReleases: true }, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify({ currentBaseline: '6', nextPatchExample: '6.1', rollbackUsesRecordedReleases: true }, null, 2) }],
     };
   }
   if (name === 'list_ai_provider_options') {

@@ -7,10 +7,34 @@
         "scripts/mcp-demo-server.mjs"
       ]
     },
-    "hcl-learning-hub-localhost-mcp": {
-      "uri": "http://127.0.0.1:3333/mcp",
-      "type": "http"
+    "hcl-learning-hub-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder:AI-Quest}/scripts/mcp-course-server.mjs"],
+      "env": {
+        "HCL_HUB_API_URL": "${input:hclHubUrl}",
+        "HCL_HUB_EMAIL": "${input:hclHubEmail}",
+        "HCL_HUB_PASSWORD": "${input:hclHubPassword}"
+      }
     }
   },
-  "inputs": []
+  "inputs": [
+    {
+      "id": "hclHubUrl",
+      "type": "promptString",
+      "description": "Learning Hub VM HTTPS URL",
+      "default": "https://blmycldtl596461.nonprod.hclpnp.com"
+    },
+    {
+      "id": "hclHubEmail",
+      "type": "promptString",
+      "description": "Learning Hub local-account email"
+    },
+    {
+      "id": "hclHubPassword",
+      "type": "promptString",
+      "description": "Learning Hub local-account password",
+      "password": true
+    }
+  ]
 }

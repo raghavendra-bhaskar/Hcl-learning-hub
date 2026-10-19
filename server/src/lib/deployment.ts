@@ -111,7 +111,7 @@ function incrementVersion(version: string) {
   }
   const numeric = Number.parseInt(String(version || '').trim(), 10);
   if (Number.isFinite(numeric)) return `${numeric}.1`;
-  return version ? `${version}.1` : '5.1';
+  return version ? `${version}.1` : '6.1';
 }
 
 function statBackup(filePath: string): BackupInfo | null {
