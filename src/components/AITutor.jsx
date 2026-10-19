@@ -3,13 +3,18 @@ import { Link } from 'react-router-dom';
 import { Bot, ChevronDown, Loader2, Send, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
+import { getAuth } from '../pages/LoginPage.jsx';
 
 export default function AITutor({ courseSlug, mode = 'course', title = 'AI Tutor', onNavigate }) {
   const { theme } = useAppStore();
   const isLight = theme === 'light';
+  const auth = getAuth();
+  const learnerName = auth?.name || auth?.email || 'there';
+  const showPaceControls = auth?.role === 'ADMIN';
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState(null);
   const [messages, setMessages] = useState([]);
+
   const [question, setQuestion] = useState('');
   const [pace, setPace] = useState('balanced');
   const [busy, setBusy] = useState(false);
@@ -33,10 +38,21 @@ export default function AITutor({ courseSlug, mode = 'course', title = 'AI Tutor
   useEffect(() => {
     if (transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [messages, busy]);
+  useEffect(() => {
+    if (!open || !status?.enabled || messages.length) return;
+    setMessages([{
+      role: 'assistant',
+      content: mode === 'course'
+        ? `Hi ${learnerName}. I can help with this course. Ask me about a topic, concept, quest, or example.`
+        : `Hi ${learnerName}. I can help with the Learning Hub and its courses. Ask me about a course, learning path, moderator, or support space.`,
+      sources: [],
+    }]);
+  }, [open, status?.enabled, messages.length, mode, learnerName]);
 
   const send = async event => {
     event.preventDefault();
     if (!question.trim() || busy || !status?.enabled) return;
+
     const message = question.trim();
     const controller = new AbortController();
     pending.current = controller;
@@ -57,6 +73,14 @@ export default function AITutor({ courseSlug, mode = 'course', title = 'AI Tutor
     }
   };
 
+  const handleKeyDown = event => {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    if (!busy && status?.enabled && question.trim()) {
+      send(event);
+    }
+  };
+
   return (
     <section className="my-6 min-w-0 border-y text-left" style={{ letterSpacing: 0, borderColor: isLight ? 'rgba(100,116,139,0.18)' : 'rgba(34,211,238,0.2)' }}>
       <button type="button" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-controls={panelId}
@@ -66,20 +90,21 @@ export default function AITutor({ courseSlug, mode = 'course', title = 'AI Tutor
       </button>
       {open && <div id={panelId} className="pb-4 space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-xs">
-          <label className={`flex items-center gap-2 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Pace
+          {showPaceControls && <label className={`flex items-center gap-2 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Pace
             <select value={pace} onChange={event => setPace(event.target.value)} disabled={busy}
               className={`border rounded-lg px-2 py-2 ${isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-space-950 text-slate-200 border-white/20'}`}>
               <option value="step-by-step">Step by step</option>
               <option value="balanced">Balanced</option>
               <option value="advanced">Advanced</option>
             </select>
-          </label>
+          </label>}
           <span className={isLight ? 'text-slate-600' : 'text-slate-400'}>{status?.enabled ? 'AI ready' : (status ? 'AI unavailable' : 'Connecting...')}</span>
-          <button type="button" onClick={() => { setMessages([]); setError(''); }} disabled={busy || !messages.length}
+          <button type="button" onClick={() => { setMessages([]); setError(''); setQuestion(''); }} disabled={busy || !messages.length}
             title="Clear conversation" aria-label="Clear conversation" className={`ml-auto p-2 disabled:opacity-40 ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <Trash2 size={16} />
           </button>
         </div>
+
         {status && !status.enabled && <p className={`text-sm ${isLight ? 'text-amber-700' : 'text-amber-300'}`} role="status">AI is disabled. Ask an administrator to configure the AI Provider.</p>}
         <div ref={transcript} role="log" aria-label={`${title} conversation`} aria-live="polite"
           className="max-h-80 overflow-y-auto space-y-4 text-sm leading-relaxed">
@@ -104,10 +129,11 @@ export default function AITutor({ courseSlug, mode = 'course', title = 'AI Tutor
         <form onSubmit={send} className="flex items-end gap-2">
           <label className="flex-1 min-w-0">
             <span className="sr-only">Question for {title}</span>
-            <textarea value={question} onChange={event => setQuestion(event.target.value)} maxLength={2000} rows={2}
+            <textarea value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={handleKeyDown} maxLength={2000} rows={2}
               disabled={busy || !status?.enabled} placeholder={mode === 'course' ? 'Ask about this course...' : 'Ask about the Learning Hub...'}
               className={`w-full resize-y min-h-[64px] max-h-40 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-400 disabled:opacity-40 ${isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-white/5 border-white/20 text-white'}`} />
           </label>
+
           <button type="submit" disabled={busy || !status?.enabled || !question.trim()} title="Send question" aria-label="Send question"
             className="shrink-0 w-10 h-10 mb-1 rounded-lg bg-cyan-600 flex items-center justify-center text-white disabled:opacity-40 hover:bg-cyan-500">
             <Send size={18} />

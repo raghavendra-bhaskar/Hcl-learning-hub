@@ -1,6 +1,6 @@
 {
   "name": "ai-quest",
-  "version": "1.0.4",
+  "version": "5.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,8 @@
     "dev:api": "node --import tsx --watch server/src/index.ts",
     "build": "vite build",
     "preview": "vite preview",
+    "mcp:stdio": "node scripts/mcp-demo-server.mjs",
+    "mcp:http": "node scripts/mcp-http-server.mjs",
     "migrate": "npm run prisma:migrate --prefix server",
     "studio": "npm run prisma:studio --prefix server",
     "seed:admin": "node --env-file=server/.env server/scripts/seed-admin.mjs",

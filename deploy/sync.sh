@@ -95,6 +95,34 @@ resolve_restore_file() {
   printf '%s\n' "$latest"
 }
 
+read_recorded_product_version() {
+  local file_path="$1"
+  [ -f "$file_path" ] || return 1
+  grep -E '^PRODUCT_VERSION=' "$file_path" | head -1 | cut -d= -f2-
+}
+
+increment_patch_version() {
+  local version="$1"
+  local -a parts=()
+  IFS='.' read -r -a parts <<< "$version"
+
+  if [ "${#parts[@]}" -eq 1 ] && [[ "${parts[0]}" =~ ^[0-9]+$ ]]; then
+    printf '%s.1\n' "${parts[0]}"
+    return 0
+  fi
+
+  if [ "${#parts[@]}" -ge 2 ]; then
+    local index=$((${#parts[@]} - 1))
+    if [[ "${parts[$index]}" =~ ^[0-9]+$ ]]; then
+      parts[$index]=$((${parts[$index]} + 1))
+      printf '%s\n' "$(IFS='.'; echo "${parts[*]}")"
+      return 0
+    fi
+  fi
+
+  printf '%s.1\n' "${version:-5}"
+}
+
 RESTORE_FILE=""
 NO_RESTART=false
 BACKUP_ONLY=false
@@ -157,6 +185,8 @@ LATEST_BACKUP_FILE="$BACKUP_DIR/latest.dump"
 RELEASES_DIR="$INSTALL_DIR/releases"
 CURRENT_RELEASE_FILE="$RELEASES_DIR/current-release.env"
 PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
+BASELINE_VERSION="${BASELINE_VERSION:-5}"
+RECORDED_VERSION="$(read_recorded_product_version "$CURRENT_RELEASE_FILE" 2>/dev/null || true)"
 RECORDED_BACKUP_FILE="$BACKUP_FILE"
 PINNED_RESTORE_FILE=""
 if [ "$CODE_ONLY" = false ] && [ -n "$RESTORE_FILE" ]; then
@@ -245,11 +275,9 @@ ensure_execute_permissions
 normalize_permissions
 AFTER="$(git rev-parse --short HEAD)"
 AFTER_FULL="$(git rev-parse HEAD)"
-PACKAGE_VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo '0.0.0')"
-DEFAULT_VERSION_LABEL="${PACKAGE_VERSION}-${TIMESTAMP}-${AFTER}"
+DEFAULT_VERSION_LABEL="$(increment_patch_version "${RECORDED_VERSION:-$BASELINE_VERSION}")"
 PRODUCT_VERSION="${VERSION_LABEL:-$DEFAULT_VERSION_LABEL}"
 RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-${AFTER}.env"
-BASELINE_VERSION="${BASELINE_VERSION:-2}"
 BASELINE_RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-baseline-${BEFORE}.env"
 
 if [ "$BEFORE" = "$AFTER" ]; then

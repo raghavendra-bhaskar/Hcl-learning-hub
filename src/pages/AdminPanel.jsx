@@ -1409,7 +1409,7 @@ function DeploymentTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [versionDraft, setVersionDraft] = useState('4');
+  const [versionDraft, setVersionDraft] = useState('5.1');
   const [rollbackVersion, setRollbackVersion] = useState('');
 
   const loadRollbackPreview = useCallback(async (version) => {
@@ -1428,9 +1428,9 @@ function DeploymentTab() {
       ]);
       setStatus(nextStatus);
       setUpgradePreview(nextUpgradePreview);
-      setVersionDraft(current => current && current !== '4'
+      setVersionDraft(current => current && current !== '5.1'
         ? current
-        : (nextStatus?.suggestedVersion === '3' ? '4' : (nextStatus?.suggestedVersion || '4')));
+        : (nextStatus?.suggestedVersion || '5.1'));
       const fallbackRollbackVersion = preferredRollbackVersion
         || rollbackVersion
         || nextStatus?.previousRelease?.productVersion
@@ -1495,7 +1495,7 @@ function DeploymentTab() {
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
             <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Current version</p>
-            <p className={`mt-2 text-3xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{status?.currentVersion || '2'}</p>
+            <p className={`mt-2 text-3xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>{status?.currentVersion || '5'}</p>
             <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Current commit: {status?.currentRelease?.currentShortCommit || upgradePreview?.git?.currentShortCommit || 'unknown'}</p>
           </div>
           <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
@@ -1589,7 +1589,7 @@ const AUTH_TABS = [
 // Keep integrations in their own group so installed services such as Ollama and planned MCP
 // connectivity appear together instead of being mixed into the general admin settings list.
 const INTEGRATION_TABS = [
-  { id:'ai-provider', label:'Ollama', Icon: Bot,   description:'Manage the installed Ollama integration, model discovery, and AI Tutor provider settings.' },
+  { id:'ai-provider', label:'AI Provider', Icon: Bot,   description:'Manage AI provider integrations, active runtime selection, and AI Tutor settings.' },
   { id:'mcp',         label:'MCP',    Icon: ShieldCheck, description:'Review the planned MCP connection shape for external course and user-role administration.' },
 ];
 

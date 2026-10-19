@@ -2,10 +2,10 @@ import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { discoverModels, normalizeEndpoint, ollamaRequest } from '../lib/ollama.js';
-import { courseSources, retrieveSources, tutorSystemPrompt, type KnowledgeSource } from '../lib/aiKnowledge.js';
+import { courseSources, getFallbackSources, retrieveSources, tutorSystemPrompt, type KnowledgeSource } from '../lib/aiKnowledge.js';
+import { AI_CONFIG_KEY, aiConfigSchema, getActiveAiIntegration, getTutorResponseOptions, isOllamaIntegration, normalizeAiConfig } from '../lib/aiProviderConfig.js';
 
 export const aiRouter = Router();
-const CONFIG_KEY = 'ai.provider';
 const endpointSchema = z.string().trim().min(1).max(500).transform((value, context) => {
   try { return normalizeEndpoint(value); }
   catch (error) {
@@ -13,15 +13,26 @@ const endpointSchema = z.string().trim().min(1).max(500).transform((value, conte
     return z.NEVER;
   }
 });
-const configSchema = z.object({
-  provider: z.literal('ollama'), endpoint: endpointSchema,
-  model: z.string().trim().max(200), enabled: z.boolean(),
-}).strict().refine(config => !config.enabled || config.model.length > 0, { message: 'Select an installed chat model.' });
-const defaults = { provider: 'ollama' as const, endpoint: 'http://localhost:11434', model: '', enabled: false };
 
 async function readConfig() {
-  const row = await prisma.setting.findUnique({ where: { key: CONFIG_KEY } });
-  return row ? configSchema.parse(JSON.parse(row.value)) : defaults;
+  const row = await prisma.setting.findUnique({ where: { key: AI_CONFIG_KEY } });
+  return normalizeAiConfig(row ? JSON.parse(row.value) : null);
+}
+
+function validateConfig(config: unknown) {
+  const normalized = normalizeAiConfig(config);
+  const active = getActiveAiIntegration(normalized);
+  if (active?.enabled && !active.model.length) throw new Error('Select a model for the active AI Provider.');
+  return aiConfigSchema.parse(normalized);
+}
+
+function getEnabledRuntime(config: Awaited<ReturnType<typeof readConfig>>) {
+  const active = getActiveAiIntegration(config);
+  if (!active?.enabled) return null;
+  if (!isOllamaIntegration(active)) {
+    throw new Error('The active AI Provider is saved for administration, but runtime chat currently supports only Ollama. Set an Ollama integration as active to enable AI Tutor.');
+  }
+  return active;
 }
 
 function ensureAiAdmin(req: any, res: any) {
@@ -53,7 +64,7 @@ function handle(handler: RequestHandler): RequestHandler {
   };
 }
 
-const discoverModelsSchema = z.object({ endpoint: endpointSchema }).strict();
+const discoverModelsSchema = z.object({ provider: z.string().trim().min(1), endpoint: endpointSchema }).strict();
 
 aiRouter.get('/config', handle(async (req, res) => {
   if (!ensureAiAdmin(req, res)) return;
@@ -62,10 +73,10 @@ aiRouter.get('/config', handle(async (req, res) => {
 
 aiRouter.put('/config', handle(async (req, res) => {
   if (!ensureAiAdmin(req, res)) return;
-  const config = configSchema.parse(req.body);
+  const config = validateConfig(req.body);
   await prisma.setting.upsert({
-    where: { key: CONFIG_KEY },
-    create: { key: CONFIG_KEY, value: JSON.stringify(config) },
+    where: { key: AI_CONFIG_KEY },
+    create: { key: AI_CONFIG_KEY, value: JSON.stringify(config) },
     update: { value: JSON.stringify(config) },
   });
   res.json(config);
@@ -74,6 +85,10 @@ aiRouter.put('/config', handle(async (req, res) => {
 aiRouter.post('/models', handle(async (req, res) => {
   if (!ensureAiAdmin(req, res)) return;
   const input = discoverModelsSchema.parse(req.body);
+  if (input.provider !== 'ollama') {
+    res.json({ models: [] });
+    return;
+  }
   const models = await discoverModels(input.endpoint);
   res.json({ models });
 }));
@@ -147,12 +162,13 @@ aiRouter.post('/course-outline', handle(async (req, res) => {
   if (!access) return;
 
   const config = await readConfig();
-  if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
+  const runtime = getEnabledRuntime(config);
+  if (!runtime) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
   const course = await prisma.course.findUnique({ where: { id: input.courseId }, select: { title: true, description: true } });
 
   if (!course) { res.status(404).json({ error: 'Course not found.' }); return; }
-  const result = await ollamaRequest(config.endpoint, '/api/chat', {
-    model: config.model, stream: false, format: 'json',
+  const result = await ollamaRequest(runtime.endpoint, '/api/chat', {
+    model: runtime.model, stream: false, format: 'json',
     messages: [{ role: 'system', content: [
       'You design accurate, practical course outlines for the HCL Software Learning Hub.',
       'Return JSON only in this exact shape: {"weeks":[{"title":"...","modules":[{"title":"...","topics":[{"content":"..."}]}]}]}.',
@@ -517,9 +533,12 @@ function deriveCleanupHints(input: string, existingCourse: any) {
   const request = String(input || '');
   const normalized = request.toLowerCase();
   const existingWeeks = Array.isArray(existingCourse?.weeks) ? existingCourse.weeks : [];
-  const existingModules = existingWeeks.flatMap((week: any) => Array.isArray(week?.modules) ? week.modules : []);
-  const existingTopics = existingModules.flatMap((module: any) => Array.isArray(module?.topics) ? module.topics : []);
-  const existingResources = existingModules.flatMap((module: any) => Array.isArray(module?.resources) ? module.resources : []);
+  const existingModules = existingWeeks.flatMap((week: any) =>
+    (Array.isArray(week?.modules) ? week.modules : []));
+  const existingTopics = existingModules.flatMap((module: any) =>
+    (Array.isArray(module?.topics) ? module.topics : []));
+  const existingResources = existingModules.flatMap((module: any) =>
+    (Array.isArray(module?.resources) ? module.resources : []));
   const existingQuests = Array.isArray(existingCourse?.quests) ? existingCourse.quests : [];
   const namedItems = extractQuotedOrBulletedNames(request);
   const requestedUrls = extractDocumentationUrls(request).map((value) => normalizeResourceUrlKey(value)).filter(Boolean);
@@ -711,8 +730,9 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
   const access = await ensureCourseAiAccess(req, res, input.courseId);
   if (!access) return;
   const config = await readConfig();
+  const runtime = getEnabledRuntime(config);
 
-  if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
+  if (!runtime) { res.status(503).json({ error: 'AI is disabled. Configure the AI Provider first.' }); return; }
   const course = await prisma.course.findUnique({
     where: { id: input.courseId },
     select: {
@@ -805,8 +825,8 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
     ? summarizeBuilderAttachments(input.attachments)
     : 'No local attachments were supplied.';
   const cleanupHints = deriveCleanupHints(input.outline, course);
-  const result = await ollamaRequest(config.endpoint, '/api/chat', {
-    model: config.model, stream: false, format: 'json',
+  const result = await ollamaRequest(runtime.endpoint, '/api/chat', {
+    model: runtime.model, stream: false, format: 'json',
     messages: [{ role: 'system', content: [
       'You are the HCL Software Learning Hub full course designer.',
       'Use the AI Quest style: progressive learning, compact topics, scenario-based learning, one quiz quest per topic.',
@@ -854,7 +874,8 @@ aiRouter.post('/course-builder', handle(async (req, res) => {
 
 aiRouter.get('/status', handle(async (_req, res) => {
   const config = await readConfig();
-  res.json({ enabled: config.enabled, model: config.enabled ? config.model : null });
+  const active = getActiveAiIntegration(config);
+  res.json({ enabled: Boolean(active?.enabled && isOllamaIntegration(active)), model: active?.enabled ? active?.model || null : null, provider: active?.provider || null });
 }));
 
 const messageSchema = z.object({ role: z.enum(['user', 'assistant']), content: z.string().trim().min(1).max(4000) }).strict();
@@ -882,7 +903,8 @@ aiRouter.post('/chat', handle(async (req, res) => {
   lastRequests.set(userId, now);
   try {
     const config = await readConfig();
-    if (!config.enabled) { res.status(503).json({ error: 'AI is disabled. Ask an administrator to configure the AI Provider.' }); return; }
+    const runtime = getEnabledRuntime(config);
+    if (!runtime) { res.status(503).json({ error: 'AI is disabled. Ask an administrator to configure the AI Provider.' }); return; }
     const courses = await prisma.course.findMany({
       where: { ...(input.mode === 'course' ? { slug: input.courseSlug } : {}) },
       select: {
@@ -932,7 +954,9 @@ aiRouter.post('/chat', handle(async (req, res) => {
       const previousQuestion = [...input.history].reverse().find(message => message.role === 'user');
       if (previousQuestion) sources = retrieveSources(corpus, previousQuestion.content);
     }
-    if (!sources.length || EXTERNAL_RESOURCE_PATTERN.test(input.message)) {
+    // Keep simple tutor questions fast by skipping external web fetches unless the user explicitly
+    // asks for outside references, latest docs, or internet resources.
+    if (!sources.length && EXTERNAL_RESOURCE_PATTERN.test(input.message)) {
       const webQueryParts = [
         input.mode === 'course' ? courses[0]?.title : 'HCL Software Learning Hub',
         input.message,
@@ -956,22 +980,24 @@ aiRouter.post('/chat', handle(async (req, res) => {
       }
     }
     if (!sources.length) {
-      res.json({ answer: 'I could not find supporting material for that question in ' + (input.mode === 'course' ? 'this course. Ask about a course topic, or contact the moderator.' : 'the Learning Hub. Ask about the Hub or one of its courses, or contact the moderator.'), sources: [], model: config.model });
-      return;
-
+      sources = getFallbackSources(corpus, input.mode);
     }
-    const result = await ollamaRequest(config.endpoint, '/api/chat', {
-      model: config.model, stream: false,
+    if (!sources.length) {
+      res.json({ answer: 'I could not find supporting material for that question in ' + (input.mode === 'course' ? 'this course. Ask about a course topic, or contact the moderator.' : 'the Learning Hub. Ask about the Hub or one of its courses, or contact the moderator.'), sources: [], model: runtime.model });
+      return;
+    }
+    const result = await ollamaRequest(runtime.endpoint, '/api/chat', {
+      model: runtime.model, stream: false,
       messages: [
         { role: 'system', content: tutorSystemPrompt(input.mode, input.pace, sources) },
         ...input.history.slice(-6).map(message => ({ role: message.role, content: message.content.slice(0, 1500) })),
         { role: 'user', content: input.message },
       ],
-      options: { temperature: 0.2, num_predict: 650, num_ctx: 8192 },
+      options: getTutorResponseOptions({ message: input.message, pace: input.pace }, runtime.maxOutputTokens),
     });
     if (typeof result.message?.content !== 'string' || !result.message.content.trim()) throw new Error('Ollama returned no answer. Select a chat-capable model.');
     res.json({
-      answer: result.message.content.slice(0, 12000), model: config.model,
+      answer: result.message.content.slice(0, 12000), model: runtime.model,
       sources: sources.map((source, index) => ({ reference: index + 1, title: source.title, url: source.url })),
     });
   } finally { activeUsers.delete(userId); }

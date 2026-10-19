@@ -29,6 +29,9 @@ export const adminRouter = Router();
 
 adminRouter.use(requireRole('ADMIN'));
 
+const LOCAL_DEPLOYMENT_BASELINE = '5';
+const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '5.1';
+
 adminRouter.post('/db-backups', async (req, res) => {
   try {
     const rawLabel = typeof req.body?.label === 'string' ? req.body.label : 'manual-admin';
@@ -41,27 +44,22 @@ adminRouter.post('/db-backups', async (req, res) => {
 });
 
 adminRouter.get('/deployment/status', async (_req, res) => {
-  res.json(getDeploymentStatus('2'));
+  res.json(getDeploymentStatus(LOCAL_DEPLOYMENT_BASELINE));
 });
 
 adminRouter.get('/deployment/upgrade-preview', async (_req, res) => {
-  res.json(await getUpgradePreview('2'));
+  res.json(await getUpgradePreview(LOCAL_DEPLOYMENT_BASELINE));
 });
 
 adminRouter.get('/deployment/rollback-preview', async (req, res) => {
   const version = typeof req.query?.version === 'string' ? req.query.version : undefined;
-  res.json(await getRollbackPreview(version, '2'));
+  res.json(await getRollbackPreview(version, LOCAL_DEPLOYMENT_BASELINE));
 });
 
 adminRouter.post('/deployment/upgrade', async (req, res) => {
   try {
-    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '4';
+    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : LOCAL_DEPLOYMENT_DEFAULT_UPGRADE;
     const result = startUpgrade(version);
-    await prisma.setting.upsert({
-      where: { key: 'deployment.currentVersion' },
-      create: { key: 'deployment.currentVersion', value: version },
-      update: { value: version },
-    });
     res.status(202).json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Upgrade could not be started.';
@@ -76,11 +74,6 @@ adminRouter.post('/deployment/rollback', async (req, res) => {
     const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : '';
     if (!version) return res.status(400).json({ error: 'Rollback version is required.' });
     const result = startRollback(version);
-    await prisma.setting.upsert({
-      where: { key: 'deployment.currentVersion' },
-      create: { key: 'deployment.currentVersion', value: version },
-      update: { value: version },
-    });
     res.status(202).json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Rollback could not be started.';

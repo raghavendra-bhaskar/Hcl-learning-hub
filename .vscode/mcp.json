@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "learning-hub-demo": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "scripts/mcp-demo-server.mjs"
+      ]
+    },
+    "hcl-learning-hub-localhost-mcp": {
+      "uri": "http://127.0.0.1:3333/mcp",
+      "type": "http"
+    }
+  },
+  "inputs": []
+}

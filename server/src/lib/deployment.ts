@@ -14,7 +14,7 @@ const CURRENT_RELEASE_FILE = join(RELEASES_DIR, 'current-release.env');
 const PREVIOUS_RELEASE_FILE = join(RELEASES_DIR, 'previous-release.env');
 const UPGRADE_SCRIPT = join(DEPLOY_DIR, 'upgrade.sh');
 const ROLLBACK_SCRIPT = join(DEPLOY_DIR, 'rollback.sh');
-const BASELINE_VERSION = '2';
+const BASELINE_VERSION = '5';
 const MANUAL_ADMIN_BACKUP_PATTERN = /^hcl-hub-manual-admin-v\d+-\d{8}-\d{6}\.dump$/i;
 
 type RunResult = { stdout: string; stderr: string; code: number };
@@ -104,13 +104,14 @@ function toVersionParts(version: string) {
 function incrementVersion(version: string) {
   const parts = toVersionParts(version);
   if (parts.length && parts.every(part => Number.isFinite(part))) {
+    if (parts.length === 1) return `${parts[0]}.1`;
     const next = [...parts];
     next[next.length - 1] += 1;
     return next.join('.');
   }
   const numeric = Number.parseInt(String(version || '').trim(), 10);
-  if (Number.isFinite(numeric)) return String(numeric + 1);
-  return version ? `${version}-next` : '3';
+  if (Number.isFinite(numeric)) return `${numeric}.1`;
+  return version ? `${version}.1` : '5.1';
 }
 
 function statBackup(filePath: string): BackupInfo | null {

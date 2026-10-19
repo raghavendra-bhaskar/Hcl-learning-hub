@@ -97,6 +97,43 @@ Before you connect VS Code:
 11. Sign in and approve access.
 12. Return to VS Code and verify that the MCP tool list appears.
 
+## Option 3: Connect Windsurf or VS Code to the local demo MCP over localhost
+
+Use this when you want a local HTTP MCP entry that behaves more like a remote MCP server entry such as DevOps Loop.
+
+1. Open a terminal in the workspace root.
+2. Start the localhost MCP demo server:
+
+```bash
+npm run mcp:http
+```
+
+3. Confirm that the terminal prints a listening message for `http://127.0.0.1:3333/mcp`.
+4. Use this workspace MCP configuration:
+
+```json
+{
+  "servers": {
+    "hcl-learning-hub-localhost-mcp": {
+      "uri": "http://127.0.0.1:3333/mcp",
+      "type": "http"
+    }
+  },
+  "inputs": []
+}
+```
+
+5. Save `.vscode/mcp.json`.
+6. Open the MCP servers UI in Windsurf or VS Code.
+7. Start `hcl-learning-hub-localhost-mcp`.
+8. Verify that the tool list includes these demo tools:
+   - `get_deployment_defaults`
+   - `list_ai_provider_options`
+   - `get_workspace_version`
+   - `get_mcp_demo_status`
+
+This localhost demo does not require browser sign-in because it is a development-only server running on your machine.
+
 ## Authentication flow
 
 Expect a browser-based sign-in flow similar to the DevOps Loop MCP experience:
