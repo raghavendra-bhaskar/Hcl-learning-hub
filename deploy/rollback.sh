@@ -13,11 +13,64 @@ fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
 
+cleanup_release_pull_state() {
+  [ -n "${RELEASE_PULL_STATE_DIR:-}" ] || return 0
+  [ -d "$RELEASE_PULL_STATE_DIR" ] || return 0
+  local staged_file=""
+  local relative_path=""
+  local target_path=""
+  while IFS= read -r -d '' staged_file; do
+    relative_path="${staged_file#"$RELEASE_PULL_STATE_DIR"/}"
+    target_path="$INSTALL_DIR/$relative_path"
+    mkdir -p "$(dirname "$target_path")"
+    if [ "${RELEASE_STATE_RECORDED:-false}" = true ]; then
+      [ -e "$target_path" ] || mv "$staged_file" "$target_path"
+    else
+      mv -f "$staged_file" "$target_path"
+    fi
+  done < <(find "$RELEASE_PULL_STATE_DIR" -type f -print0 2>/dev/null)
+  rm -rf "$RELEASE_PULL_STATE_DIR"
+  RELEASE_PULL_STATE_DIR=""
+}
+
+prepare_release_files_for_checkout() {
+  [ -d "$RELEASES_DIR" ] || return 0
+  RELEASE_PULL_STATE_DIR="${RELEASE_PULL_STATE_DIR:-$(mktemp -d)}"
+  local release_file=""
+  local relative_path=""
+  local staged_path=""
+  while IFS= read -r -d '' release_file; do
+    relative_path="${release_file#"$INSTALL_DIR"/}"
+    if git ls-files --error-unmatch "$relative_path" >/dev/null 2>&1; then
+      continue
+    fi
+    staged_path="$RELEASE_PULL_STATE_DIR/$relative_path"
+    mkdir -p "$(dirname "$staged_path")"
+    cp -f "$release_file" "$staged_path"
+    rm -f "$release_file"
+    info "Temporarily moved untracked runtime file: $relative_path"
+  done < <(find "$RELEASES_DIR" -maxdepth 1 -type f -name '*.env' -print0 2>/dev/null)
+}
+
+finalize_rollback_exit() {
+  local exit_code="$1"
+  cleanup_release_pull_state
+  if [ "$exit_code" -ne 0 ] && [ "${NO_RESTART:-false}" != true ] && [ "${APP_STOPPED:-false}" = true ] && [ "${ROLLBACK_COMPLETED:-false}" != true ]; then
+    warn "Rollback failed after stopping the Hub — attempting automatic restart"
+    bash "$SCRIPT_DIR/start.sh" || warn "Automatic restart failed — start manually: bash deploy/start.sh"
+  fi
+}
+
 TARGET_VERSION=""
 RESTORE_FILE=""
 NO_RESTORE=false
 NO_RESTART=false
 ASSUME_YES=false
+RELEASE_PULL_STATE_DIR=""
+RELEASE_STATE_RECORDED=false
+APP_STOPPED=false
+ROLLBACK_COMPLETED=false
+trap 'finalize_rollback_exit "$?"' EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -235,12 +288,14 @@ fi
 
 banner "Rollback — step 2/5: Stop the Hub"
 bash "$SCRIPT_DIR/stop.sh" || warn "stop.sh reported an issue — continuing"
+APP_STOPPED=true
 
 banner "Rollback — step 3/5: Switch code"
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   warn "Local modifications detected — stashing them"
   git stash push -m "rollback.sh auto-stash ${TIMESTAMP}" || warn "git stash failed"
 fi
+prepare_release_files_for_checkout
 if [ -n "$TARGET_RELEASE_FILE" ]; then
   git checkout "$TARGET_COMMIT" >/dev/null 2>&1 || fail "Could not checkout commit $TARGET_COMMIT"
   ok "Checked out $TARGET_COMMIT"
@@ -288,6 +343,7 @@ RESTORE_SOURCE=${RESTORE_FILE}
 SYNC_MODE=archive-rollback
 EOF
 fi
+RELEASE_STATE_RECORDED=true
 
 if [ "$NO_RESTART" = true ]; then
   warn "--no-restart given. Start manually: bash deploy/start.sh"
@@ -295,6 +351,7 @@ if [ "$NO_RESTART" = true ]; then
 fi
 
 bash "$SCRIPT_DIR/start.sh"
+ROLLBACK_COMPLETED=true
 
 echo ""
 ok "Rollback complete. Active version: ${TARGET_PRODUCT_VERSION:-unknown}"

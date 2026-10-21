@@ -49,6 +49,55 @@ normalize_permissions() {
   ensure_execute_permissions
 }
 
+cleanup_release_pull_state() {
+  [ -n "${RELEASE_PULL_STATE_DIR:-}" ] || return 0
+  [ -d "$RELEASE_PULL_STATE_DIR" ] || return 0
+  local staged_file=""
+  local relative_path=""
+  local target_path=""
+  while IFS= read -r -d '' staged_file; do
+    relative_path="${staged_file#"$RELEASE_PULL_STATE_DIR"/}"
+    target_path="$INSTALL_DIR/$relative_path"
+    mkdir -p "$(dirname "$target_path")"
+    if [ "${RELEASE_STATE_RECORDED:-false}" = true ]; then
+      [ -e "$target_path" ] || mv "$staged_file" "$target_path"
+    else
+      mv -f "$staged_file" "$target_path"
+    fi
+  done < <(find "$RELEASE_PULL_STATE_DIR" -type f -print0 2>/dev/null)
+  rm -rf "$RELEASE_PULL_STATE_DIR"
+  RELEASE_PULL_STATE_DIR=""
+}
+
+prepare_release_files_for_pull() {
+  [ -d "$RELEASES_DIR" ] || return 0
+  RELEASE_PULL_STATE_DIR="${RELEASE_PULL_STATE_DIR:-$(mktemp -d)}"
+  local release_file=""
+  local relative_path=""
+  local staged_path=""
+  while IFS= read -r -d '' release_file; do
+    relative_path="${release_file#"$INSTALL_DIR"/}"
+    if git ls-files --error-unmatch "$relative_path" >/dev/null 2>&1; then
+      continue
+    fi
+    staged_path="$RELEASE_PULL_STATE_DIR/$relative_path"
+    mkdir -p "$(dirname "$staged_path")"
+    cp -f "$release_file" "$staged_path"
+    rm -f "$release_file"
+    info "Temporarily moved untracked runtime file: $relative_path"
+  done < <(find "$RELEASES_DIR" -maxdepth 1 -type f -name '*.env' -print0 2>/dev/null)
+}
+
+finalize_sync_exit() {
+  local exit_code="$1"
+  cleanup_release_pull_state
+  [ -n "${ASKPASS:-}" ] && rm -f "$ASKPASS"
+  if [ "$exit_code" -ne 0 ] && [ "${NO_RESTART:-false}" != true ] && [ "${APP_STOPPED:-false}" = true ] && [ "${SYNC_COMPLETED:-false}" != true ]; then
+    warn "Sync failed after stopping the Hub — attempting automatic restart"
+    bash "$SCRIPT_DIR/start.sh" || warn "Automatic restart failed — start manually: bash deploy/start.sh"
+  fi
+}
+
 resolve_restore_file() {
   local requested="$1"
   local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
@@ -308,6 +357,12 @@ CODE_ONLY=false
 NO_BACKUP=false
 VERSION_LABEL=""
 PATCH_RELEASE_NOTES="${PATCH_RELEASE_NOTES:-}"
+RELEASE_PULL_STATE_DIR=""
+RELEASE_STATE_RECORDED=false
+APP_STOPPED=false
+SYNC_COMPLETED=false
+ASKPASS=""
+trap 'finalize_sync_exit "$?"' EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -417,6 +472,7 @@ fi
 
 banner "Sync — step 2/7: Stop the Hub"
 bash "$SCRIPT_DIR/stop.sh" || warn "stop.sh reported an issue — continuing"
+APP_STOPPED=true
 
 banner "Sync — step 3/7: Pull the latest code"
 
@@ -436,14 +492,14 @@ ASK
   export HCL_HUB_GIT_TOKEN
   export GIT_TERMINAL_PROMPT=0
 fi
-cleanup() { [ -n "$ASKPASS" ] && rm -f "$ASKPASS"; return 0; }
-trap cleanup EXIT
 
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   warn "Local modifications detected — stashing them"
   git stash push -m "sync.sh auto-stash ${TIMESTAMP}" || warn "git stash failed"
   info "Restore later with: git stash pop"
 fi
+
+prepare_release_files_for_pull
 
 BEFORE="$(git rev-parse --short HEAD)"
 BEFORE_FULL="$(git rev-parse HEAD)"
@@ -498,6 +554,7 @@ RESTORE_SOURCE=${RESTORE_FILE}
 SYNC_MODE=$([ "$CODE_ONLY" = true ] && echo code-only || echo full)
 EOF
 cp -f "$RELEASE_FILE" "$CURRENT_RELEASE_FILE"
+RELEASE_STATE_RECORDED=true
 update_patch_archive "$PRODUCT_VERSION" "$RELEASE_FILE" "${PATCH_RELEASE_NOTES:-$(build_release_notes "$PRODUCT_VERSION")}" || warn "Patch archive update skipped"
 ok "Release metadata recorded: ${PRODUCT_VERSION}"
 
@@ -543,6 +600,7 @@ fi
 
 bash "$SCRIPT_DIR/start.sh"
 normalize_permissions
+SYNC_COMPLETED=true
 
 echo ""
 if [ "$CODE_ONLY" = true ]; then
