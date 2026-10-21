@@ -436,8 +436,8 @@ fi
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
-DB_NAME="${DB_NAME:-hclhub}"
-DB_USER="${DB_USER:-hcluser}"
+DB_NAME="${DB_NAME:-hcl_learning_hub}"
+DB_USER="${DB_USER:-hcl_hub}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-postgres}"
 DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
@@ -445,6 +445,114 @@ DB_CONTAINER_ENGINE="${DB_CONTAINER_ENGINE:-}"
 if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
+
+# ── Kubernetes sync (early exit — replaces the source deployment flow) ────────
+if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
+  K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
+  export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+  KUBECTL="kubectl"
+  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+  BUILD_CMD="podman"
+  command -v podman >/dev/null 2>&1 || BUILD_CMD="docker"
+  API_IMAGE="hcl-hub/api:latest"
+  WEB_IMAGE="hcl-hub/web:latest"
+  CREDS="$INSTALL_DIR/.deploy-credentials"
+
+  cd "$INSTALL_DIR"
+
+  # ── Backup ──────────────────────────────────────────────────────────────────
+  if [ "$CODE_ONLY" = false ] && [ "$NO_BACKUP" = false ]; then
+    banner "K8s Sync — step 1/4: Database backup"
+    PG_POD="$($KUBECTL get pod -n "$K8S_NS" -l app=postgres \
+              -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    if [ -n "$PG_POD" ]; then
+      mkdir -p "$INSTALL_DIR/backups"
+      K8S_TS="$(date +%Y%m%d-%H%M%S)"
+      K8S_BKP="$INSTALL_DIR/backups/hcl-hub-${K8S_TS}.dump"
+      K8S_DB_PWD="$(grep -E '^DB_PASSWORD=' "$CREDS" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+      set +e
+      $KUBECTL exec -n "$K8S_NS" "$PG_POD" -- \
+        sh -c "PGPASSWORD='${K8S_DB_PWD}' pg_dump -U ${DB_USER} -d ${DB_NAME} -Fc" \
+        > "$K8S_BKP" 2>/dev/null
+      K8S_RC=$?
+      set -e
+      if [ $K8S_RC -eq 0 ] && [ -s "$K8S_BKP" ]; then
+        cp -f "$K8S_BKP" "$INSTALL_DIR/backups/latest.dump" 2>/dev/null || true
+        ok "Backup: $K8S_BKP"
+        ls -1t "$INSTALL_DIR/backups"/hcl-hub-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f
+      else
+        rm -f "$K8S_BKP" 2>/dev/null || true
+        warn "DB backup failed — continuing without backup"
+      fi
+    else
+      warn "No postgres pod found — skipping backup"
+    fi
+  else
+    banner "K8s Sync — step 1/4: Database backup skipped"
+  fi
+
+  if [ "$BACKUP_ONLY" = true ]; then
+    ok "--backup-only complete."
+    exit 0
+  fi
+
+  # ── Git pull ─────────────────────────────────────────────────────────────────
+  banner "K8s Sync — step 2/4: Pull latest code"
+  K8S_ASKPASS=""
+  if [ -f "$INSTALL_DIR/.hub-token" ]; then
+    K8S_ASKPASS="$(mktemp)"; chmod 700 "$K8S_ASKPASS"
+    cat > "$K8S_ASKPASS" <<'ASK'
+#!/bin/bash
+case "$1" in
+  *[Uu]sername*) echo "x-access-token" ;;
+  *) echo "${HCL_HUB_GIT_TOKEN}" ;;
+esac
+ASK
+    export GIT_ASKPASS="$K8S_ASKPASS"
+    HCL_HUB_GIT_TOKEN="$(cat "$INSTALL_DIR/.hub-token")"
+    export HCL_HUB_GIT_TOKEN
+    export GIT_TERMINAL_PROMPT=0
+  fi
+  if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    git stash push -m "sync.sh k8s auto-stash $(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  fi
+  git pull origin "$GIT_BRANCH" 2>/dev/null && ok "Code updated" \
+    || warn "git pull failed — using existing code"
+  [ -n "$K8S_ASKPASS" ] && rm -f "$K8S_ASKPASS" || true
+
+  # ── Rebuild images ───────────────────────────────────────────────────────────
+  banner "K8s Sync — step 3/4: Rebuild and import images"
+  info "Building API image ..."
+  $BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile ./server \
+    || fail "API image build failed — sync aborted."
+  info "Building web image ..."
+  $BUILD_CMD build -t "$WEB_IMAGE" -f Dockerfile . \
+    || fail "Web image build failed — sync aborted."
+  ok "Images built"
+
+  info "Importing API image into k3s containerd ..."
+  $BUILD_CMD save "$API_IMAGE" | sudo k3s ctr images import - \
+    || fail "API image import failed"
+  info "Importing web image into k3s containerd ..."
+  $BUILD_CMD save "$WEB_IMAGE" | sudo k3s ctr images import - \
+    || fail "Web image import failed"
+  ok "Images imported into k3s"
+
+  # ── Rollout restart ──────────────────────────────────────────────────────────
+  banner "K8s Sync — step 4/4: Rollout restart"
+  $KUBECTL rollout restart deployment/api deployment/web -n "$K8S_NS"
+  $KUBECTL rollout status deployment/api -n "$K8S_NS" --timeout=180s \
+    && ok "API rolled out" || warn "API rollout still in progress — check: $KUBECTL rollout status deployment/api -n $K8S_NS"
+  $KUBECTL rollout status deployment/web -n "$K8S_NS" --timeout=120s \
+    && ok "Web rolled out" || warn "Web rollout still in progress"
+
+  banner "K8s Sync complete"
+  echo ""
+  echo "  Application : https://${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
+  echo "  Pods        : $KUBECTL get pods -n ${K8S_NS}"
+  echo ""
+  exit 0
+fi
 
 ensure_execute_permissions
 

@@ -1,9 +1,10 @@
 #!/bin/bash
 # ============================================================
-# HCL Software Learning Hub — Stop (source deployment)
+# HCL Software Learning Hub — Stop
 #
-# Stops the UI and the API in one command. PostgreSQL keeps running
-# (it is a system service) unless --with-db is given. No data is lost.
+# Stops the application.  Detects deployment mode automatically:
+#   kubernetes  — scales down api + web Deployments (keeps PostgreSQL)
+#   source      — kills the npm process / frees ports
 #
 # Usage:
 #   bash deploy/stop.sh [--with-db]
@@ -25,6 +26,33 @@ if [ "${1:-}" = "--with-db" ]; then WITH_DB=true; fi
 
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
+
+# ── Kubernetes mode ───────────────────────────────────────────────────────────
+if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
+  K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
+  export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+  KUBECTL="kubectl"
+  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+
+  banner "Stopping ${APP_NAME:-hcl-learning-hub} (Kubernetes)"
+
+  info "Scaling API and web deployments to 0 ..."
+  $KUBECTL scale deployment/api deployment/web -n "$K8S_NS" --replicas=0 \
+    2>/dev/null && ok "API and web pods stopped" || warn "kubectl scale failed — pods may still be running"
+
+  if [ "$WITH_DB" = true ]; then
+    info "Scaling PostgreSQL StatefulSet to 0 ..."
+    $KUBECTL scale statefulset/postgres -n "$K8S_NS" --replicas=0 2>/dev/null \
+      && ok "PostgreSQL stopped" || warn "kubectl scale postgres failed"
+  else
+    info "PostgreSQL keeps running (use --with-db to stop it too)"
+  fi
+
+  ok "Stopped. All data is intact."
+  exit 0
+fi
+
+# ── Source / process mode (legacy) ───────────────────────────────────────────
 UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
 PG_SERVICE="${PG_SERVICE:-postgresql}"

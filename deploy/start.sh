@@ -1,16 +1,15 @@
 #!/bin/bash
 # ============================================================
-# HCL Software Learning Hub — Start (source deployment)
+# HCL Software Learning Hub — Start
 #
-# ONE command starts everything: PostgreSQL, the API and the UI.
-# You never need to run "npm run dev" in AI-Quest and again in server/ —
-# the root dev script already runs both, and this wraps it as a
-# background service with logs, a PID file and health checks.
+# Starts the application. Detects deployment mode automatically:
+#   kubernetes  — scales up Deployments via kubectl
+#   source      — starts PostgreSQL + API + UI via npm run dev
 #
 # Usage:
 #   bash deploy/start.sh [--foreground]
 #
-#   --foreground   Run attached to this terminal (Ctrl+C stops it)
+#   --foreground   (source mode only) run in the foreground
 # ============================================================
 
 set -euo pipefail
@@ -31,6 +30,42 @@ if [ "${1:-}" = "--foreground" ]; then FOREGROUND=true; fi
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 SERVER_FQDN="${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
+
+# ── Kubernetes mode ───────────────────────────────────────────────────────────
+if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
+  K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
+  export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+  KUBECTL="kubectl"
+  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+
+  banner "Starting ${APP_NAME:-hcl-learning-hub} (Kubernetes)"
+
+  info "Ensuring PostgreSQL is running ..."
+  $KUBECTL scale statefulset/postgres -n "$K8S_NS" --replicas=1 2>/dev/null || true
+  $KUBECTL wait pod -l app=postgres -n "$K8S_NS" \
+    --for=condition=ready --timeout=120s 2>/dev/null \
+    && ok "PostgreSQL ready" || warn "PostgreSQL not ready yet — continuing anyway"
+
+  info "Scaling API and web deployments to 1 ..."
+  $KUBECTL scale deployment/api deployment/web -n "$K8S_NS" --replicas=1 2>/dev/null || true
+  $KUBECTL rollout status deployment/api -n "$K8S_NS" --timeout=120s 2>/dev/null \
+    && ok "API deployment ready" || warn "API rollout still in progress"
+  $KUBECTL rollout status deployment/web -n "$K8S_NS" --timeout=120s 2>/dev/null \
+    && ok "Web deployment ready" || warn "Web rollout still in progress"
+
+  banner "Running"
+  cat <<K8S_SUMMARY
+
+  Application : https://${SERVER_FQDN}
+  Logs (API)  : $KUBECTL logs -n ${K8S_NS} -l app=api -f
+  Logs (web)  : $KUBECTL logs -n ${K8S_NS} -l app=web -f
+  Stop        : bash ${INSTALL_DIR}/deploy/stop.sh
+
+K8S_SUMMARY
+  exit 0
+fi
+
+# ── Source / process mode (legacy) ───────────────────────────────────────────
 UI_PORT="${UI_PORT:-5173}"
 API_PORT="${API_PORT:-4000}"
 PG_SERVICE="${PG_SERVICE:-postgresql}"

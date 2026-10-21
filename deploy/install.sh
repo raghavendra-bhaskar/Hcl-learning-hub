@@ -71,13 +71,14 @@ APP_NAME="hcl-learning-hub"
 INSTALL_DIR="$PARENT_DIR/$APP_NAME"
 RUN_USER="$(id -un)"
 K8S_NS="hcl-learning-hub"
-WEB_PORT=30080
+HTTPS_PORT=443
+HTTP_PORT=80
 DB_USER="hcl_hub"
 DB_NAME="hcl_learning_hub"
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-ACCESS_URL="http://${SERVER_FQDN}:${WEB_PORT}"
+ACCESS_URL="https://${SERVER_FQDN}"
 
 clear || true
 cat <<BANNER
@@ -87,7 +88,7 @@ cat <<BANNER
   User     : ${RUN_USER}
   Install  : ${INSTALL_DIR}
   Hostname : ${SERVER_FQDN}
-  Access   : ${ACCESS_URL}
+  Access   : ${ACCESS_URL}  (HTTPS — self-signed cert)
 
 BANNER
 
@@ -132,7 +133,16 @@ ok "Base packages present"
 # ── Step 2: k3s (Kubernetes) ─────────────────────────────────────────────────
 banner "Step 2/10: k3s — Kubernetes"
 
-if command -v k3s >/dev/null 2>&1 && sudo k3s kubectl cluster-info >/dev/null 2>&1; then
+# RHEL 9.0: the pcpupstream SELinux module conflicts with the container-selinux
+# upgrade that k3s-selinux triggers.  Disable it before k3s installs its RPMs.
+if [ "$PKG" = "dnf" ] && sudo semodule -l 2>/dev/null | grep -q pcpupstream; then
+  sudo semodule -d pcpupstream 2>/dev/null || true
+  info "Disabled conflicting pcpupstream SELinux module (RHEL 9 known issue)"
+fi
+
+_k3s_node_ready() { sudo k3s kubectl get nodes --no-headers 2>/dev/null | grep -q " Ready"; }
+
+if _k3s_node_ready; then
   ok "k3s already installed and running: $(k3s --version 2>/dev/null | head -1)"
 else
   info "Installing k3s (downloads ~60 MB)..."
@@ -140,13 +150,13 @@ else
     || fail "k3s install failed. Check internet connectivity and try again."
   ok "k3s installed"
 
-  info "Waiting for k3s to be ready (up to 2 minutes)..."
-  for i in $(seq 1 40); do
-    if sudo k3s kubectl cluster-info >/dev/null 2>&1; then break; fi
+  info "Waiting for k3s node to be Ready (up to 3 minutes)..."
+  for i in $(seq 1 60); do
+    if _k3s_node_ready; then break; fi
     sleep 3
   done
-  sudo k3s kubectl cluster-info >/dev/null 2>&1 \
-    || fail "k3s did not become ready. Check: sudo journalctl -u k3s -n 50"
+  _k3s_node_ready \
+    || fail "k3s node did not become Ready. Check: sudo journalctl -u k3s -n 80"
   ok "k3s cluster is ready"
 fi
 
@@ -285,10 +295,28 @@ ok "ConfigMap applied"
 $KUBECTL apply -f k8s/3-postgres.yaml
 ok "PostgreSQL StatefulSet applied"
 
+# ── TLS certificate (self-signed, 10-year) ───────────────────────────────────
+info "Generating self-signed TLS certificate for ${SERVER_FQDN} ..."
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /tmp/hcl-hub-tls.key \
+  -out    /tmp/hcl-hub-tls.crt \
+  -subj   "/CN=${SERVER_FQDN}/O=HCL Software Learning Hub" \
+  -addext "subjectAltName=DNS:${SERVER_FQDN},DNS:localhost,IP:${PRIMARY_IP}" \
+  2>/dev/null \
+  || fail "openssl failed to generate TLS certificate"
+
+$KUBECTL create secret tls hcl-hub-tls \
+  --namespace "$K8S_NS" \
+  --cert=/tmp/hcl-hub-tls.crt \
+  --key=/tmp/hcl-hub-tls.key \
+  --save-config --dry-run=client -o yaml | $KUBECTL apply -f -
+rm -f /tmp/hcl-hub-tls.crt /tmp/hcl-hub-tls.key
+ok "TLS secret hcl-hub-tls created"
+
 # Build patched API and Web manifests in a temp dir:
 #   • Replace GHCR image references with local image names
 #   • Set imagePullPolicy: Never  (images are local, no registry push needed)
-#   • Set FRONTEND_ORIGIN to the real VM access URL
+#   • Set FRONTEND_ORIGIN to the real VM access URL (https)
 K8S_TMP="$(mktemp -d)"
 trap 'rm -rf "$K8S_TMP"; [ -n "$ASKPASS" ] && rm -f "$ASKPASS"' EXIT
 
@@ -308,24 +336,65 @@ sed \
 $KUBECTL apply -f "$K8S_TMP/5-web.yaml"
 ok "Web Deployment applied (1 replica)"
 
-# NodePort service — external access at http://NODE-IP:30080
-cat > "$K8S_TMP/nodeport.yaml" <<NODEPORT_EOF
-apiVersion: v1
-kind: Service
+# HTTPS Ingress — Traefik terminates TLS on port 443, forwards to web:80
+# HTTP Ingress — redirects port 80 → 443 via a Traefik Middleware
+cat > "$K8S_TMP/ingress-tls.yaml" <<INGRESS_EOF
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
 metadata:
-  name: web-nodeport
+  name: redirect-to-https
   namespace: hcl-learning-hub
 spec:
-  type: NodePort
-  selector:
-    app: web
-  ports:
-    - port: 80
-      targetPort: 80
-      nodePort: ${WEB_PORT}
-NODEPORT_EOF
-$KUBECTL apply -f "$K8S_TMP/nodeport.yaml"
-ok "NodePort service applied — access at port ${WEB_PORT}"
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hcl-learning-hub-https
+  namespace: hcl-learning-hub
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - secretName: hcl-hub-tls
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hcl-learning-hub-http-redirect
+  namespace: hcl-learning-hub
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: hcl-learning-hub-redirect-to-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80
+INGRESS_EOF
+$KUBECTL apply -f "$K8S_TMP/ingress-tls.yaml"
+ok "Traefik HTTPS Ingress applied (port ${HTTPS_PORT}, HTTP → HTTPS redirect on port ${HTTP_PORT})"
 
 # hub.env for any remaining deploy/*.sh scripts that read it
 cat > deploy/hub.env <<HUBENV
@@ -333,7 +402,8 @@ APP_NAME=${APP_NAME}
 SERVER_FQDN=${SERVER_FQDN}
 DEPLOY_MODE=kubernetes
 K8S_NAMESPACE=${K8S_NS}
-WEB_PORT=${WEB_PORT}
+HTTPS_PORT=${HTTPS_PORT}
+HTTP_PORT=${HTTP_PORT}
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 GIT_REPO=${GIT_REPO}
@@ -418,14 +488,16 @@ ok "Web pod ready"
 banner "Step 10/10: Firewall"
 
 if command -v firewall-cmd >/dev/null 2>&1 && sudo systemctl is-active --quiet firewalld 2>/dev/null; then
-  sudo firewall-cmd --permanent --add-port="${WEB_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo firewall-cmd --permanent --add-port="${HTTPS_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo firewall-cmd --permanent --add-port="${HTTP_PORT}/tcp"  >/dev/null 2>&1 || true
   sudo firewall-cmd --reload >/dev/null 2>&1 || true
-  ok "firewalld: port ${WEB_PORT}/tcp opened"
+  ok "firewalld: ports ${HTTPS_PORT}/tcp (HTTPS) and ${HTTP_PORT}/tcp (HTTP redirect) opened"
 elif command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
-  sudo ufw allow "${WEB_PORT}/tcp" >/dev/null 2>&1 || true
-  ok "ufw: port ${WEB_PORT}/tcp opened"
+  sudo ufw allow "${HTTPS_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo ufw allow "${HTTP_PORT}/tcp"  >/dev/null 2>&1 || true
+  ok "ufw: ports ${HTTPS_PORT}/tcp and ${HTTP_PORT}/tcp opened"
 else
-  warn "No managed firewall detected — ensure port ${WEB_PORT}/tcp is reachable from your browser"
+  warn "No managed firewall detected — ensure ports ${HTTPS_PORT}/tcp and ${HTTP_PORT}/tcp are reachable"
 fi
 
 # Save credentials
@@ -451,6 +523,7 @@ banner "Installation complete"
 cat <<SUMMARY
 
   Application URL : ${ACCESS_URL}
+  (self-signed cert — click Advanced → Proceed in the browser)
   Admin login     : admin@local / ${ADMIN_PASSWORD}
   Install dir     : ${INSTALL_DIR}
   Credentials     : ${INSTALL_DIR}/.deploy-credentials
@@ -464,10 +537,6 @@ cat <<SUMMARY
     Remove everything    :  $KUBECTL delete namespace ${K8S_NS}
 
   To rebuild and redeploy after a code change:
-    cd ${INSTALL_DIR}
-    git pull
-    podman build -t hcl-hub/api:latest -f server/Dockerfile ./server
-    podman save hcl-hub/api:latest | sudo k3s ctr images import -
-    $KUBECTL rollout restart deployment/api -n ${K8S_NS}
+    bash ${INSTALL_DIR}/deploy/sync.sh
 
 SUMMARY
