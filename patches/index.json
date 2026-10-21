@@ -1,0 +1,35 @@
+{
+  "product": "HCL Learning Hub",
+  "purpose": "Manual version archive for product version selection and patch tracking.",
+  "currentVersion": "6",
+  "availableVersions": [
+    {
+      "version": "3",
+      "displayVersion": "3.0.0",
+      "defaultNextPatch": "3.1",
+      "status": "archived",
+      "metadataFile": "patches/version-3.json"
+    },
+    {
+      "version": "4",
+      "displayVersion": "4.0.0",
+      "defaultNextPatch": "4.1",
+      "status": "archived",
+      "metadataFile": "patches/version-4.json"
+    },
+    {
+      "version": "5",
+      "displayVersion": "5.0.0",
+      "defaultNextPatch": "5.1",
+      "status": "previous",
+      "metadataFile": "patches/version-5.json"
+    },
+    {
+      "version": "6",
+      "displayVersion": "6.0.0",
+      "defaultNextPatch": "6.1",
+      "status": "current",
+      "metadataFile": "patches/version-6.json"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": "3",
+  "displayVersion": "3.0.0",
+  "defaultNextPatch": "3.1",
+  "status": "archived",
+  "recordedReleaseMetadata": false,
+  "releaseMetadataSource": "manual patch archive",
+  "releaseFile": "",
+  "notes": [
+    "Added to the manual patch archive so product version 3 remains selectable for reference.",
+    "Historical release commit and backup metadata were not preserved in the current repo release files."
+  ]
+}

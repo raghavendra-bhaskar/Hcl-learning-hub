@@ -12,19 +12,13 @@
       "command": "node",
       "args": ["${workspaceFolder:AI-Quest}/scripts/mcp-course-server.mjs"],
       "env": {
-        "HCL_HUB_API_URL": "${input:hclHubUrl}",
+        "HCL_HUB_API_URL": "http://127.0.0.1:4000",
         "HCL_HUB_EMAIL": "${input:hclHubEmail}",
         "HCL_HUB_PASSWORD": "${input:hclHubPassword}"
       }
     }
   },
   "inputs": [
-    {
-      "id": "hclHubUrl",
-      "type": "promptString",
-      "description": "Learning Hub VM HTTPS URL",
-      "default": "https://blmycldtl596461.nonprod.hclpnp.com"
-    },
     {
       "id": "hclHubEmail",
       "type": "promptString",

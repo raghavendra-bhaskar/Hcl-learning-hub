@@ -47,6 +47,23 @@ const tools = [
   defineTool('get_course', 'Get a course and its weeks, modules, topics, resources, and quest count.', {
     slug: { type: 'string', description: 'Course slug, for example ai-quest.' },
   }, ['slug']),
+  defineTool('list_topics', 'List topics grouped by week and module for a course.', {
+    slug: { type: 'string', description: 'Course slug, for example ai-quest.' },
+  }, ['slug']),
+  defineTool('list_quests', 'List the quests for a course by course ID.', {
+    courseId: { type: 'string' },
+  }, ['courseId']),
+  defineTool('list_moderators', 'List assigned moderator names and email addresses for a course. Requires administrator permission.', {
+    slug: { type: 'string', description: 'Course slug, for example ai-quest.' },
+  }, ['slug']),
+  defineTool('list_course_learners', 'List opted, in-progress, and completed learners with completion percentages for a course visible to the current manager or administrator.', {
+    slug: { type: 'string', description: 'Course slug, for example devops-loop.' },
+  }, ['slug']),
+  defineTool('preview_course_builder', 'Generate a reviewable AI course-builder plan from an outline and verified resource URLs. Does not save course content.', {
+    courseId: { type: 'string' },
+    outline: { type: 'string' },
+    resourceUrls: { type: 'array', items: { type: 'string' } },
+  }, ['courseId', 'outline']),
   defineTool('create_course', 'Create a course on the VM. Requires administrator permission.', courseFields, ['title', 'slug']),
   defineTool('update_course', 'Update course metadata by course ID. Requires administrator or assigned moderator permission.', {
     courseId: { type: 'string' },
@@ -125,7 +142,8 @@ function getApiBaseUrl() {
     throw new Error('Learning Hub API URL must be an HTTP(S) URL without credentials, query, or fragment.');
   }
   const path = url.pathname.replace(/\/+$/, '');
-  url.pathname = path.endsWith('/api') ? path : `${path}/api`;
+  const directLocalApi = isLoopback && url.port === '4000' && !path;
+  url.pathname = directLocalApi || path.endsWith('/api') ? path || '/' : `${path}/api`;
   return url.toString().replace(/\/$/, '');
 }
 
@@ -133,6 +151,18 @@ const apiBaseUrl = getApiBaseUrl();
 const email = requiredEnv('HCL_HUB_EMAIL');
 const password = requiredEnv('HCL_HUB_PASSWORD');
 let accessToken;
+
+async function fetchHub(path, options) {
+  try {
+    return await fetch(`${apiBaseUrl}${path}`, options);
+  } catch (error) {
+    const cause = error instanceof Error ? error.cause : null;
+    const networkError = cause instanceof AggregateError ? cause.errors[0] : cause;
+    const code = networkError && typeof networkError === 'object' && 'code' in networkError ? String(networkError.code) : '';
+    const detail = code || (networkError instanceof Error ? networkError.message : error instanceof Error ? error.message : 'Unknown network error');
+    throw new Error(`Cannot reach Learning Hub API at ${new URL(apiBaseUrl).origin} (${detail}). Check the VM URL, VPN, proxy, and TLS configuration.`);
+  }
+}
 
 function writeMessage(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -147,7 +177,7 @@ function replyError(id, code, message) {
 }
 
 async function login() {
-  const response = await fetch(`${apiBaseUrl}/auth/local/login`, {
+  const response = await fetchHub('/auth/local/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -163,7 +193,7 @@ async function login() {
 
 async function apiRequest(method, path, body, retry = true) {
   if (!accessToken) await login();
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetchHub(path, {
     method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -208,6 +238,40 @@ async function callTool(name, input = {}) {
     case 'get_course':
       requireFields(input, ['slug']);
       return apiRequest('GET', `/courses-api/${encodeURIComponent(input.slug)}`);
+    case 'list_topics': {
+      requireFields(input, ['slug']);
+      const course = await apiRequest('GET', `/courses-api/${encodeURIComponent(input.slug)}`);
+      return course.weeks.flatMap(week => week.modules.map(module => ({
+        week: { id: week.id, title: week.title, weekNumber: week.weekNumber },
+        module: { id: module.id, title: module.title },
+        topics: module.topics,
+      })));
+    }
+    case 'list_quests':
+      requireFields(input, ['courseId']);
+      return apiRequest('GET', `/courses-api/${encodeURIComponent(input.courseId)}/quests`);
+    case 'list_moderators':
+      requireFields(input, ['slug']);
+      return apiRequest('GET', `/courses-api/${encodeURIComponent(input.slug)}/moderators`);
+    case 'list_course_learners': {
+      requireFields(input, ['slug']);
+      const learners = await apiRequest('GET', '/manager/all-learners');
+      return learners.flatMap(learner => {
+        if (learner.role === 'ADMIN') return [];
+        const certification = learner.certifications.find(cert => cert.certId === input.slug);
+        const progress = learner.courseProgress.find(course => course.slug === input.slug);
+        const status = progress?.status || (certification?.status === 'assigned' ? 'opted' : null);
+        return status ? [{ name: learner.name, email: learner.email, status, percentage: progress?.percentage ?? 0 }] : [];
+      });
+    }
+    case 'preview_course_builder':
+      requireFields(input, ['courseId', 'outline']);
+      return apiRequest('POST', '/ai/course-builder', {
+        courseId: input.courseId,
+        outline: input.outline,
+        mode: 'create',
+        resourceUrls: input.resourceUrls || [],
+      });
     case 'create_course':
       requireFields(input, ['title', 'slug']);
       return apiRequest('POST', '/courses-api/', input);

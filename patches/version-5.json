@@ -1,0 +1,13 @@
+{
+  "version": "5",
+  "displayVersion": "5.0.0",
+  "defaultNextPatch": "5.1",
+  "status": "previous",
+  "recordedReleaseMetadata": true,
+  "releaseMetadataSource": "releases/previous-release.env",
+  "releaseFile": "releases/previous-release.env",
+  "notes": [
+    "Version 5 is preserved as the previous recorded release in the deployment metadata.",
+    "Use this record when you want to present or refer to the product as version 5."
+  ]
+}

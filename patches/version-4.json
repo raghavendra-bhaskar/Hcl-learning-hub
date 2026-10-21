@@ -1,0 +1,13 @@
+{
+  "version": "4",
+  "displayVersion": "4.0.0",
+  "defaultNextPatch": "4.1",
+  "status": "archived",
+  "recordedReleaseMetadata": false,
+  "releaseMetadataSource": "manual patch archive",
+  "releaseFile": "",
+  "notes": [
+    "Added to the manual patch archive so product version 4 remains selectable for reference.",
+    "Historical release commit and backup metadata were not preserved in the current repo release files."
+  ]
+}

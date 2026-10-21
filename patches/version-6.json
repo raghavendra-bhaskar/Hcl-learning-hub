@@ -1,0 +1,13 @@
+{
+  "version": "6",
+  "displayVersion": "6.0.0",
+  "defaultNextPatch": "6.1",
+  "status": "current",
+  "recordedReleaseMetadata": true,
+  "releaseMetadataSource": "releases/current-release.env",
+  "releaseFile": "releases/current-release.env",
+  "notes": [
+    "Version 6 is the current maintained product version in the deployment metadata.",
+    "Use this record when you want the product to display or operate as version 6."
+  ]
+}

@@ -14,7 +14,7 @@ const CURRENT_RELEASE_FILE = join(RELEASES_DIR, 'current-release.env');
 const PREVIOUS_RELEASE_FILE = join(RELEASES_DIR, 'previous-release.env');
 const UPGRADE_SCRIPT = join(DEPLOY_DIR, 'upgrade.sh');
 const ROLLBACK_SCRIPT = join(DEPLOY_DIR, 'rollback.sh');
-const BASELINE_VERSION = '5';
+const BASELINE_VERSION = '6';
 const MANUAL_ADMIN_BACKUP_PATTERN = /^hcl-hub-manual-admin-v\d+-\d{8}-\d{6}\.dump$/i;
 
 type RunResult = { stdout: string; stderr: string; code: number };

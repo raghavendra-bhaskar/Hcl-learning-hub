@@ -1319,14 +1319,13 @@ function McpIntegrationTab() {
         command: 'node',
         args: ['${workspaceFolder:AI-Quest}/scripts/mcp-course-server.mjs'],
         env: {
-          HCL_HUB_API_URL: '${input:hclHubUrl}',
+          HCL_HUB_API_URL: 'http://127.0.0.1:4000',
           HCL_HUB_EMAIL: '${input:hclHubEmail}',
           HCL_HUB_PASSWORD: '${input:hclHubPassword}',
         },
       },
     },
     inputs: [
-      { id: 'hclHubUrl', type: 'promptString', description: 'Learning Hub VM HTTPS URL', default: 'https://blmycldtl596461.nonprod.hclpnp.com' },
       { id: 'hclHubEmail', type: 'promptString', description: 'Learning Hub local-account email' },
       { id: 'hclHubPassword', type: 'promptString', description: 'Learning Hub local-account password', password: true },
     ],
@@ -1334,7 +1333,7 @@ function McpIntegrationTab() {
   const toolGroups = [
     {
       title: 'Course tools',
-      items: ['List courses', 'Get a course', 'Create course', 'Update course metadata'],
+      items: ['List and get courses', 'List topics and quests', 'List moderators (admin)', 'Create and update courses'],
     },
     {
       title: 'Curriculum tools',
@@ -1366,7 +1365,7 @@ function McpIntegrationTab() {
           <ol className={`space-y-2 text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
             <li>1. Open VS Code and install an MCP-capable extension or GitHub Copilot MCP support.</li>
             <li>2. Open this repository and start hcl-learning-hub-mcp in the MCP servers view.</li>
-            <li>3. Enter the VM HTTPS URL and your Learning Hub local-account email and password when prompted.</li>
+            <li>3. Confirm the local backend is running on port 4000, then enter your Learning Hub local-account email and password when prompted.</li>
             <li>4. Use the course and curriculum tools according to your API permissions.</li>
           </ol>
         </div>
@@ -1379,7 +1378,7 @@ function McpIntegrationTab() {
           <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Browser-based OAuth requires a deployed HTTP MCP endpoint, OAuth discovery and client registration, token validation, and API role checks. The local bridge currently uses local-account prompts instead of SSO.</p>
           <div className="rounded-xl p-3 border" style={{ background: isLight ? 'rgba(236,254,255,0.9)' : 'rgba(34,211,238,0.05)', borderColor: isLight ? 'rgba(8,145,178,0.18)' : 'rgba(34,211,238,0.18)' }}>
             <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-cyan-300'}`}>Recommended controls</p>
-            <p className={`mt-2 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>The API enforces administrator or assigned-moderator permissions. Delete and user-role tools are not exposed by this bridge.</p>
+            <p className={`mt-2 text-xs leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>The API enforces administrator or assigned-moderator permissions. Delete and moderator assignment tools are not exposed by this bridge.</p>
           </div>
         </div>
       </div>

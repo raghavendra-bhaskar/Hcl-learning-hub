@@ -11,6 +11,20 @@ The **HCL L2 Support Learning Hub** is a scenario-based, gamified training platf
 
 It is modelled after the  Cloud Quest style of gamification — with a Solution Center (Learn), Practice Quiz, and DIY challenge model per quest, backed by formal certification enrollment into CNAPP LMS.
 
+### Where The Code Lives
+
+| Area | Main code | Why it exists / how it helps |
+| --- | --- | --- |
+| Learner and administrator UI | `src/pages/`, `src/components/`, `src/App.jsx` | React routes and reusable components present courses, quests, progress, and administration without separate server-rendered pages. |
+| Shared client state | `src/store/useStore.js` | Keeps learner state and page interactions consistent across routes; local caching lets the UI preserve progress between visits. |
+| Web sign-in | `src/auth/oktaConfig.js`, `src/pages/LoginPage.jsx`, `src/pages/LoginCallback.jsx` | Configures browser Okta PKCE login and hands the callback to the application. This is distinct from MCP local-account authentication. |
+| Backend entry and authentication | `server/src/index.ts`, `server/src/routes/auth.ts`, `server/src/middleware/auth.ts`, `server/src/middleware/requireRole.ts` | Registers HTTP routes, exchanges or issues tokens, resolves the current user, and enforces route-level role checks before protected data is served. |
+| Courses and permissions | `server/src/routes/courses.ts` | Provides course, week, module, topic, resource, quest, and moderator APIs; ownership checks prevent unauthorized course edits. |
+| AI features | `server/src/routes/ai.ts`, `server/src/lib/aiKnowledge.ts`, `server/src/lib/ollama.ts` | Validates AI requests, retrieves relevant course context, and calls the configured model for tutoring or reviewable course generation. |
+| Data and schema | `server/prisma/schema.prisma`, `server/prisma/migrations/`, `server/src/lib/prisma.ts` | Defines persistent users, courses, quests, and progress; migrations evolve PostgreSQL consistently across deployments. |
+| VS Code MCP bridge | `.vscode/mcp.json`, `scripts/mcp-course-server.mjs`, `MCP_CONNECTION_GUIDE.md` | Translates MCP tool calls into authenticated course API requests. Its detailed call flow, available tools, and troubleshooting are in the connection guide. |
+| Hosting and deployment | `nginx.conf`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Serves the built SPA, proxies `/api/` to Express, and packages the frontend/backend for VM deployment. A working HTTPS ingress is required for remote MCP calls. |
+
 **Currently live with 2 modules, 7 more planned:**
 
 | Module | Theme | Quests | Status |
@@ -46,7 +60,7 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 ### Local AI Tutor and Help
 
 - **Provider administration:** Administration > Integrations > Ollama configures one shared Ollama endpoint and chat model, stored atomically as `ai.provider` in the existing Setting table. AI starts disabled. Before selecting a model, administrators are directed to the [HCL AI Tools approval list](https://sites.google.com/hcl.software/productsecurity/ai-portal/ai-tools); examples such as Qwen and Llama are only valid when the specific variant is approved. Model discovery reads installed `/api/tags` models and marks `/api/ps` models currently running. A saved-provider chat panel supports model comparison.
-- **VS Code course MCP bridge:** `.vscode/mcp.json` starts `scripts/mcp-course-server.mjs` as a local newline-delimited JSON stdio server. It authenticates to the VM's existing API using prompted local-account credentials and exposes course and curriculum list/read/create/update tools. The Administration > Integrations > MCP sample documents this working bridge. The API enforces admin/moderator permissions; destructive delete tools, browser SSO for MCP, and a remote `/mcp` listener are not exposed.
+- **VS Code course MCP bridge:** `.vscode/mcp.json` starts `scripts/mcp-course-server.mjs` as a local newline-delimited JSON stdio server. It authenticates to the local Express API on port 4000 or the VM's HTTPS API using prompted local-account credentials, and exposes course, topic, quest, moderator, and permission-scoped learner listing plus course and curriculum create/update tools. `preview_course_builder` calls the admin-only AI builder with an outline and optional resource URLs but does not persist its preview. See `MCP_CONNECTION_GUIDE.md` for the request flow, permissions, and capability matrix. The API enforces admin/moderator permissions; destructive delete tools, moderator edits, browser SSO for MCP, and a remote `/mcp` listener are not exposed.
 - **Full course builder:** Administration > Course Editor > Build full course accepts a course outline and uses the configured model to generate a reviewable learning map, Mermaid course-flow diagram, progressive weeks/modules, small topic learn content, one scenario quiz quest per topic, and candidate web resources. Resource discovery uses public web search before the model call; it does not use the learner RAG corpus. The admin must review technical accuracy, licensing, and links before clicking Create Full Course Content. Generated data is persisted through the existing CourseWeek, CourseModule, CourseTopic, CourseResource, and CourseQuest APIs.
 - **Learner experience:** `src/components/AITutor.jsx` supplies course-scoped tutoring in dynamic course quests and all three quiz implementations, plus Hub-wide AI Help in the Help Session modal. Pace selection, recent conversation, source references, errors, and loading states are included. Chats remain in component memory only.
 - **API:** Authenticated `/ai/status` and `/ai/chat`; admin-only `GET/PUT /ai/config` and `POST /ai/models`. `server/src/routes/ai.ts` validates requests and applies per-process concurrency/throttling. Learners cannot select endpoints or override models. Generic settings routes exclude/reserve `ai.*`.
