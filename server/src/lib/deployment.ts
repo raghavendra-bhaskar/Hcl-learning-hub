@@ -316,6 +316,14 @@ function findLatestBackup() {
   return backups.length ? statBackup(backups[0]) : null;
 }
 
+function findVersionBackup(version: string) {
+  const major = getMajorVersion(version);
+  if (!major) return null;
+  const pattern = new RegExp(`^hcl-hub-manual-admin-v${major}-\\d{8}-\\d{6}\\.dump$`, 'i');
+  const match = listBackupCandidates().find(filePath => pattern.test(filePath.split(/[/\\]/).pop() || ''));
+  return match ? statBackup(match) : null;
+}
+
 function buildUpgradeOptions(currentVersion: string, patchArchive: PatchArchive): DeploymentVersionOption[] {
   const options: DeploymentVersionOption[] = [];
   const nextMinorVersion = incrementVersion(currentVersion || patchArchive.currentVersion || BASELINE_VERSION);
@@ -531,7 +539,7 @@ export async function getRollbackPreview(targetVersion: string | undefined, fall
   if (!targetRelease && !targetArchivePath) throw new Error(targetVersion ? `Release version not found: ${targetVersion}` : 'No previous release available for rollback.');
   const commitsToRemove = targetRelease ? await getCommitRange(targetRelease.currentCommit, status.currentRelease?.currentCommit || '') : [];
   const latestBackup = status.latestBackup;
-  const restoreBackup = statBackup(status.currentRelease?.preSyncBackup || '') || latestBackup;
+  const restoreBackup = findVersionBackup(selectedVersion) || statBackup(status.currentRelease?.preSyncBackup || '') || latestBackup;
   return {
     ...status,
     targetRelease,

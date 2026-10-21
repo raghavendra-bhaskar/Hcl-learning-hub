@@ -1,8 +1,8 @@
 ﻿{
     "product":  "HCL Learning Hub",
     "purpose":  "Manual version archive for product version selection and patch tracking.",
-    "currentVersion":  "6",
-    "nextUpgradeVersion":  "7",
+    "currentVersion":  "7",
+    "nextUpgradeVersion":  "",
     "availableVersions":  [
                               {
                                   "version":  "3",
@@ -22,21 +22,21 @@
                                   "version":  "5",
                                   "displayVersion":  "5.0.0",
                                   "defaultNextPatch":  "5.1",
-                                  "status":  "previous",
+                                  "status":  "archived",
                                   "metadataFile":  "patches/version-5.json"
                               },
                               {
                                   "version":  "6",
                                   "displayVersion":  "6.0.0",
                                   "defaultNextPatch":  "6.6",
-                                  "status":  "current",
+                                  "status":  "previous",
                                   "metadataFile":  "patches/version-6.json"
                               },
                               {
                                   "version":  "7",
                                   "displayVersion":  "7.0.0",
                                   "defaultNextPatch":  "7.1",
-                                  "status":  "next-upgrade",
+                                  "status":  "current",
                                   "metadataFile":  "patches/version-7.json"
                               }
                           ]

@@ -2,17 +2,17 @@
     "version":  "5",
     "displayVersion":  "5.0.0",
     "defaultNextPatch":  "5.1",
-    "status":  "previous",
-    "recordedReleaseMetadata":  true,
-    "releaseMetadataSource":  "releases/previous-release.env",
-    "releaseFile":  "releases/previous-release.env",
+    "status":  "archived",
+    "recordedReleaseMetadata":  false,
+    "releaseMetadataSource":  "version archive manifest",
+    "releaseFile":  "",
     "archiveFile":  "patches/version-archives/version-5-0.zip",
     "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Search and learning path introduced",
     "archiveModifiedAt":  "2026-09-13T16:56:24",
     "minorVersions":  [
                           {
                               "version":  "5.0",
-                              "releaseFile":  "releases/previous-release.env",
+                              "releaseFile":  "",
                               "archiveFile":  "patches/version-archives/version-5-0.zip",
                               "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Search and learning path introduced",
                               "archiveModifiedAt":  "2026-09-13T16:56:24",
@@ -78,7 +78,7 @@
                           }
                       ],
     "notes":  [
-                  "Version 5 is preserved as the previous recorded release in the deployment metadata.",
-                  "Use this record when you want to present or refer to the product as version 5."
+                  "Version 5 is preserved as an archived rollback target in the deployment metadata.",
+                  "Use the mapped archive zip when you need to restore the version 5 code snapshot."
               ]
 }

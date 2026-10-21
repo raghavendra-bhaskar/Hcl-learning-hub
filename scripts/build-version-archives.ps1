@@ -24,7 +24,12 @@ if (Test-Path -LiteralPath $currentReleasePath) {
     }
   }
 }
-$historicalMajors = @(3..$deployedCurrentMajor) | Select-Object -Unique
+$historicalUpperMajor = [Math]::Min($deployedCurrentMajor, ($latestTrackedMajor - 1))
+$historicalMajors = if ($historicalUpperMajor -ge 3) {
+  @(3..$historicalUpperMajor) | Select-Object -Unique
+} else {
+  @()
+}
 $preserveNotes = @{}
 
 foreach ($major in 3..$latestTrackedMajor) {

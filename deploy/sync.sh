@@ -173,6 +173,23 @@ const metadata = fs.existsSync(metadataPath)
       notes: [],
     };
 
+const parseReleaseFile = relativePath => {
+  const absolutePath = path.resolve(installDir, relativePath);
+  if (!fs.existsSync(absolutePath)) return null;
+  const values = {};
+  for (const line of fs.readFileSync(absolutePath, 'utf8').split(/\r?\n/)) {
+    if (!line || line.startsWith('#')) continue;
+    const separator = line.indexOf('=');
+    if (separator < 0) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (key) values[key] = value;
+  }
+  return values;
+};
+const previousReleaseFile = 'releases/previous-release.env';
+const previousRelease = parseReleaseFile(previousReleaseFile);
+
 const toVersionParts = value => String(value || '').split('.').map(part => Number.parseInt(part, 10));
 const compareVersions = (left, right) => {
   const leftParts = toVersionParts(left);
@@ -217,7 +234,15 @@ metadata.notes = notes;
 metadata.minorVersions = Array.isArray(metadata.minorVersions) ? metadata.minorVersions : [];
 
 const minorIndex = metadata.minorVersions.findIndex(entry => String(entry.version) === normalizedVersion);
-const minorRecord = { version: normalizedVersion, releaseFile: normalizedReleaseFile, notes };
+const existingMinor = minorIndex >= 0 ? metadata.minorVersions[minorIndex] : null;
+const minorRecord = {
+  version: normalizedVersion,
+  releaseFile: normalizedReleaseFile,
+  archiveFile: typeof existingMinor?.archiveFile === 'string' ? existingMinor.archiveFile : '',
+  archiveSourceDirectory: typeof existingMinor?.archiveSourceDirectory === 'string' ? existingMinor.archiveSourceDirectory : '',
+  archiveModifiedAt: typeof existingMinor?.archiveModifiedAt === 'string' ? existingMinor.archiveModifiedAt : '',
+  notes,
+};
 if (minorIndex >= 0) metadata.minorVersions[minorIndex] = minorRecord;
 else metadata.minorVersions.push(minorRecord);
 metadata.minorVersions.sort((left, right) => compareVersions(left.version, right.version));
@@ -244,6 +269,31 @@ for (const entry of index.availableVersions) {
   const entryMetadata = JSON.parse(fs.readFileSync(entryMetadataPath, 'utf8'));
   entryMetadata.status = entry.status || entryMetadata.status || '';
   fs.writeFileSync(entryMetadataPath, `${JSON.stringify(entryMetadata, null, 2)}\n`, 'utf8');
+}
+
+if (previousRelease?.PRODUCT_VERSION) {
+  const previousMajor = String(previousRelease.PRODUCT_VERSION).trim().split('.')[0];
+  const previousEntry = availableVersions.find(entry => String(entry.version) === previousMajor);
+  if (previousEntry?.metadataFile) {
+    const previousMetadataPath = path.resolve(installDir, previousEntry.metadataFile);
+    if (fs.existsSync(previousMetadataPath)) {
+      const previousMetadata = JSON.parse(fs.readFileSync(previousMetadataPath, 'utf8'));
+      const previousVersion = String(previousRelease.PRODUCT_VERSION).includes('.') ? String(previousRelease.PRODUCT_VERSION) : `${previousMajor}.0`;
+      previousMetadata.status = 'previous';
+      previousMetadata.recordedReleaseMetadata = true;
+      previousMetadata.releaseMetadataSource = previousReleaseFile;
+      previousMetadata.releaseFile = previousReleaseFile;
+      previousMetadata.minorVersions = Array.isArray(previousMetadata.minorVersions) ? previousMetadata.minorVersions : [];
+      const previousMinorIndex = previousMetadata.minorVersions.findIndex(entry => String(entry.version) === previousVersion);
+      if (previousMinorIndex >= 0) {
+        previousMetadata.minorVersions[previousMinorIndex] = {
+          ...previousMetadata.minorVersions[previousMinorIndex],
+          releaseFile: previousReleaseFile,
+        };
+      }
+      fs.writeFileSync(previousMetadataPath, `${JSON.stringify(previousMetadata, null, 2)}\n`, 'utf8');
+    }
+  }
 }
 
 fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');

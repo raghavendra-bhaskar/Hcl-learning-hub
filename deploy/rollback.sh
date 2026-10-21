@@ -94,6 +94,20 @@ resolve_restore_file() {
   printf '%s\n' "$latest"
 }
 
+find_version_backup_file() {
+  local version="$1"
+  local major="${version%%.*}"
+  local match=""
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  match="$({
+    ls -1t "$INSTALL_DIR"/scripts/hcl-hub-manual-admin-v${major}-*.dump 2>/dev/null || true
+    ls -1t "$INSTALL_DIR"/backups/hcl-hub-manual-admin-v${major}-*.dump 2>/dev/null || true
+    ls -1t /tmp/hcl-hub-manual-admin-v${major}-*.dump 2>/dev/null || true
+  } | head -1)"
+  [ -n "$match" ] || return 1
+  printf '%s\n' "$match"
+}
+
 find_release_file() {
   local version="$1"
   local candidate=""
@@ -174,6 +188,8 @@ fi
 if [ "$NO_RESTORE" = false ]; then
   if [ -n "$RESTORE_FILE" ]; then
     RESTORE_FILE="$(resolve_restore_file "$RESTORE_FILE")" || fail "Restore file not found: $RESTORE_FILE"
+  elif RESTORE_FILE="$(find_version_backup_file "$TARGET_PRODUCT_VERSION" 2>/dev/null || true)"; [ -n "$RESTORE_FILE" ]; then
+    info "Using version-matched restore dump: $RESTORE_FILE"
   elif [ -n "$CURRENT_PRE_SYNC_BACKUP" ] && [ -f "$CURRENT_PRE_SYNC_BACKUP" ]; then
     RESTORE_FILE="$CURRENT_PRE_SYNC_BACKUP"
   else

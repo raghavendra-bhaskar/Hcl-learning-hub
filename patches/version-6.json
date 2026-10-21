@@ -2,17 +2,17 @@
     "version":  "6",
     "displayVersion":  "6.0.0",
     "defaultNextPatch":  "6.6",
-    "status":  "current",
+    "status":  "previous",
     "recordedReleaseMetadata":  true,
-    "releaseMetadataSource":  "releases/current-release.env",
-    "releaseFile":  "releases/current-release.env",
+    "releaseMetadataSource":  "releases/previous-release.env",
+    "releaseFile":  "releases/previous-release.env",
     "archiveFile":  "patches/version-archives/version-6-0.zip",
     "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - dark mode  light mode",
     "archiveModifiedAt":  "2026-10-02T06:23:22",
     "minorVersions":  [
                           {
                               "version":  "6.0",
-                              "releaseFile":  "releases/current-release.env",
+                              "releaseFile":  "releases/previous-release.env",
                               "archiveFile":  "patches/version-archives/version-6-0.zip",
                               "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - dark mode  light mode",
                               "archiveModifiedAt":  "2026-10-02T06:23:22",
@@ -78,7 +78,7 @@
                           }
                       ],
     "notes":  [
-                  "Version 6 is the current maintained product version in the deployment metadata.",
-                  "Apply the tracked upgrade patch to move from version 6 to version 7."
+                  "Version 6 is preserved as the previous deployed release in the deployment metadata.",
+                  "Use this record when you need the last release-backed rollback target before version 7."
               ]
 }
