@@ -185,7 +185,7 @@ const major = String(targetVersion || '').trim().split('.')[0];
 if (!major) process.exit(1);
 const versionFile = path.join(installDir, 'patches', `version-${major}.json`);
 if (!fs.existsSync(versionFile)) process.exit(1);
-const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+const data = JSON.parse(fs.readFileSync(versionFile, 'utf8').replace(/^\uFEFF/, ''));
 const sameVersion = (left, right) => {
   if (left === right) return true;
   const normalize = value => /^\d+$/.test(String(value || '').trim()) ? `${value}.0` : String(value || '').trim();

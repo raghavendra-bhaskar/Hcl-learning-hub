@@ -150,6 +150,53 @@ read_recorded_product_version() {
   grep -E '^PRODUCT_VERSION=' "$file_path" | head -1 | cut -d= -f2-
 }
 
+read_patch_index_field() {
+  local field_name="$1"
+  [ -f "$PATCH_INDEX_FILE" ] || return 1
+  node - "$PATCH_INDEX_FILE" "$field_name" <<'NODE'
+const fs = require('fs');
+
+const [indexFile, fieldName] = process.argv.slice(2);
+const raw = fs.readFileSync(indexFile, 'utf8').replace(/^\uFEFF/, '');
+const data = JSON.parse(raw);
+const value = data && typeof data[fieldName] === 'string' ? data[fieldName].trim() : '';
+if (value) process.stdout.write(value);
+NODE
+}
+
+default_product_version() {
+  local recorded_version="$1"
+  local fallback_version="$2"
+  local approved_current="${PATCH_CURRENT_VERSION:-}"
+  local approved_next="${PATCH_NEXT_UPGRADE_VERSION:-}"
+  local recorded_major=""
+  local approved_current_major=""
+
+  if [ -n "$recorded_version" ]; then
+    recorded_major="${recorded_version%%.*}"
+  fi
+  if [ -n "$approved_current" ]; then
+    approved_current_major="${approved_current%%.*}"
+  fi
+
+  if [[ "$recorded_major" =~ ^[0-9]+$ ]] && [[ "$approved_current_major" =~ ^[0-9]+$ ]] && [ "$recorded_major" -lt "$approved_current_major" ]; then
+    printf '%s\n' "$approved_current"
+    return 0
+  fi
+
+  if [ -n "$approved_next" ]; then
+    printf '%s\n' "$approved_next"
+    return 0
+  fi
+
+  if [ -n "$approved_current" ] && [ -z "$recorded_version" ]; then
+    printf '%s\n' "$approved_current"
+    return 0
+  fi
+
+  increment_patch_version "${recorded_version:-$fallback_version}"
+}
+
 increment_patch_version() {
   local version="$1"
   local -a parts=()
@@ -200,7 +247,8 @@ const fs = require('fs');
 const path = require('path');
 
 const [installDir, indexFile, productVersion, releaseFile, releaseNotesText] = process.argv.slice(2);
-const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+const readJson = filePath => JSON.parse(fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, ''));
+const index = readJson(indexFile);
 const major = String(productVersion || '').trim().split('.')[0];
 if (!major) process.exit(0);
 const availableVersions = Array.isArray(index.availableVersions) ? index.availableVersions : [];
@@ -209,7 +257,7 @@ if (!targetEntry?.metadataFile) process.exit(0);
 
 const metadataPath = path.resolve(installDir, targetEntry.metadataFile);
 const metadata = fs.existsSync(metadataPath)
-  ? JSON.parse(fs.readFileSync(metadataPath, 'utf8'))
+  ? readJson(metadataPath)
   : {
       version: major,
       displayVersion: `${major}.0.0`,
@@ -315,7 +363,7 @@ for (const entry of index.availableVersions) {
   if (!entry?.metadataFile) continue;
   const entryMetadataPath = path.resolve(installDir, entry.metadataFile);
   if (!fs.existsSync(entryMetadataPath)) continue;
-  const entryMetadata = JSON.parse(fs.readFileSync(entryMetadataPath, 'utf8'));
+  const entryMetadata = readJson(entryMetadataPath);
   entryMetadata.status = entry.status || entryMetadata.status || '';
   fs.writeFileSync(entryMetadataPath, `${JSON.stringify(entryMetadata, null, 2)}\n`, 'utf8');
 }
@@ -326,7 +374,7 @@ if (previousRelease?.PRODUCT_VERSION) {
   if (previousEntry?.metadataFile) {
     const previousMetadataPath = path.resolve(installDir, previousEntry.metadataFile);
     if (fs.existsSync(previousMetadataPath)) {
-      const previousMetadata = JSON.parse(fs.readFileSync(previousMetadataPath, 'utf8'));
+      const previousMetadata = readJson(previousMetadataPath);
       const previousVersion = String(previousRelease.PRODUCT_VERSION).includes('.') ? String(previousRelease.PRODUCT_VERSION) : `${previousMajor}.0`;
       previousMetadata.status = 'previous';
       previousMetadata.recordedReleaseMetadata = true;
@@ -420,6 +468,8 @@ RELEASES_DIR="$INSTALL_DIR/releases"
 CURRENT_RELEASE_FILE="$RELEASES_DIR/current-release.env"
 PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
 BASELINE_VERSION="${BASELINE_VERSION:-6}"
+PATCH_CURRENT_VERSION="$(read_patch_index_field currentVersion 2>/dev/null || true)"
+PATCH_NEXT_UPGRADE_VERSION="$(read_patch_index_field nextUpgradeVersion 2>/dev/null || true)"
 RECORDED_VERSION="$(read_recorded_product_version "$CURRENT_RELEASE_FILE" 2>/dev/null || true)"
 RECORDED_BACKUP_FILE="$BACKUP_FILE"
 PINNED_RESTORE_FILE=""
@@ -510,7 +560,9 @@ ensure_execute_permissions
 normalize_permissions
 AFTER="$(git rev-parse --short HEAD)"
 AFTER_FULL="$(git rev-parse HEAD)"
-DEFAULT_VERSION_LABEL="$(increment_patch_version "${RECORDED_VERSION:-$BASELINE_VERSION}")"
+PATCH_CURRENT_VERSION="$(read_patch_index_field currentVersion 2>/dev/null || printf '%s' "$PATCH_CURRENT_VERSION")"
+PATCH_NEXT_UPGRADE_VERSION="$(read_patch_index_field nextUpgradeVersion 2>/dev/null || printf '%s' "$PATCH_NEXT_UPGRADE_VERSION")"
+DEFAULT_VERSION_LABEL="$(default_product_version "$RECORDED_VERSION" "$BASELINE_VERSION")"
 PRODUCT_VERSION="${VERSION_LABEL:-$DEFAULT_VERSION_LABEL}"
 RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-${AFTER}.env"
 BASELINE_RELEASE_FILE="$RELEASES_DIR/release-${TIMESTAMP}-baseline-${BEFORE}.env"

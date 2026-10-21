@@ -27,8 +27,4 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$HAS_CODE_ONLY" = false ] && [ "$HAS_RESTORE" = false ]; then
-  ARGS+=(--restore latest)
-fi
-
 bash "$SCRIPT_DIR/sync.sh" "${ARGS[@]}"

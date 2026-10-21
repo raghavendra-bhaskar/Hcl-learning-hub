@@ -123,7 +123,7 @@ function parseEnvFile(filePath: string) {
 function readJsonFile<T>(filePath: string, fallbackValue: T) {
   try {
     if (!existsSync(filePath)) return fallbackValue;
-    return JSON.parse(readFileSync(filePath, 'utf8')) as T;
+    return JSON.parse(readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '')) as T;
   } catch {
     return fallbackValue;
   }
@@ -326,6 +326,23 @@ function findVersionBackup(version: string) {
 
 function buildUpgradeOptions(currentVersion: string, patchArchive: PatchArchive): DeploymentVersionOption[] {
   const options: DeploymentVersionOption[] = [];
+  const currentMajor = getMajorVersion(currentVersion || '');
+  const approvedCurrentVersion = patchArchive.currentVersion || BASELINE_VERSION;
+  const approvedCurrentMajor = getMajorVersion(approvedCurrentVersion);
+  const approvedCurrentRecord = patchArchive.versions.find(version => sameVersion(version.version, approvedCurrentVersion)) || null;
+  if (currentMajor !== null && approvedCurrentMajor !== null && currentMajor < approvedCurrentMajor) {
+    options.push({
+      value: approvedCurrentVersion,
+      label: approvedCurrentVersion,
+      status: approvedCurrentRecord?.status || 'current',
+      available: true,
+      isMinor: false,
+      notes: approvedCurrentRecord?.notes?.length ? approvedCurrentRecord.notes : [`Promotes this VM to the approved current major version ${approvedCurrentVersion}.`],
+      releaseFilePath: approvedCurrentRecord?.releaseFile || '',
+      archiveFilePath: approvedCurrentRecord?.archiveFile || '',
+    });
+    return options;
+  }
   const nextMinorVersion = incrementVersion(currentVersion || patchArchive.currentVersion || BASELINE_VERSION);
   options.push({
     value: nextMinorVersion,
