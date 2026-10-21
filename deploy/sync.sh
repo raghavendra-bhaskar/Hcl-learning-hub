@@ -25,6 +25,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PATCHES_DIR="$INSTALL_DIR/patches"
+PATCH_INDEX_FILE="$PATCHES_DIR/index.json"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 ok()     { echo -e "${GREEN}[ OK ]${NC} $*"; }
@@ -38,14 +40,12 @@ ensure_execute_permissions() {
   local script=""
   for script in "$SCRIPT_DIR"/*.sh; do
     [ -f "$script" ] || continue
-    chmod 777 "$script" 2>/dev/null || true
+    chmod 755 "$script" 2>/dev/null || true
   done
 }
 
 normalize_permissions() {
-  # The VM receives code from Windows-driven copy operations, so we normalize the whole install
-  # tree and explicitly re-mark deployment scripts executable before operators run ./upgrade.sh.
-  chmod -R 777 "$INSTALL_DIR" 2>/dev/null || true
+  chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
   ensure_execute_permissions
 }
 
@@ -107,7 +107,7 @@ increment_patch_version() {
   IFS='.' read -r -a parts <<< "$version"
 
   if [ "${#parts[@]}" -eq 1 ] && [[ "${parts[0]}" =~ ^[0-9]+$ ]]; then
-    printf '%s.1\n' "${parts[0]}"
+    printf '%s\n' "${parts[0]}.1"
     return 0
   fi
 
@@ -120,7 +120,135 @@ increment_patch_version() {
     fi
   fi
 
-  printf '%s.1\n' "${version:-5}"
+  printf '%s\n' "${version:-${BASELINE_VERSION}.1}"
+}
+
+default_release_notes() {
+  local product_version="$1"
+  printf '%s\n' "Recorded deployment for version ${product_version}."
+}
+
+build_release_notes() {
+  local product_version="$1"
+  if [ -n "${BEFORE_FULL:-}" ] && [ -n "${AFTER_FULL:-}" ]; then
+    local git_notes=""
+    git_notes="$(git --no-pager log --oneline "${BEFORE_FULL}..${AFTER_FULL}" | head -20 || true)"
+    if [ -n "$git_notes" ]; then
+      printf '%s\n' "$git_notes"
+      return 0
+    fi
+  fi
+  default_release_notes "$product_version"
+}
+
+update_patch_archive() {
+  local product_version="$1"
+  local release_file="$2"
+  local release_notes="$3"
+  [ -f "$PATCH_INDEX_FILE" ] || return 0
+  node - "$INSTALL_DIR" "$PATCH_INDEX_FILE" "$product_version" "$release_file" "$release_notes" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const [installDir, indexFile, productVersion, releaseFile, releaseNotesText] = process.argv.slice(2);
+const index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+const major = String(productVersion || '').trim().split('.')[0];
+if (!major) process.exit(0);
+const availableVersions = Array.isArray(index.availableVersions) ? index.availableVersions : [];
+const targetEntry = availableVersions.find(entry => String(entry.version) === major);
+if (!targetEntry?.metadataFile) process.exit(0);
+
+const metadataPath = path.resolve(installDir, targetEntry.metadataFile);
+const metadata = fs.existsSync(metadataPath)
+  ? JSON.parse(fs.readFileSync(metadataPath, 'utf8'))
+  : {
+      version: major,
+      displayVersion: `${major}.0.0`,
+      defaultNextPatch: `${major}.1`,
+      status: 'current',
+      recordedReleaseMetadata: true,
+      releaseMetadataSource: `releases/${path.basename(releaseFile)}`,
+      releaseFile: `releases/${path.basename(releaseFile)}`,
+      minorVersions: [],
+      notes: [],
+    };
+
+const toVersionParts = value => String(value || '').split('.').map(part => Number.parseInt(part, 10));
+const compareVersions = (left, right) => {
+  const leftParts = toVersionParts(left);
+  const rightParts = toVersionParts(right);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = Number.isFinite(leftParts[index]) ? leftParts[index] : 0;
+    const rightPart = Number.isFinite(rightParts[index]) ? rightParts[index] : 0;
+    if (leftPart !== rightPart) return leftPart - rightPart;
+  }
+  return 0;
+};
+
+const normalizedVersion = String(productVersion).includes('.') ? String(productVersion) : `${major}.0`;
+const normalizedReleaseFile = `releases/${path.basename(releaseFile)}`;
+const releaseNotes = String(releaseNotesText || '')
+  .split(/\r?\n/)
+  .map(line => line.trim())
+  .filter(Boolean);
+const notes = releaseNotes.length ? releaseNotes : [`Recorded deployment for version ${normalizedVersion}.`];
+const incrementVersion = value => {
+  const parts = String(value || '').split('.').map(part => Number.parseInt(part, 10));
+  if (parts.length === 1 && Number.isFinite(parts[0])) return `${parts[0]}.1`;
+  if (parts.length >= 2) {
+    const next = [...parts];
+    const index = next.length - 1;
+    next[index] = Number.isFinite(next[index]) ? next[index] + 1 : 1;
+    return next.join('.');
+  }
+  return `${major}.1`;
+};
+const nextMinorVersion = incrementVersion(normalizedVersion);
+
+metadata.version = metadata.version || major;
+metadata.displayVersion = metadata.displayVersion || `${major}.0.0`;
+metadata.defaultNextPatch = nextMinorVersion;
+metadata.status = 'current';
+metadata.recordedReleaseMetadata = true;
+metadata.releaseMetadataSource = normalizedReleaseFile;
+metadata.releaseFile = normalizedReleaseFile;
+metadata.notes = notes;
+metadata.minorVersions = Array.isArray(metadata.minorVersions) ? metadata.minorVersions : [];
+
+const minorIndex = metadata.minorVersions.findIndex(entry => String(entry.version) === normalizedVersion);
+const minorRecord = { version: normalizedVersion, releaseFile: normalizedReleaseFile, notes };
+if (minorIndex >= 0) metadata.minorVersions[minorIndex] = minorRecord;
+else metadata.minorVersions.push(minorRecord);
+metadata.minorVersions.sort((left, right) => compareVersions(left.version, right.version));
+
+const wholeMajorVersions = availableVersions
+  .map(entry => String(entry.version || '').trim())
+  .filter(value => /^\d+$/.test(value))
+  .sort(compareVersions);
+const nextMajorVersion = wholeMajorVersions.find(value => compareVersions(value, major) > 0) || '';
+index.currentVersion = major;
+index.nextUpgradeVersion = nextMajorVersion;
+index.availableVersions = availableVersions.map(entry => {
+  const entryMajor = String(entry.version || '').trim();
+  if (!/^\d+$/.test(entryMajor)) return entry;
+  const status = entryMajor === major ? 'current' : compareVersions(entryMajor, major) < 0 ? (compareVersions(entryMajor, String(Number.parseInt(major, 10) - 1)) === 0 ? 'previous' : 'archived') : 'next-upgrade';
+  const defaultNextPatch = entryMajor === major ? nextMinorVersion : entry.defaultNextPatch;
+  return { ...entry, status, defaultNextPatch };
+});
+
+for (const entry of index.availableVersions) {
+  if (!entry?.metadataFile) continue;
+  const entryMetadataPath = path.resolve(installDir, entry.metadataFile);
+  if (!fs.existsSync(entryMetadataPath)) continue;
+  const entryMetadata = JSON.parse(fs.readFileSync(entryMetadataPath, 'utf8'));
+  entryMetadata.status = entry.status || entryMetadata.status || '';
+  fs.writeFileSync(entryMetadataPath, `${JSON.stringify(entryMetadata, null, 2)}\n`, 'utf8');
+}
+
+fs.writeFileSync(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+fs.writeFileSync(indexFile, `${JSON.stringify(index, null, 2)}\n`, 'utf8');
+NODE
 }
 
 RESTORE_FILE=""
@@ -129,6 +257,7 @@ BACKUP_ONLY=false
 CODE_ONLY=false
 NO_BACKUP=false
 VERSION_LABEL=""
+PATCH_RELEASE_NOTES="${PATCH_RELEASE_NOTES:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -319,6 +448,7 @@ RESTORE_SOURCE=${RESTORE_FILE}
 SYNC_MODE=$([ "$CODE_ONLY" = true ] && echo code-only || echo full)
 EOF
 cp -f "$RELEASE_FILE" "$CURRENT_RELEASE_FILE"
+update_patch_archive "$PRODUCT_VERSION" "$RELEASE_FILE" "${PATCH_RELEASE_NOTES:-$(build_release_notes "$PRODUCT_VERSION")}" || warn "Patch archive update skipped"
 ok "Release metadata recorded: ${PRODUCT_VERSION}"
 
 banner "Sync — step 4/7: Dependencies"

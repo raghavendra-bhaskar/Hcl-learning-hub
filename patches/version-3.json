@@ -1,13 +1,84 @@
-{
-  "version": "3",
-  "displayVersion": "3.0.0",
-  "defaultNextPatch": "3.1",
-  "status": "archived",
-  "recordedReleaseMetadata": false,
-  "releaseMetadataSource": "manual patch archive",
-  "releaseFile": "",
-  "notes": [
-    "Added to the manual patch archive so product version 3 remains selectable for reference.",
-    "Historical release commit and backup metadata were not preserved in the current repo release files."
-  ]
+﻿{
+    "version":  "3",
+    "displayVersion":  "3.0.0",
+    "defaultNextPatch":  "3.1",
+    "status":  "archived",
+    "recordedReleaseMetadata":  false,
+    "releaseMetadataSource":  "manual patch archive",
+    "releaseFile":  "",
+    "archiveFile":  "patches/version-archives/version-3-0.zip",
+    "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy",
+    "archiveModifiedAt":  "2026-08-17T07:27:18",
+    "minorVersions":  [
+                          {
+                              "version":  "3.0",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-0.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy",
+                              "archiveModifiedAt":  "2026-08-17T07:27:18",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy\u0027.",
+                                            "Snapshot modified at 2026-08-17T07:27:18."
+                                        ]
+                          },
+                          {
+                              "version":  "3.1",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-1.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (2)",
+                              "archiveModifiedAt":  "2026-08-17T08:44:12",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (2)\u0027.",
+                                            "Snapshot modified at 2026-08-17T08:44:12."
+                                        ]
+                          },
+                          {
+                              "version":  "3.2",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-2.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (3)",
+                              "archiveModifiedAt":  "2026-08-17T10:16:34",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (3)\u0027.",
+                                            "Snapshot modified at 2026-08-17T10:16:34."
+                                        ]
+                          },
+                          {
+                              "version":  "3.3",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-3.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (4)",
+                              "archiveModifiedAt":  "2026-08-17T14:31:22",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (4)\u0027.",
+                                            "Snapshot modified at 2026-08-17T14:31:22."
+                                        ]
+                          },
+                          {
+                              "version":  "3.4",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-4.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (5)",
+                              "archiveModifiedAt":  "2026-08-17T16:36:52",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (5)\u0027.",
+                                            "Snapshot modified at 2026-08-17T16:36:52."
+                                        ]
+                          },
+                          {
+                              "version":  "3.5",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-3-5.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (6)",
+                              "archiveModifiedAt":  "2026-08-18T14:55:19",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (6)\u0027.",
+                                            "Snapshot modified at 2026-08-18T14:55:19."
+                                        ]
+                          }
+                      ],
+    "notes":  [
+                  "Added to the manual patch archive so product version 3 remains selectable for reference.",
+                  "Historical release commit and backup metadata were not preserved in the current repo release files."
+              ]
 }

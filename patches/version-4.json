@@ -1,13 +1,84 @@
-{
-  "version": "4",
-  "displayVersion": "4.0.0",
-  "defaultNextPatch": "4.1",
-  "status": "archived",
-  "recordedReleaseMetadata": false,
-  "releaseMetadataSource": "manual patch archive",
-  "releaseFile": "",
-  "notes": [
-    "Added to the manual patch archive so product version 4 remains selectable for reference.",
-    "Historical release commit and backup metadata were not preserved in the current repo release files."
-  ]
+﻿{
+    "version":  "4",
+    "displayVersion":  "4.0.0",
+    "defaultNextPatch":  "4.1",
+    "status":  "archived",
+    "recordedReleaseMetadata":  false,
+    "releaseMetadataSource":  "manual patch archive",
+    "releaseFile":  "",
+    "archiveFile":  "patches/version-archives/version-4-0.zip",
+    "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (7)",
+    "archiveModifiedAt":  "2026-08-25T09:25:57",
+    "minorVersions":  [
+                          {
+                              "version":  "4.0",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-0.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (7)",
+                              "archiveModifiedAt":  "2026-08-25T09:25:57",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Copy (7)\u0027.",
+                                            "Snapshot modified at 2026-08-25T09:25:57."
+                                        ]
+                          },
+                          {
+                              "version":  "4.1",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-1.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - with managers login option",
+                              "archiveModifiedAt":  "2026-08-26T11:24:27",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - with managers login option\u0027.",
+                                            "Snapshot modified at 2026-08-26T11:24:27."
+                                        ]
+                          },
+                          {
+                              "version":  "4.2",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-2.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - use your own avatar",
+                              "archiveModifiedAt":  "2026-08-29T11:10:57",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - use your own avatar\u0027.",
+                                            "Snapshot modified at 2026-08-29T11:10:57."
+                                        ]
+                          },
+                          {
+                              "version":  "4.3",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-3.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - okta_page_localuser_page",
+                              "archiveModifiedAt":  "2026-09-10T10:14:44",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - okta_page_localuser_page\u0027.",
+                                            "Snapshot modified at 2026-09-10T10:14:44."
+                                        ]
+                          },
+                          {
+                              "version":  "4.4",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-4.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Prod okta implemented + manager assignments done",
+                              "archiveModifiedAt":  "2026-09-11T17:18:22",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Prod okta implemented + manager assignments done\u0027.",
+                                            "Snapshot modified at 2026-09-11T17:18:22."
+                                        ]
+                          },
+                          {
+                              "version":  "4.5",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-4-5.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - All coureses can do live and comingsoon",
+                              "archiveModifiedAt":  "2026-09-12T20:16:03",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - All coureses can do live and comingsoon\u0027.",
+                                            "Snapshot modified at 2026-09-12T20:16:03."
+                                        ]
+                          }
+                      ],
+    "notes":  [
+                  "Added to the manual patch archive so product version 4 remains selectable for reference.",
+                  "Historical release commit and backup metadata were not preserved in the current repo release files."
+              ]
 }

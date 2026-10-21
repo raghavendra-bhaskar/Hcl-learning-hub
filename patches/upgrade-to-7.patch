@@ -1,0 +1,180 @@
+diff --git a/deploy/sync.sh b/deploy/sync.sh
+--- a/deploy/sync.sh
++++ b/deploy/sync.sh
+@@ -107,7 +107,7 @@ increment_patch_version() {
+   IFS='.' read -r -a parts <<< "$version"
+ 
+   if [ "${#parts[@]}" -eq 1 ] && [[ "${parts[0]}" =~ ^[0-9]+$ ]]; then
+-    printf '%s.1\n' "${parts[0]}"
++    printf '%s\n' "$((parts[0] + 1))"
+     return 0
+   fi
+ 
+@@ -120,7 +120,7 @@ increment_patch_version() {
+     fi
+   fi
+ 
+-  printf '%s.1\n' "${version:-5}"
++  printf '%s\n' "${version:-7}"
+ }
+ 
+ RESTORE_FILE=""
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "ai-quest",
+-  "version": "6.0.0",
++  "version": "7.0.0",
+   "private": true,
+   "type": "module",
+   "scripts": {
+diff --git a/patches/README.md b/patches/README.md
+--- a/patches/README.md
++++ b/patches/README.md
+@@ -7,6 +7,8 @@ This directory keeps a simple manual archive of product versions that you asked 
+ - `version-3.json`
+ - `version-4.json`
+ - `version-5.json`
+ - `version-6.json`
++- `version-7.json`
++- `upgrade-to-7.patch`
+ 
+ ## How to use it
+ 
+@@ -17,8 +19,10 @@ This directory keeps a simple manual archive of product versions that you asked 
+ - Open the matching `version-*.json` file for the version you want to show.
+ - `displayVersion` is the human-facing version string.
+ - `defaultNextPatch` is the patch value to use as the next suggested patch for that base version.
+ - `status` shows whether the version is archived, previous, or current.
++- Apply `upgrade-to-7.patch` on top of a version `6` checkout to move the source tree to version `7` tracking.
+ 
+ ## Notes
+ 
+ - Versions `5` and `6` align with the current deployment metadata kept in `releases/`.
+ - Versions `3` and `4` are preserved as manual archive records because the current repo does not retain full historical release metadata for them.
++- Version `7` is tracked as the next upgrade patch rather than a previously recorded deployed release.
+diff --git a/patches/index.json b/patches/index.json
+--- a/patches/index.json
++++ b/patches/index.json
+@@ -2,6 +2,7 @@
+   "product": "HCL Learning Hub",
+   "purpose": "Manual version archive for product version selection and patch tracking.",
+   "currentVersion": "6",
++  "nextUpgradeVersion": "7",
+   "availableVersions": [
+     {
+       "version": "3",
+@@ -27,9 +28,16 @@
+     {
+       "version": "6",
+       "displayVersion": "6.0.0",
+-      "defaultNextPatch": "6.1",
++      "defaultNextPatch": "7",
+       "status": "current",
+       "metadataFile": "patches/version-6.json"
++    },
++    {
++      "version": "7",
++      "displayVersion": "7.0.0",
++      "defaultNextPatch": "7.1",
++      "status": "next-upgrade",
++      "metadataFile": "patches/version-7.json"
+     }
+   ]
+ }
+diff --git a/patches/version-6.json b/patches/version-6.json
+--- a/patches/version-6.json
++++ b/patches/version-6.json
+@@ -1,13 +1,13 @@
+ {
+   "version": "6",
+   "displayVersion": "6.0.0",
+-  "defaultNextPatch": "6.1",
++  "defaultNextPatch": "7",
+   "status": "current",
+   "recordedReleaseMetadata": true,
+   "releaseMetadataSource": "releases/current-release.env",
+   "releaseFile": "releases/current-release.env",
+   "notes": [
+     "Version 6 is the current maintained product version in the deployment metadata.",
+-    "Use this record when you want the product to display or operate as version 6."
++    "Apply the tracked upgrade patch to move from version 6 to version 7."
+   ]
+ }
+diff --git a/patches/version-7.json b/patches/version-7.json
+new file mode 100644
+--- /dev/null
++++ b/patches/version-7.json
+@@ -0,0 +1,13 @@
++{
++  "version": "7",
++  "displayVersion": "7.0.0",
++  "defaultNextPatch": "7.1",
++  "status": "next-upgrade",
++  "recordedReleaseMetadata": false,
++  "releaseMetadataSource": "upgrade patch archive",
++  "releaseFile": "",
++  "notes": [
++    "Version 7 is the next tracked upgrade patch for the product.",
++    "Apply patches/upgrade-to-7.patch to a version 6 checkout to move the source tree to version 7 tracking."
++  ]
++}
+diff --git a/server/src/lib/deployment.ts b/server/src/lib/deployment.ts
+--- a/server/src/lib/deployment.ts
++++ b/server/src/lib/deployment.ts
+@@ -104,14 +104,14 @@ function toVersionParts(version: string) {
+ function incrementVersion(version: string) {
+   const parts = toVersionParts(version);
+   if (parts.length && parts.every(part => Number.isFinite(part))) {
+-    if (parts.length === 1) return `${parts[0]}.1`;
++    if (parts.length === 1) return `${parts[0] + 1}`;
+     const next = [...parts];
+     next[next.length - 1] += 1;
+     return next.join('.');
+   }
+   const numeric = Number.parseInt(String(version || '').trim(), 10);
+-  if (Number.isFinite(numeric)) return `${numeric}.1`;
+-  return version ? `${version}.1` : '6.1';
++  if (Number.isFinite(numeric)) return `${numeric + 1}`;
++  return version ? `${version}.1` : '7';
+ }
+ 
+ function statBackup(filePath: string): BackupInfo | null {
+diff --git a/server/src/routes/admin.ts b/server/src/routes/admin.ts
+--- a/server/src/routes/admin.ts
++++ b/server/src/routes/admin.ts
+@@ -30,7 +30,7 @@ export const adminRouter = Router();
+ adminRouter.use(requireRole('ADMIN'));
+ 
+ const LOCAL_DEPLOYMENT_BASELINE = '6';
+-const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '6.1';
++const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '7';
+ 
+ adminRouter.post('/db-backups', async (req, res) => {
+   try {
+diff --git a/src/pages/AdminPanel.jsx b/src/pages/AdminPanel.jsx
+--- a/src/pages/AdminPanel.jsx
++++ b/src/pages/AdminPanel.jsx
+@@ -1411,7 +1411,7 @@ function DeploymentTab() {
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState('');
+   const [actionMessage, setActionMessage] = useState('');
+-  const [versionDraft, setVersionDraft] = useState('6.1');
++  const [versionDraft, setVersionDraft] = useState('7');
+   const [rollbackVersion, setRollbackVersion] = useState('');
+ 
+   const loadRollbackPreview = useCallback(async (version) => {
+@@ -1430,9 +1430,9 @@ function DeploymentTab() {
+       ]);
+       setStatus(nextStatus);
+       setUpgradePreview(nextUpgradePreview);
+-      setVersionDraft(current => current && current !== '6.1'
++      setVersionDraft(current => current && current !== '7'
+         ? current
+-        : (nextStatus?.suggestedVersion || '6.1'));
++        : (nextStatus?.suggestedVersion || '7'));
+       const fallbackRollbackVersion = preferredRollbackVersion
+         || rollbackVersion
+         || nextStatus?.previousRelease?.productVersion

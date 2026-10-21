@@ -1,0 +1,383 @@
+﻿{
+    "generatedAt":  "2026-10-21T22:11:34+05:30",
+    "workspaceRoot":  "D:\\Windsurf",
+    "repoRoot":  "D:\\Windsurf\\AI-Quest",
+    "currentVersion":  "7.0",
+    "entries":  [
+                    {
+                        "version":  "3.0",
+                        "majorVersion":  3,
+                        "minorVersion":  0,
+                        "archiveFile":  "patches/version-archives/version-3-0.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy",
+                        "modifiedAt":  "2026-08-17T07:27:18",
+                        "folderName":  "AI-Quest - Copy",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy\u0027.",
+                                      "Snapshot modified at 2026-08-17T07:27:18."
+                                  ]
+                    },
+                    {
+                        "version":  "3.1",
+                        "majorVersion":  3,
+                        "minorVersion":  1,
+                        "archiveFile":  "patches/version-archives/version-3-1.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (2)",
+                        "modifiedAt":  "2026-08-17T08:44:12",
+                        "folderName":  "AI-Quest - Copy (2)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (2)\u0027.",
+                                      "Snapshot modified at 2026-08-17T08:44:12."
+                                  ]
+                    },
+                    {
+                        "version":  "3.2",
+                        "majorVersion":  3,
+                        "minorVersion":  2,
+                        "archiveFile":  "patches/version-archives/version-3-2.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (3)",
+                        "modifiedAt":  "2026-08-17T10:16:34",
+                        "folderName":  "AI-Quest - Copy (3)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (3)\u0027.",
+                                      "Snapshot modified at 2026-08-17T10:16:34."
+                                  ]
+                    },
+                    {
+                        "version":  "3.3",
+                        "majorVersion":  3,
+                        "minorVersion":  3,
+                        "archiveFile":  "patches/version-archives/version-3-3.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (4)",
+                        "modifiedAt":  "2026-08-17T14:31:22",
+                        "folderName":  "AI-Quest - Copy (4)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (4)\u0027.",
+                                      "Snapshot modified at 2026-08-17T14:31:22."
+                                  ]
+                    },
+                    {
+                        "version":  "3.4",
+                        "majorVersion":  3,
+                        "minorVersion":  4,
+                        "archiveFile":  "patches/version-archives/version-3-4.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (5)",
+                        "modifiedAt":  "2026-08-17T16:36:52",
+                        "folderName":  "AI-Quest - Copy (5)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (5)\u0027.",
+                                      "Snapshot modified at 2026-08-17T16:36:52."
+                                  ]
+                    },
+                    {
+                        "version":  "3.5",
+                        "majorVersion":  3,
+                        "minorVersion":  5,
+                        "archiveFile":  "patches/version-archives/version-3-5.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (6)",
+                        "modifiedAt":  "2026-08-18T14:55:19",
+                        "folderName":  "AI-Quest - Copy (6)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (6)\u0027.",
+                                      "Snapshot modified at 2026-08-18T14:55:19."
+                                  ]
+                    },
+                    {
+                        "version":  "4.0",
+                        "majorVersion":  4,
+                        "minorVersion":  0,
+                        "archiveFile":  "patches/version-archives/version-4-0.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (7)",
+                        "modifiedAt":  "2026-08-25T09:25:57",
+                        "folderName":  "AI-Quest - Copy (7)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (7)\u0027.",
+                                      "Snapshot modified at 2026-08-25T09:25:57."
+                                  ]
+                    },
+                    {
+                        "version":  "4.1",
+                        "majorVersion":  4,
+                        "minorVersion":  1,
+                        "archiveFile":  "patches/version-archives/version-4-1.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - with managers login option",
+                        "modifiedAt":  "2026-08-26T11:24:27",
+                        "folderName":  "AI-Quest - with managers login option",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - with managers login option\u0027.",
+                                      "Snapshot modified at 2026-08-26T11:24:27."
+                                  ]
+                    },
+                    {
+                        "version":  "4.2",
+                        "majorVersion":  4,
+                        "minorVersion":  2,
+                        "archiveFile":  "patches/version-archives/version-4-2.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - use your own avatar",
+                        "modifiedAt":  "2026-08-29T11:10:57",
+                        "folderName":  "AI-Quest - use your own avatar",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - use your own avatar\u0027.",
+                                      "Snapshot modified at 2026-08-29T11:10:57."
+                                  ]
+                    },
+                    {
+                        "version":  "4.3",
+                        "majorVersion":  4,
+                        "minorVersion":  3,
+                        "archiveFile":  "patches/version-archives/version-4-3.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - okta_page_localuser_page",
+                        "modifiedAt":  "2026-09-10T10:14:44",
+                        "folderName":  "AI-Quest - okta_page_localuser_page",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - okta_page_localuser_page\u0027.",
+                                      "Snapshot modified at 2026-09-10T10:14:44."
+                                  ]
+                    },
+                    {
+                        "version":  "4.4",
+                        "majorVersion":  4,
+                        "minorVersion":  4,
+                        "archiveFile":  "patches/version-archives/version-4-4.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Prod okta implemented + manager assignments done",
+                        "modifiedAt":  "2026-09-11T17:18:22",
+                        "folderName":  "AI-Quest - Prod okta implemented + manager assignments done",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Prod okta implemented + manager assignments done\u0027.",
+                                      "Snapshot modified at 2026-09-11T17:18:22."
+                                  ]
+                    },
+                    {
+                        "version":  "4.5",
+                        "majorVersion":  4,
+                        "minorVersion":  5,
+                        "archiveFile":  "patches/version-archives/version-4-5.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - All coureses can do live and comingsoon",
+                        "modifiedAt":  "2026-09-12T20:16:03",
+                        "folderName":  "AI-Quest - All coureses can do live and comingsoon",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - All coureses can do live and comingsoon\u0027.",
+                                      "Snapshot modified at 2026-09-12T20:16:03."
+                                  ]
+                    },
+                    {
+                        "version":  "5.0",
+                        "majorVersion":  5,
+                        "minorVersion":  0,
+                        "archiveFile":  "patches/version-archives/version-5-0.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Search and learning path introduced",
+                        "modifiedAt":  "2026-09-13T16:56:24",
+                        "folderName":  "AI-Quest - Search and learning path introduced",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Search and learning path introduced\u0027.",
+                                      "Snapshot modified at 2026-09-13T16:56:24."
+                                  ]
+                    },
+                    {
+                        "version":  "5.1",
+                        "majorVersion":  5,
+                        "minorVersion":  1,
+                        "archiveFile":  "patches/version-archives/version-5-1.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Nested managers view is completed",
+                        "modifiedAt":  "2026-09-22T08:31:47",
+                        "folderName":  "AI-Quest - Nested managers view is completed",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Nested managers view is completed\u0027.",
+                                      "Snapshot modified at 2026-09-22T08:31:47."
+                                  ]
+                    },
+                    {
+                        "version":  "5.2",
+                        "majorVersion":  5,
+                        "minorVersion":  2,
+                        "archiveFile":  "patches/version-archives/version-5-2.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Copy (8)",
+                        "modifiedAt":  "2026-09-23T09:51:27",
+                        "folderName":  "AI-Quest - Copy (8)",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Copy (8)\u0027.",
+                                      "Snapshot modified at 2026-09-23T09:51:27."
+                                  ]
+                    },
+                    {
+                        "version":  "5.3",
+                        "majorVersion":  5,
+                        "minorVersion":  3,
+                        "archiveFile":  "patches/version-archives/version-5-3.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - landing pages simplified",
+                        "modifiedAt":  "2026-09-24T08:44:32",
+                        "folderName":  "AI-Quest - landing pages simplified",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - landing pages simplified\u0027.",
+                                      "Snapshot modified at 2026-09-24T08:44:32."
+                                  ]
+                    },
+                    {
+                        "version":  "5.4",
+                        "majorVersion":  5,
+                        "minorVersion":  4,
+                        "archiveFile":  "patches/version-archives/version-5-4.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest_notworking",
+                        "modifiedAt":  "2026-10-01T14:22:18",
+                        "folderName":  "AI-Quest_notworking",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest_notworking\u0027.",
+                                      "Snapshot modified at 2026-10-01T14:22:18."
+                                  ]
+                    },
+                    {
+                        "version":  "5.5",
+                        "majorVersion":  5,
+                        "minorVersion":  5,
+                        "archiveFile":  "patches/version-archives/version-5-5.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - oct01 back - Copy",
+                        "modifiedAt":  "2026-10-01T14:33:30",
+                        "folderName":  "AI-Quest - oct01 back - Copy",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - oct01 back - Copy\u0027.",
+                                      "Snapshot modified at 2026-10-01T14:33:30."
+                                  ]
+                    },
+                    {
+                        "version":  "6.0",
+                        "majorVersion":  6,
+                        "minorVersion":  0,
+                        "archiveFile":  "patches/version-archives/version-6-0.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - dark mode  light mode",
+                        "modifiedAt":  "2026-10-02T06:23:22",
+                        "folderName":  "AI-Quest - dark mode  light mode",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - dark mode  light mode\u0027.",
+                                      "Snapshot modified at 2026-10-02T06:23:22."
+                                  ]
+                    },
+                    {
+                        "version":  "6.1",
+                        "majorVersion":  6,
+                        "minorVersion":  1,
+                        "archiveFile":  "patches/version-archives/version-6-1.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - Courses display_ small",
+                        "modifiedAt":  "2026-10-02T12:17:52",
+                        "folderName":  "AI-Quest - Courses display_ small",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - Courses display_ small\u0027.",
+                                      "Snapshot modified at 2026-10-02T12:17:52."
+                                  ]
+                    },
+                    {
+                        "version":  "6.2",
+                        "majorVersion":  6,
+                        "minorVersion":  2,
+                        "archiveFile":  "patches/version-archives/version-6-2.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - AWS course is introduced",
+                        "modifiedAt":  "2026-10-02T16:37:05",
+                        "folderName":  "AI-Quest - AWS course is introduced",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - AWS course is introduced\u0027.",
+                                      "Snapshot modified at 2026-10-02T16:37:05."
+                                  ]
+                    },
+                    {
+                        "version":  "6.3",
+                        "majorVersion":  6,
+                        "minorVersion":  3,
+                        "archiveFile":  "patches/version-archives/version-6-3.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest -AI builder refining",
+                        "modifiedAt":  "2026-10-06T16:55:35",
+                        "folderName":  "AI-Quest -AI builder refining",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest -AI builder refining\u0027.",
+                                      "Snapshot modified at 2026-10-06T16:55:35."
+                                  ]
+                    },
+                    {
+                        "version":  "6.4",
+                        "majorVersion":  6,
+                        "minorVersion":  4,
+                        "archiveFile":  "patches/version-archives/version-6-4.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - back _up_13th_oct",
+                        "modifiedAt":  "2026-10-13T09:11:23",
+                        "folderName":  "AI-Quest - back _up_13th_oct",
+                        "packageVersion":  "1.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - back _up_13th_oct\u0027.",
+                                      "Snapshot modified at 2026-10-13T09:11:23."
+                                  ]
+                    },
+                    {
+                        "version":  "6.5",
+                        "majorVersion":  6,
+                        "minorVersion":  5,
+                        "archiveFile":  "patches/version-archives/version-6-5.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest - backup_16_oct",
+                        "modifiedAt":  "2026-10-16T09:17:01",
+                        "folderName":  "AI-Quest - backup_16_oct",
+                        "packageVersion":  "1.0.4",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest - backup_16_oct\u0027.",
+                                      "Snapshot modified at 2026-10-16T09:17:01."
+                                  ]
+                    },
+                    {
+                        "version":  "7.0",
+                        "majorVersion":  7,
+                        "minorVersion":  0,
+                        "archiveFile":  "patches/version-archives/version-7-0.zip",
+                        "sourceDirectory":  "D:\\Windsurf\\AI-Quest",
+                        "modifiedAt":  "2026-10-21T20:41:30",
+                        "folderName":  "AI-Quest",
+                        "packageVersion":  "7.0.0",
+                        "serverPackageVersion":  "0.1.0",
+                        "notes":  [
+                                      "Archive imported from snapshot folder \u0027AI-Quest\u0027.",
+                                      "Snapshot modified at 2026-10-21T20:41:30."
+                                  ]
+                    }
+                ]
+}

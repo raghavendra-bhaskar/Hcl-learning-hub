@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PATCHES_DIR="$INSTALL_DIR/patches"
+ARCHIVE_RESTORE_SCRIPT="$INSTALL_DIR/scripts/restore-version-archive.py"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 ok()     { echo -e "${GREEN}[ OK ]${NC} $*"; }
@@ -59,6 +61,9 @@ PREVIOUS_RELEASE_FILE="$RELEASES_DIR/previous-release.env"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 SAFETY_BACKUP="$BACKUP_DIR/rollback-safety-${TIMESTAMP}.dump"
 mkdir -p "$BACKUP_DIR" "$RELEASES_DIR"
+TARGET_RELEASE_FILE=""
+TARGET_ARCHIVE_FILE=""
+TARGET_SOURCE_DIRECTORY=""
 
 resolve_restore_file() {
   local requested="$1"
@@ -102,8 +107,45 @@ find_release_file() {
   return 1
 }
 
+find_archive_file() {
+  local version="$1"
+  node - "$INSTALL_DIR" "$version" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const [installDir, targetVersion] = process.argv.slice(2);
+const major = String(targetVersion || '').trim().split('.')[0];
+if (!major) process.exit(1);
+const versionFile = path.join(installDir, 'patches', `version-${major}.json`);
+if (!fs.existsSync(versionFile)) process.exit(1);
+const data = JSON.parse(fs.readFileSync(versionFile, 'utf8'));
+const sameVersion = (left, right) => {
+  if (left === right) return true;
+  const normalize = value => /^\d+$/.test(String(value || '').trim()) ? `${value}.0` : String(value || '').trim();
+  return normalize(left) === normalize(right);
+};
+const minor = Array.isArray(data.minorVersions)
+  ? data.minorVersions.find(entry => sameVersion(entry.version, targetVersion))
+  : null;
+const archiveFile = (minor && minor.archiveFile) || data.archiveFile || '';
+const sourceDirectory = (minor && minor.archiveSourceDirectory) || data.archiveSourceDirectory || '';
+if (!archiveFile) process.exit(1);
+const resolved = path.resolve(installDir, archiveFile);
+if (!fs.existsSync(resolved)) process.exit(1);
+process.stdout.write(`${resolved}\n${sourceDirectory}`);
+NODE
+}
+
 if [ -n "$TARGET_VERSION" ]; then
-  TARGET_RELEASE_FILE="$(find_release_file "$TARGET_VERSION")" || fail "Release version not found: $TARGET_VERSION"
+  TARGET_RELEASE_FILE="$(find_release_file "$TARGET_VERSION" 2>/dev/null || true)"
+  if [ -z "$TARGET_RELEASE_FILE" ]; then
+    ARCHIVE_INFO="$(find_archive_file "$TARGET_VERSION" 2>/dev/null || true)"
+    if [ -z "$ARCHIVE_INFO" ]; then
+      fail "Release version not found: $TARGET_VERSION"
+    fi
+    TARGET_ARCHIVE_FILE="$(printf '%s\n' "$ARCHIVE_INFO" | sed -n '1p')"
+    TARGET_SOURCE_DIRECTORY="$(printf '%s\n' "$ARCHIVE_INFO" | sed -n '2p')"
+  fi
 elif [ -f "$PREVIOUS_RELEASE_FILE" ]; then
   TARGET_RELEASE_FILE="$PREVIOUS_RELEASE_FILE"
 else
@@ -119,9 +161,15 @@ if [ -f "$CURRENT_RELEASE_FILE" ]; then
   CURRENT_PRE_SYNC_BACKUP="$(grep -E '^PRE_SYNC_BACKUP=' "$CURRENT_RELEASE_FILE" | head -1 | cut -d= -f2-)"
 fi
 
-TARGET_PRODUCT_VERSION="$(grep -E '^PRODUCT_VERSION=' "$TARGET_RELEASE_FILE" | head -1 | cut -d= -f2-)"
-TARGET_COMMIT="$(grep -E '^CURRENT_COMMIT=' "$TARGET_RELEASE_FILE" | head -1 | cut -d= -f2-)"
-[ -n "$TARGET_COMMIT" ] || fail "Target release file is missing CURRENT_COMMIT: $TARGET_RELEASE_FILE"
+TARGET_PRODUCT_VERSION="$TARGET_VERSION"
+TARGET_COMMIT=""
+if [ -n "$TARGET_RELEASE_FILE" ]; then
+  TARGET_PRODUCT_VERSION="$(grep -E '^PRODUCT_VERSION=' "$TARGET_RELEASE_FILE" | head -1 | cut -d= -f2-)"
+  TARGET_COMMIT="$(grep -E '^CURRENT_COMMIT=' "$TARGET_RELEASE_FILE" | head -1 | cut -d= -f2-)"
+  [ -n "$TARGET_COMMIT" ] || fail "Target release file is missing CURRENT_COMMIT: $TARGET_RELEASE_FILE"
+elif [ -z "$TARGET_PRODUCT_VERSION" ]; then
+  fail "Target version is required for archive rollback"
+fi
 
 if [ "$NO_RESTORE" = false ]; then
   if [ -n "$RESTORE_FILE" ]; then
@@ -136,7 +184,11 @@ fi
 banner "Rollback summary"
 info "Current version: ${CURRENT_VERSION:-unknown}"
 info "Target version : ${TARGET_PRODUCT_VERSION:-unknown}"
-info "Target commit  : $TARGET_COMMIT"
+if [ -n "$TARGET_RELEASE_FILE" ]; then
+  info "Target commit  : $TARGET_COMMIT"
+else
+  info "Target archive : $TARGET_ARCHIVE_FILE"
+fi
 if [ "$DB_RUNTIME_KIND" = "container" ]; then
   info "Database runtime: ${DB_RUNTIME_ENGINE}:${DB_RUNTIME_CONTAINER}"
 elif [ "$DB_RUNTIME_KIND" = "external" ]; then
@@ -173,8 +225,15 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
   warn "Local modifications detected — stashing them"
   git stash push -m "rollback.sh auto-stash ${TIMESTAMP}" || warn "git stash failed"
 fi
-git checkout "$TARGET_COMMIT" >/dev/null 2>&1 || fail "Could not checkout commit $TARGET_COMMIT"
-ok "Checked out $TARGET_COMMIT"
+if [ -n "$TARGET_RELEASE_FILE" ]; then
+  git checkout "$TARGET_COMMIT" >/dev/null 2>&1 || fail "Could not checkout commit $TARGET_COMMIT"
+  ok "Checked out $TARGET_COMMIT"
+else
+  command -v python3 >/dev/null 2>&1 || fail "python3 is required for archive-backed rollback"
+  [ -f "$ARCHIVE_RESTORE_SCRIPT" ] || fail "Archive restore script not found: $ARCHIVE_RESTORE_SCRIPT"
+  python3 "$ARCHIVE_RESTORE_SCRIPT" "$TARGET_ARCHIVE_FILE" "$INSTALL_DIR" || fail "Could not restore archive $TARGET_ARCHIVE_FILE"
+  ok "Archive restored from $TARGET_ARCHIVE_FILE"
+fi
 
 banner "Rollback — step 4/5: Dependencies and Prisma"
 npm install --no-fund --no-audit
@@ -197,7 +256,22 @@ else
 fi
 
 if [ -f "$CURRENT_RELEASE_FILE" ]; then cp -f "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"; fi
-cp -f "$TARGET_RELEASE_FILE" "$CURRENT_RELEASE_FILE"
+if [ -n "$TARGET_RELEASE_FILE" ]; then
+  cp -f "$TARGET_RELEASE_FILE" "$CURRENT_RELEASE_FILE"
+else
+  cat > "$CURRENT_RELEASE_FILE" <<EOF
+RELEASE_TIMESTAMP=${TIMESTAMP}
+PRODUCT_VERSION=${TARGET_PRODUCT_VERSION}
+GIT_BRANCH=${GIT_BRANCH}
+PREVIOUS_COMMIT=${CURRENT_COMMIT}
+CURRENT_COMMIT=archive:${TARGET_PRODUCT_VERSION}
+PREVIOUS_SHORT_COMMIT=${CURRENT_COMMIT:0:7}
+CURRENT_SHORT_COMMIT=archive
+PRE_SYNC_BACKUP=${SAFETY_BACKUP}
+RESTORE_SOURCE=${RESTORE_FILE}
+SYNC_MODE=archive-rollback
+EOF
+fi
 
 if [ "$NO_RESTART" = true ]; then
   warn "--no-restart given. Start manually: bash deploy/start.sh"

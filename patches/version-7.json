@@ -1,0 +1,29 @@
+﻿{
+    "version":  "7",
+    "displayVersion":  "7.0.0",
+    "defaultNextPatch":  "7.1",
+    "status":  "next-upgrade",
+    "recordedReleaseMetadata":  false,
+    "releaseMetadataSource":  "upgrade patch archive",
+    "releaseFile":  "",
+    "archiveFile":  "patches/version-archives/version-7-0.zip",
+    "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest",
+    "archiveModifiedAt":  "2026-10-21T20:41:30",
+    "minorVersions":  [
+                          {
+                              "version":  "7.0",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-7-0.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest",
+                              "archiveModifiedAt":  "2026-10-21T20:41:30",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest\u0027.",
+                                            "Snapshot modified at 2026-10-21T20:41:30."
+                                        ]
+                          }
+                      ],
+    "notes":  [
+                  "Version 7 is the next tracked upgrade patch for the product.",
+                  "Apply patches/upgrade-to-7.patch to a version 6 checkout to move the source tree to version 7 tracking."
+              ]
+}

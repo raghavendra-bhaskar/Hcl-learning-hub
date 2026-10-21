@@ -30,7 +30,6 @@ export const adminRouter = Router();
 adminRouter.use(requireRole('ADMIN'));
 
 const LOCAL_DEPLOYMENT_BASELINE = '6';
-const LOCAL_DEPLOYMENT_DEFAULT_UPGRADE = '6.1';
 
 adminRouter.post('/db-backups', async (req, res) => {
   try {
@@ -58,7 +57,9 @@ adminRouter.get('/deployment/rollback-preview', async (req, res) => {
 
 adminRouter.post('/deployment/upgrade', async (req, res) => {
   try {
-    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : LOCAL_DEPLOYMENT_DEFAULT_UPGRADE;
+    const deploymentStatus = getDeploymentStatus(LOCAL_DEPLOYMENT_BASELINE);
+    const defaultVersion = deploymentStatus.upgradeOptions?.[0]?.value || deploymentStatus.suggestedVersion;
+    const version = typeof req.body?.version === 'string' && req.body.version.trim() ? req.body.version.trim() : defaultVersion;
     const result = startUpgrade(version);
     res.status(202).json(result);
   } catch (error) {

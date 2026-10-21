@@ -1,13 +1,84 @@
-{
-  "version": "6",
-  "displayVersion": "6.0.0",
-  "defaultNextPatch": "6.1",
-  "status": "current",
-  "recordedReleaseMetadata": true,
-  "releaseMetadataSource": "releases/current-release.env",
-  "releaseFile": "releases/current-release.env",
-  "notes": [
-    "Version 6 is the current maintained product version in the deployment metadata.",
-    "Use this record when you want the product to display or operate as version 6."
-  ]
+﻿{
+    "version":  "6",
+    "displayVersion":  "6.0.0",
+    "defaultNextPatch":  "6.6",
+    "status":  "current",
+    "recordedReleaseMetadata":  true,
+    "releaseMetadataSource":  "releases/current-release.env",
+    "releaseFile":  "releases/current-release.env",
+    "archiveFile":  "patches/version-archives/version-6-0.zip",
+    "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - dark mode  light mode",
+    "archiveModifiedAt":  "2026-10-02T06:23:22",
+    "minorVersions":  [
+                          {
+                              "version":  "6.0",
+                              "releaseFile":  "releases/current-release.env",
+                              "archiveFile":  "patches/version-archives/version-6-0.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - dark mode  light mode",
+                              "archiveModifiedAt":  "2026-10-02T06:23:22",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - dark mode  light mode\u0027.",
+                                            "Snapshot modified at 2026-10-02T06:23:22."
+                                        ]
+                          },
+                          {
+                              "version":  "6.1",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-6-1.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - Courses display_ small",
+                              "archiveModifiedAt":  "2026-10-02T12:17:52",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - Courses display_ small\u0027.",
+                                            "Snapshot modified at 2026-10-02T12:17:52."
+                                        ]
+                          },
+                          {
+                              "version":  "6.2",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-6-2.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - AWS course is introduced",
+                              "archiveModifiedAt":  "2026-10-02T16:37:05",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - AWS course is introduced\u0027.",
+                                            "Snapshot modified at 2026-10-02T16:37:05."
+                                        ]
+                          },
+                          {
+                              "version":  "6.3",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-6-3.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest -AI builder refining",
+                              "archiveModifiedAt":  "2026-10-06T16:55:35",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest -AI builder refining\u0027.",
+                                            "Snapshot modified at 2026-10-06T16:55:35."
+                                        ]
+                          },
+                          {
+                              "version":  "6.4",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-6-4.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - back _up_13th_oct",
+                              "archiveModifiedAt":  "2026-10-13T09:11:23",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - back _up_13th_oct\u0027.",
+                                            "Snapshot modified at 2026-10-13T09:11:23."
+                                        ]
+                          },
+                          {
+                              "version":  "6.5",
+                              "releaseFile":  "",
+                              "archiveFile":  "patches/version-archives/version-6-5.zip",
+                              "archiveSourceDirectory":  "D:\\Windsurf\\AI-Quest - backup_16_oct",
+                              "archiveModifiedAt":  "2026-10-16T09:17:01",
+                              "notes":  [
+                                            "Archive imported from snapshot folder \u0027AI-Quest - backup_16_oct\u0027.",
+                                            "Snapshot modified at 2026-10-16T09:17:01."
+                                        ]
+                          }
+                      ],
+    "notes":  [
+                  "Version 6 is the current maintained product version in the deployment metadata.",
+                  "Apply the tracked upgrade patch to move from version 6 to version 7."
+              ]
 }

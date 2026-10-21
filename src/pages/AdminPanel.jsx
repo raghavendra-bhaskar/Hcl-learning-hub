@@ -1411,7 +1411,7 @@ function DeploymentTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionMessage, setActionMessage] = useState('');
-  const [versionDraft, setVersionDraft] = useState('6.1');
+  const [versionDraft, setVersionDraft] = useState('');
   const [rollbackVersion, setRollbackVersion] = useState('');
 
   const loadRollbackPreview = useCallback(async (version) => {
@@ -1430,13 +1430,12 @@ function DeploymentTab() {
       ]);
       setStatus(nextStatus);
       setUpgradePreview(nextUpgradePreview);
-      setVersionDraft(current => current && current !== '6.1'
+      const availableUpgradeOptions = nextStatus?.upgradeOptions || [];
+      setVersionDraft(current => availableUpgradeOptions.some(option => option.value === current)
         ? current
-        : (nextStatus?.suggestedVersion || '6.1'));
+        : (availableUpgradeOptions[0]?.value || nextStatus?.suggestedVersion || ''));
       const fallbackRollbackVersion = preferredRollbackVersion
-        || rollbackVersion
-        || nextStatus?.previousRelease?.productVersion
-        || nextStatus?.releases?.find(release => release.productVersion !== nextStatus?.currentVersion)?.productVersion
+        || (nextStatus?.rollbackOptions || []).find(option => option.available)?.value
         || '';
       setRollbackVersion(fallbackRollbackVersion);
       if (fallbackRollbackVersion) await loadRollbackPreview(fallbackRollbackVersion);
@@ -1446,7 +1445,7 @@ function DeploymentTab() {
     } finally {
       setLoading(false);
     }
-  }, [loadRollbackPreview, rollbackVersion]);
+  }, [loadRollbackPreview]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -1472,7 +1471,9 @@ function DeploymentTab() {
     }
   };
 
-  const releases = status?.releases || [];
+  const upgradeOptions = status?.upgradeOptions || [];
+  const rollbackOptions = status?.rollbackOptions || [];
+  const selectedUpgrade = upgradeOptions.find(option => option.value === versionDraft) || null;
   const repoCommits = upgradePreview?.upgradeSummary?.incomingCommits || [];
   const rollbackCommits = rollbackPreview?.rollbackSummary?.commitsToRemove || [];
 
@@ -1522,18 +1523,23 @@ function DeploymentTab() {
             </div>
             <label className="block">
               <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 block mb-1">Upgrade to version</span>
-              <input value={versionDraft} onChange={e => setVersionDraft(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)} />
+              <select value={versionDraft} onChange={e => setVersionDraft(e.target.value)} className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)}>
+                <option value="" style={getSelectOptionStyle(isLight)}>Select an approved version</option>
+                {upgradeOptions.map(option => (
+                  <option key={option.value} value={option.value} style={getSelectOptionStyle(isLight)}>{option.label}</option>
+                ))}
+              </select>
             </label>
             <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(16,185,129,0.18)' : 'rgba(16,185,129,0.18)', background: isLight ? 'rgba(240,253,244,0.9)' : 'rgba(16,185,129,0.05)' }}>
               <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-emerald-300'}`}>What this upgrade brings</p>
-              {repoCommits.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{repoCommits.map((commit, index) => <li key={index}>{commit}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No newer repo commits were detected.</p>}
+              {selectedUpgrade?.notes?.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{selectedUpgrade.notes.map((note, index) => <li key={index}>{note}</li>)}</ul> : repoCommits.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{repoCommits.map((commit, index) => <li key={index}>{commit}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No release notes or newer repo commits were detected.</p>}
             </div>
             <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(8,145,178,0.18)' : 'rgba(34,211,238,0.18)', background: isLight ? 'rgba(236,254,255,0.9)' : 'rgba(34,211,238,0.05)' }}>
               <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-cyan-300'}`}>Backup source for upgrade</p>
               <p className={`mt-2 text-xs break-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{status?.latestBackup?.filePath || 'No backup dump found.'}</p>
             </div>
-            <button onClick={startUpgrade}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-white"
+            <button onClick={startUpgrade} disabled={!versionDraft}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg,#06b6d4,#7c3aed)' }}>
               Start Upgrade
             </button>
@@ -1549,14 +1555,23 @@ function DeploymentTab() {
               <select value={rollbackVersion} onChange={async e => { const value = e.target.value; setRollbackVersion(value); await loadRollbackPreview(value); }}
                 className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none" style={getInputStyle(isLight)}>
                 <option value="" style={getSelectOptionStyle(isLight)}>Select a recorded version</option>
-                {releases.filter(release => release.productVersion && release.productVersion !== status?.currentVersion).map(release => (
-                  <option key={release.filePath} value={release.productVersion} style={getSelectOptionStyle(isLight)}>{release.productVersion} · {release.currentShortCommit || release.releaseTimestamp}</option>
+                {rollbackOptions.map(option => (
+                  <option key={`${option.value}-${option.label}`} value={option.value} disabled={!option.available} style={getSelectOptionStyle(isLight)}>{option.label}{option.available ? '' : ' · unavailable on VM'}</option>
                 ))}
               </select>
             </label>
             <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.18)', background: isLight ? 'rgba(255,251,235,0.95)' : 'rgba(245,158,11,0.05)' }}>
               <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-amber-300'}`}>What this rollback removes</p>
               {rollbackCommits.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{rollbackCommits.map((commit, index) => <li key={index}>{commit}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No commit delta was detected for the selected rollback target.</p>}
+            </div>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.18)', background: isLight ? 'rgba(238,242,255,0.95)' : 'rgba(99,102,241,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-indigo-300'}`}>Rollback source</p>
+              <p className={`mt-2 text-xs break-all ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{rollbackPreview?.targetRelease?.filePath || rollbackPreview?.targetArchive?.filePath || 'No rollback source selected yet.'}</p>
+              {!rollbackPreview?.targetRelease?.filePath && rollbackPreview?.targetArchive?.sourceDirectory ? <p className={`mt-2 text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Archive snapshot: {rollbackPreview.targetArchive.sourceDirectory}</p> : null}
+            </div>
+            <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(59,130,246,0.18)' : 'rgba(59,130,246,0.18)', background: isLight ? 'rgba(239,246,255,0.95)' : 'rgba(59,130,246,0.05)' }}>
+              <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-sky-300'}`}>Rollback release notes</p>
+              {rollbackPreview?.rollbackSummary?.releaseNotes?.length ? <ul className={`mt-2 space-y-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{rollbackPreview.rollbackSummary.releaseNotes.map((note, index) => <li key={index}>{note}</li>)}</ul> : <p className={`mt-2 text-xs ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No release notes recorded for this rollback target.</p>}
             </div>
             <div className="rounded-xl border p-3" style={{ borderColor: isLight ? 'rgba(239,68,68,0.18)' : 'rgba(239,68,68,0.18)', background: isLight ? 'rgba(254,242,242,0.95)' : 'rgba(239,68,68,0.05)' }}>
               <p className={`text-[11px] font-semibold ${isLight ? 'text-slate-900' : 'text-red-300'}`}>Backup restored during rollback</p>

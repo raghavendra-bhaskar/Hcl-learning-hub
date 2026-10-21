@@ -27,10 +27,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ "$HAS_VERSION" = false ]; then
-  ARGS+=(--version 3)
-fi
-
 if [ "$HAS_CODE_ONLY" = false ] && [ "$HAS_RESTORE" = false ]; then
   ARGS+=(--restore latest)
 fi
