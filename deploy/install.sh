@@ -1,36 +1,32 @@
 #!/bin/bash
 # ============================================================
-# HCL Software Learning Hub — Source Installer for a connected Linux VM
+# HCL Software Learning Hub — Kubernetes Installer (k3s)
 #
 # Self-contained bootstrap: download ONLY this file, run it, and it
-# installs every prerequisite, clones the repository, restores the
-# database and leaves the Hub ready to start.
+# installs k3s, builds container images, deploys via Kubernetes, and
+# leaves the Hub ready to access.
 #
 #   mkdir -p ~/software && cd ~/software
-#   # download install.sh (see README), then:
 #   bash install.sh
 #
 # Installs / configures:
-#   git, curl, openssl        (dnf / apt)
-#   Node.js 20 LTS            (NodeSource)
-#   PostgreSQL server         (initdb, role, database, scram auth)
-#   <parent>/hcl-learning-hub (git clone + npm install for BOTH workspaces)
-#   server/.env               (generated secrets + correct FRONTEND_ORIGIN)
-#   TLS certificate           (SAN matches this machine's FQDN)
-#   Database                  (restored from scripts/backup.dump)
+#   k3s (Kubernetes + kubectl + containerd + Traefik)   via get.k3s.io
+#   podman (RHEL) / docker (Debian/Ubuntu)              for image builds
+#   API image                                           built from server/Dockerfile
+#   Web image                                           built from root Dockerfile
+#   PostgreSQL                                          k8s StatefulSet (postgres:16-alpine)
+#   Namespace, Secrets, ConfigMap, Deployments, NodePort
+#   Database                                            restored from scripts/backup.dump
 #
-# Run as a NORMAL user that has sudo. Do NOT run with sudo directly, or
-# node_modules and the git clone end up owned by root.
+# Run as a NORMAL user that has sudo. Do NOT run with sudo directly.
+# Access the Hub at  http://<HOSTNAME>:30080
 #
 # Options:
-#   --dir <path>      Parent directory for the clone (default: script location)
 #   --repo <url>      Git repository URL
 #   --branch <name>   Branch to check out (default: main)
-#   --host <fqdn>     Public hostname (default: auto-detected FQDN)
-#   --dump <file>     Database dump to restore (default: repo scripts/backup.dump)
+#   --host <fqdn>     Public hostname or IP (default: auto-detect)
+#   --dump <file>     Database dump to restore (default: scripts/backup.dump)
 #   --token <pat>     GitHub token for a private repo (default: prompt)
-#   --database-url <url>  Use an existing PostgreSQL instead of installing one
-#   --pg-version <n>  PGDG major version when falling back (default: 16)
 #   --skip-db-restore Leave the database empty
 #   --no-save-token   Do not store the token for sync.sh
 # ============================================================
@@ -53,67 +49,56 @@ DUMP_FILE=""
 GITHUB_TOKEN=""
 SKIP_DB_RESTORE=false
 SAVE_TOKEN=true
-DATABASE_URL_OVERRIDE=""
-EXTERNAL_DB=false
-PG_MAJOR=16
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --dir)             PARENT_DIR="$2"; shift 2 ;;
     --repo)            GIT_REPO="$2"; shift 2 ;;
     --branch)          GIT_BRANCH="$2"; shift 2 ;;
     --host)            SERVER_FQDN="$2"; shift 2 ;;
     --dump)            DUMP_FILE="$2"; shift 2 ;;
     --token)           GITHUB_TOKEN="$2"; shift 2 ;;
-    --database-url)    DATABASE_URL_OVERRIDE="$2"; shift 2 ;;
-    --pg-version)      PG_MAJOR="$2"; shift 2 ;;
     --skip-db-restore) SKIP_DB_RESTORE=true; shift ;;
     --no-save-token)   SAVE_TOKEN=false; shift ;;
-    -h|--help)         sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help)         sed -n '2,32p' "$0"; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
 
-[ "$(id -u)" -ne 0 ] || fail "Do not run as root. Run as your normal user (it will call sudo when needed):
-  bash install.sh"
-
+[ "$(id -u)" -ne 0 ] || fail "Do not run as root. Run as your normal user (it will call sudo when needed)."
 command -v sudo >/dev/null 2>&1 || fail "sudo is required but not installed"
 
 APP_NAME="hcl-learning-hub"
 INSTALL_DIR="$PARENT_DIR/$APP_NAME"
 RUN_USER="$(id -un)"
+K8S_NS="hcl-learning-hub"
+WEB_PORT=30080
+DB_USER="hcl_hub"
+DB_NAME="hcl_learning_hub"
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
-SHORT_HOST="${SERVER_FQDN%%.*}"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-
-UI_PORT=5173
-API_PORT=4000
-DB_NAME=hclhub
-DB_USER=hcluser
-DB_HOST=127.0.0.1
-DB_PORT=5432
+ACCESS_URL="http://${SERVER_FQDN}:${WEB_PORT}"
 
 clear || true
 cat <<BANNER
 
-  HCL Software Learning Hub — Source Installer
-  ============================================
+  HCL Software Learning Hub — Kubernetes Installer (k3s)
+  =======================================================
   User     : ${RUN_USER}
   Install  : ${INSTALL_DIR}
   Hostname : ${SERVER_FQDN}
-  Access   : https://${SERVER_FQDN}:${UI_PORT}
+  Access   : ${ACCESS_URL}
 
 BANNER
 
 # ── Step 1: OS detection & base packages ─────────────────────────────────────
-banner "Step 1/9: Base packages"
+banner "Step 1/10: OS packages"
 
 [ -f /etc/os-release ] || fail "Cannot detect OS (/etc/os-release missing)"
 . /etc/os-release
 case "${ID,,}" in
   rhel|centos|rocky|almalinux|fedora) PKG=dnf ;;
-  ubuntu|debian)                      PKG=apt ;;
+  ubuntu|debian)                      PKG=apt  ;;
   *) fail "Unsupported OS: $ID (supported: RHEL/Rocky/Alma/CentOS, Ubuntu/Debian)" ;;
 esac
 ok "OS: ${PRETTY_NAME:-$ID} (package manager: $PKG)"
@@ -123,239 +108,85 @@ if ! sudo -n true 2>/dev/null; then
 fi
 
 if [ "$PKG" = "dnf" ]; then
-  sudo dnf install -y git curl openssl tar >/dev/null 2>&1 \
-    || warn "Some base packages could not be installed — continuing"
+  sudo dnf install -y git curl openssl tar podman >/dev/null 2>&1 \
+    || warn "Some packages could not be installed — continuing"
 else
   sudo apt-get update -y >/dev/null 2>&1 || true
-  sudo apt-get install -y git curl openssl tar ca-certificates >/dev/null 2>&1 \
-    || warn "Some base packages could not be installed — continuing"
+  sudo apt-get install -y git curl openssl tar podman ca-certificates >/dev/null 2>&1 \
+    || warn "Some packages could not be installed — continuing"
+fi
+
+if command -v podman >/dev/null 2>&1; then
+  BUILD_CMD="podman"
+  ok "Container build tool: podman"
+elif command -v docker >/dev/null 2>&1; then
+  BUILD_CMD="docker"
+  ok "Container build tool: docker"
+else
+  fail "Neither podman nor docker found. Install one:
+  RHEL/CentOS : sudo dnf install -y podman
+  Ubuntu/Debian: sudo apt-get install -y podman"
 fi
 ok "Base packages present"
 
-# ── Step 2: Node.js 20 ───────────────────────────────────────────────────────
-banner "Step 2/9: Node.js 20 LTS"
+# ── Step 2: k3s (Kubernetes) ─────────────────────────────────────────────────
+banner "Step 2/10: k3s — Kubernetes"
 
-NEED_NODE=true
-if command -v node >/dev/null 2>&1; then
-  NODE_MAJOR="$(node -v | sed 's/^v\([0-9]*\).*/\1/')"
-  if [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then
-    NEED_NODE=false
-    ok "Node.js already installed: $(node -v) (npm $(npm -v))"
-  else
-    warn "Node.js $(node -v) is too old — installing Node 20"
-  fi
-fi
-
-if [ "$NEED_NODE" = true ]; then
-  info "Installing Node.js 20 from NodeSource..."
-  if [ "$PKG" = "dnf" ]; then
-    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash - >/dev/null
-    sudo dnf install -y nodejs
-  else
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - >/dev/null
-    sudo apt-get install -y nodejs
-  fi
-  ok "Node.js installed: $(node -v) (npm $(npm -v))"
-fi
-
-# npm 12 requires Node 22+; whichever npm ships with your Node is the safe one.
-info "Keep the bundled npm — do NOT run 'npm install -g npm@latest'"
-
-# ── Step 3: PostgreSQL ───────────────────────────────────────────────────────
-banner "Step 3/9: PostgreSQL"
-
-PG_SERVICE="postgresql"
-PG_BIN=""
-
-if [ -n "$DATABASE_URL_OVERRIDE" ]; then
-  # postgresql://user:password@host:port/dbname
-  _rest="${DATABASE_URL_OVERRIDE#*://}"
-  _creds="${_rest%%@*}"
-  _hostpart="${_rest#*@}"
-  DB_USER="${_creds%%:*}"
-  DB_PASSWORD="${_creds#*:}"
-  _hostport="${_hostpart%%/*}"
-  DB_NAME="${_hostpart#*/}"; DB_NAME="${DB_NAME%%\?*}"
-  DB_HOST="${_hostport%%:*}"
-  DB_PORT="${_hostport#*:}"
-  if [ "$DB_PORT" = "$DB_HOST" ]; then DB_PORT=5432; fi
-  EXTERNAL_DB=true
-  ok "Using the external database ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
-  command -v psql >/dev/null 2>&1 \
-    || warn "psql client not found — the dump restore step will be skipped"
-elif ls /usr/pgsql-*/bin/psql >/dev/null 2>&1; then
-  ok "PostgreSQL already installed (PGDG)"
-elif command -v psql >/dev/null 2>&1 && sudo test -d /var/lib/pgsql; then
-  ok "PostgreSQL already installed: $(psql --version)"
-elif [ "$PKG" = "apt" ]; then
-  info "Installing PostgreSQL server..."
-  sudo apt-get install -y postgresql postgresql-contrib || fail "PostgreSQL install failed"
-  ok "PostgreSQL installed"
+if command -v k3s >/dev/null 2>&1 && sudo k3s kubectl cluster-info >/dev/null 2>&1; then
+  ok "k3s already installed and running: $(k3s --version 2>/dev/null | head -1)"
 else
-  info "Installing PostgreSQL server..."
-  if sudo dnf install -y postgresql-server postgresql-contrib 2>/dev/null; then
-    ok "PostgreSQL installed from the distribution repositories"
-  else
-    # RHEL without a valid subscription cannot see AppStream; PGDG is public.
-    warn "Distribution packages unavailable (expired RHEL subscription?)"
-    info "Falling back to the PostgreSQL community (PGDG) repository..."
-    EL_VER="${VERSION_ID%%.*}"
-    PGDG_REPO=/etc/yum.repos.d/pgdg-redhat-all.repo
+  info "Installing k3s (downloads ~60 MB)..."
+  curl -sfL https://get.k3s.io | sudo sh - \
+    || fail "k3s install failed. Check internet connectivity and try again."
+  ok "k3s installed"
 
-    # A previous failed run can leave this file behind with broken URLs, which
-    # would break every later dnf call, so disable pgdg while adding the RPM.
-    if ! sudo test -f "$PGDG_REPO"; then
-      sudo dnf --disablerepo="pgdg*" install -y \
-        "https://download.postgresql.org/pub/repos/yum/reporpms/EL-${EL_VER}-x86_64/pgdg-redhat-repo-latest.noarch.rpm" \
-        || fail "Could not add the PGDG repository.
-
-  No PostgreSQL package source is reachable. Pick one:
-    1. Restore the RHEL subscription:  sudo subscription-manager refresh
-    2. Point at an existing database:  bash install.sh --database-url postgresql://user:pass@host:5432/hclhub
-    3. Run PostgreSQL in a container and use option 2 against it."
-    else
-      info "PGDG repository already present — reusing it"
-    fi
-
-    # PGDG publishes per MAJOR release (rhel-9), but RHEL expands $releasever to
-    # the minor version (9.0), producing a 404. Pin the URLs to the major.
-    if sudo test -f "$PGDG_REPO"; then
-      sudo test -f "${PGDG_REPO}.hcl-hub.bak" || sudo cp "$PGDG_REPO" "${PGDG_REPO}.hcl-hub.bak"
-      sudo sed -i "s|rhel-\$releasever-|rhel-${EL_VER}-|g" "$PGDG_REPO"
-      ok "PGDG repo URLs pinned to EL${EL_VER} (backup: ${PGDG_REPO}.hcl-hub.bak)"
-    fi
-
-    sudo dnf -qy --disablerepo="pgdg*" module disable postgresql >/dev/null 2>&1 || true
-    sudo dnf clean all >/dev/null 2>&1 || true
-
-    # Every pgdg<N> repo is enabled by default; one unreachable version aborts
-    # the whole transaction, so enable only the major we are installing.
-    if ! sudo dnf --disablerepo="pgdg*" --enablerepo="pgdg${PG_MAJOR}" \
-           install -y "postgresql${PG_MAJOR}-server" "postgresql${PG_MAJOR}-contrib"; then
-      fail "PGDG install of postgresql${PG_MAJOR}-server failed.
-
-  Try a different major version, or use an existing database:
-    bash install.sh --pg-version 15
-    bash install.sh --database-url postgresql://user:pass@host:5432/hclhub
-
-  To run PostgreSQL in a container instead:
-    podman run -d --name hcl-postgres -p 5432:5432 \\
-      -e POSTGRES_USER=hcluser -e POSTGRES_PASSWORD=<pick-one> -e POSTGRES_DB=hclhub \\
-      -v hcl-pgdata:/var/lib/postgresql/data --restart unless-stopped \\
-      docker.io/postgres:16-alpine
-    bash install.sh --database-url postgresql://hcluser:<pick-one>@127.0.0.1:5432/hclhub"
-    fi
-    PG_SERVICE="postgresql-${PG_MAJOR}"
-    PG_BIN="/usr/pgsql-${PG_MAJOR}/bin"
-    ok "PostgreSQL ${PG_MAJOR} installed from PGDG"
-  fi
-fi
-
-if [ "$EXTERNAL_DB" = false ]; then
-  # PGDG installs outside /usr/bin, so put its tools on PATH for this script.
-  if [ -z "$PG_BIN" ]; then
-    for CANDIDATE in /usr/pgsql-*/bin; do
-      if [ -x "$CANDIDATE/psql" ]; then PG_BIN="$CANDIDATE"; fi
-    done
-  fi
-  if [ -n "$PG_BIN" ]; then
-    # Derive the major from the path so a pre-existing PGDG install (which may
-    # be a different version than --pg-version) gets the right service name.
-    _found="${PG_BIN#/usr/pgsql-}"; _found="${_found%/bin}"
-    if [ -n "$_found" ] && [ "$_found" != "$PG_BIN" ]; then PG_MAJOR="$_found"; fi
-    export PATH="$PG_BIN:$PATH"
-    PG_SERVICE="postgresql-${PG_MAJOR}"
-  fi
-
-  # RHEL needs an explicit initdb; Debian/Ubuntu initialise on install.
-  if [ "$PKG" = "dnf" ]; then
-    if [ -n "$PG_BIN" ]; then
-      PGDATA_DIR="/var/lib/pgsql/${PG_MAJOR}/data"
-      PG_SETUP="${PG_BIN}/postgresql-${PG_MAJOR}-setup"
-    else
-      PGDATA_DIR="/var/lib/pgsql/data"
-      PG_SETUP="$(command -v postgresql-setup || echo /usr/bin/postgresql-setup)"
-    fi
-    if ! sudo test -f "$PGDATA_DIR/PG_VERSION"; then
-      info "Initialising the data directory at $PGDATA_DIR..."
-      sudo "$PG_SETUP" initdb >/dev/null 2>&1 \
-        || sudo "$PG_SETUP" --initdb >/dev/null 2>&1 \
-        || fail "postgresql initdb failed"
-      ok "Data directory initialised"
-    fi
-  fi
-
-  sudo systemctl enable --now "$PG_SERVICE" >/dev/null 2>&1 \
-    || fail "Could not start ${PG_SERVICE}. Check: sudo journalctl -u ${PG_SERVICE}"
-  for _ in $(seq 1 30); do
-    sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SELECT 1' >/dev/null 2>&1 && break
-    sleep 2
+  info "Waiting for k3s to be ready (up to 2 minutes)..."
+  for i in $(seq 1 40); do
+    if sudo k3s kubectl cluster-info >/dev/null 2>&1; then break; fi
+    sleep 3
   done
-  sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SELECT 1' >/dev/null 2>&1 \
-    || fail "PostgreSQL is not accepting connections"
-  ok "PostgreSQL is running (service: ${PG_SERVICE})"
-
-  # Prisma connects over TCP, so localhost must use password auth, not ident/peer.
-  HBA_FILE="$(sudo -u postgres "${PG_BIN:+$PG_BIN/}psql" -tAc 'SHOW hba_file' | tr -d '[:space:]')"
-  if [ -n "$HBA_FILE" ] && sudo test -f "$HBA_FILE"; then
-    if sudo grep -Eq '^[[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+(ident|peer)' "$HBA_FILE"; then
-      info "Enabling password auth for local TCP connections..."
-      sudo cp "$HBA_FILE" "${HBA_FILE}.hcl-hub.bak"
-      sudo sed -ri 's#^([[:space:]]*host[[:space:]]+all[[:space:]]+all[[:space:]]+(127\.0\.0\.1/32|::1/128)[[:space:]]+)(ident|peer)#\1scram-sha-256#' "$HBA_FILE"
-      sudo systemctl reload "$PG_SERVICE"
-      ok "pg_hba.conf updated (backup: ${HBA_FILE}.hcl-hub.bak)"
-    else
-      ok "pg_hba.conf already allows password auth on localhost"
-    fi
-  fi
+  sudo k3s kubectl cluster-info >/dev/null 2>&1 \
+    || fail "k3s did not become ready. Check: sudo journalctl -u k3s -n 50"
+  ok "k3s cluster is ready"
 fi
 
-# ── Step 4: Database role & schema ───────────────────────────────────────────
-banner "Step 4/9: Database role and database"
+# Make kubectl available to the current user
+mkdir -p "$HOME/.kube"
+sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+chmod 600 "$HOME/.kube/config"
+export KUBECONFIG="$HOME/.kube/config"
 
-if [ "$EXTERNAL_DB" = true ]; then
-  if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-       -tAc 'SELECT 1' >/dev/null 2>&1; then
-    ok "Connected to the external database"
-  else
-    fail "Cannot connect with the supplied --database-url"
-  fi
+# Resolve kubectl command (k3s symlinks it to /usr/local/bin/kubectl)
+if command -v kubectl >/dev/null 2>&1; then
+  KUBECTL="kubectl"
 else
-  DB_PASSWORD="$(openssl rand -hex 16)"
-  PSQL_ADMIN=("sudo" "-u" "postgres" "${PG_BIN:+$PG_BIN/}psql")
-
-  if "${PSQL_ADMIN[@]}" -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-    info "Role ${DB_USER} exists — resetting its password"
-    "${PSQL_ADMIN[@]}" -c "ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
+  sudo ln -sf /usr/local/bin/k3s /usr/local/bin/kubectl 2>/dev/null || true
+  if command -v kubectl >/dev/null 2>&1; then
+    KUBECTL="kubectl"
   else
-    "${PSQL_ADMIN[@]}" -c "CREATE ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';" >/dev/null
-    ok "Role ${DB_USER} created"
+    KUBECTL="k3s kubectl"
+    warn "kubectl not in PATH — using 'k3s kubectl'. Add /usr/local/bin to PATH to use 'kubectl' directly."
   fi
-
-  if "${PSQL_ADMIN[@]}" -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
-    ok "Database ${DB_NAME} already exists"
-  else
-    sudo -u postgres "${PG_BIN:+$PG_BIN/}createdb" -O "${DB_USER}" "${DB_NAME}"
-    ok "Database ${DB_NAME} created"
-  fi
-  "${PSQL_ADMIN[@]}" -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" >/dev/null
 fi
 
-# ── Step 5: Source code ──────────────────────────────────────────────────────
-banner "Step 5/9: Source code"
+$KUBECTL wait --for=condition=ready node --all --timeout=120s >/dev/null 2>&1 \
+  || warn "Node readiness check timed out — continuing anyway"
+ok "kubectl configured for user ${RUN_USER}"
+
+# ── Step 3: Source code ──────────────────────────────────────────────────────
+banner "Step 3/10: Source code"
 
 mkdir -p "$PARENT_DIR" 2>/dev/null || sudo mkdir -p "$PARENT_DIR"
 if [ ! -w "$PARENT_DIR" ]; then
-  info "Taking ownership of $PARENT_DIR..."
   sudo chown -R "${RUN_USER}:${RUN_USER}" "$PARENT_DIR"
 fi
 
-# GIT_ASKPASS keeps the token out of argv, the remote URL and shell history.
+# GIT_ASKPASS keeps the token out of argv and shell history
 ASKPASS=""
 setup_askpass() {
   [ -n "$GITHUB_TOKEN" ] || return 0
-  ASKPASS="$(mktemp)"
-  chmod 700 "$ASKPASS"
+  ASKPASS="$(mktemp)"; chmod 700 "$ASKPASS"
   cat > "$ASKPASS" <<'ASK'
 #!/bin/bash
 case "$1" in
@@ -372,129 +203,240 @@ trap cleanup_askpass EXIT
 
 if [ -d "$INSTALL_DIR/.git" ]; then
   ok "Repository already present at $INSTALL_DIR"
+  cd "$INSTALL_DIR"
+  setup_askpass
+  git pull origin "$GIT_BRANCH" 2>/dev/null || warn "git pull failed — using existing code"
 else
-  # Probe anonymously; only ask for a token if the repo is actually private.
   if [ -z "$GITHUB_TOKEN" ] && ! GIT_TERMINAL_PROMPT=0 git ls-remote "$GIT_REPO" >/dev/null 2>&1; then
-    warn "This repository is private — a GitHub token is required."
+    warn "Repository is private — a GitHub token is required."
     info "Use a fine-grained PAT with read-only 'Contents' access."
     read -rsp "  GitHub token (input hidden): " GITHUB_TOKEN; echo ""
     [ -n "$GITHUB_TOKEN" ] || fail "No token supplied"
   fi
   setup_askpass
-
   info "Cloning ${GIT_REPO} (branch ${GIT_BRANCH})..."
   git clone --branch "$GIT_BRANCH" "$GIT_REPO" "$INSTALL_DIR" \
-    || fail "git clone failed. If the repo is private, check the token scope.
-  A GitHub password will NOT work — password auth for Git was removed."
+    || fail "git clone failed. Check the token scope (Contents: read)."
   ok "Cloned into $INSTALL_DIR"
 fi
 
 cd "$INSTALL_DIR"
 
-# ── Step 6: Dependencies ─────────────────────────────────────────────────────
-banner "Step 6/9: npm dependencies"
-
-# Anything copied from another OS has the wrong native binaries.
-rm -rf node_modules server/node_modules
-
-info "Installing UI dependencies (root workspace)..."
-npm install --no-fund --no-audit
-info "Installing API dependencies (server workspace)..."
-npm install --prefix server --no-fund --no-audit
-
-# npm/cli#4828: a lockfile written on another OS can omit this platform's
-# optional native packages, so vite/rollup fail only at runtime. Verify, and
-# rebuild from scratch without the lockfile if the check fails.
-if ! npx --no-install vite --version >/dev/null 2>&1; then
-  warn "Native modules are incomplete (npm optional-dependency bug) — reinstalling"
-  rm -rf node_modules package-lock.json
-  npm install --no-fund --no-audit
-  npx --no-install vite --version >/dev/null 2>&1 \
-    || fail "vite still cannot start. Run 'npm install' manually in $INSTALL_DIR"
-  ok "UI dependencies repaired"
+if [ "$SAVE_TOKEN" = true ] && [ -n "$GITHUB_TOKEN" ]; then
+  printf '%s' "$GITHUB_TOKEN" > .hub-token
+  chmod 600 .hub-token
+  ok "GitHub token stored at ${INSTALL_DIR}/.hub-token (mode 600)"
 fi
 
-if ! ( cd server && node -e "require.resolve('@prisma/client')" >/dev/null 2>&1 ); then
-  warn "API dependencies incomplete — reinstalling"
-  rm -rf server/node_modules server/package-lock.json
-  npm install --prefix server --no-fund --no-audit
-fi
+# ── Step 4: Build container images ───────────────────────────────────────────
+banner "Step 4/10: Build container images"
 
-ok "Dependencies installed for $(node -p 'process.platform + "-" + process.arch')"
+API_IMAGE="hcl-hub/api:latest"
+WEB_IMAGE="hcl-hub/web:latest"
 
-# ── Step 7: Configuration & certificates ─────────────────────────────────────
-banner "Step 7/9: Configuration"
+info "Building API image from server/Dockerfile ..."
+$BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile ./server \
+  || fail "API image build failed. Check server/Dockerfile."
+ok "API image built: $API_IMAGE"
 
+info "Building web image from Dockerfile ..."
+$BUILD_CMD build -t "$WEB_IMAGE" -f Dockerfile . \
+  || fail "Web image build failed. Check Dockerfile and src/."
+ok "Web image built: $WEB_IMAGE"
+
+# ── Step 5: Import images into k3s containerd ────────────────────────────────
+banner "Step 5/10: Import images into k3s"
+
+info "Importing API image into k3s containerd ..."
+$BUILD_CMD save "$API_IMAGE" | sudo k3s ctr images import - \
+  || fail "Failed to import API image into k3s. Is k3s running? (sudo systemctl status k3s)"
+ok "API image imported"
+
+info "Importing web image into k3s containerd ..."
+$BUILD_CMD save "$WEB_IMAGE" | sudo k3s ctr images import - \
+  || fail "Failed to import web image into k3s"
+ok "Web image imported"
+
+# ── Step 6: Kubernetes resources ─────────────────────────────────────────────
+banner "Step 6/10: Apply Kubernetes resources"
+
+DB_PASSWORD="$(openssl rand -hex 16)"
 JWT_SECRET="$(openssl rand -hex 32)"
 ADMIN_PASSWORD="$(openssl rand -hex 9)"
-FRONTEND_ORIGIN="https://${SERVER_FQDN}:${UI_PORT}"
 
-if [ -f server/.env ]; then
-  cp server/.env "server/.env.bak.$(date +%Y%m%d-%H%M%S)"
-  warn "Existing server/.env backed up"
-fi
+# Namespace
+$KUBECTL apply -f k8s/0-namespace.yaml
+ok "Namespace: $K8S_NS"
 
-cat > server/.env <<ENVFILE
-# Generated by deploy/install.sh on $(date -Iseconds)
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+# Secrets — generated fresh, not from the placeholder YAML file
+$KUBECTL create secret generic hcl-learning-hub-secrets \
+  --namespace "$K8S_NS" \
+  --from-literal=db-password="$DB_PASSWORD" \
+  --from-literal=jwt-secret="$JWT_SECRET" \
+  --from-literal=admin-password="$ADMIN_PASSWORD" \
+  --save-config --dry-run=client -o yaml | $KUBECTL apply -f -
+ok "Secrets created"
 
-PORT=${API_PORT}
-NODE_ENV=development
-FRONTEND_ORIGIN=${FRONTEND_ORIGIN}
+# ConfigMap (db name, user, node env, ports)
+$KUBECTL apply -f k8s/2-configmap.yaml
+ok "ConfigMap applied"
 
-OKTA_ISSUER=
-OKTA_AUDIENCE=api://default
-OKTA_CLIENT_ID=
-OKTA_MANAGER_CLAIM=manager
-OKTA_MANAGER_ID_CLAIM=managerId
+# PostgreSQL StatefulSet + PVC + headless Service
+$KUBECTL apply -f k8s/3-postgres.yaml
+ok "PostgreSQL StatefulSet applied"
 
-ENABLE_LOCAL_ADMIN=true
-LOCAL_ADMIN_USERNAME=admin
-LOCAL_ADMIN_PASSWORD=${ADMIN_PASSWORD}
-LOCAL_ADMIN_JWT_SECRET=${JWT_SECRET}
-ENVFILE
-chmod 600 server/.env
-ok "server/.env written (FRONTEND_ORIGIN=${FRONTEND_ORIGIN})"
+# Build patched API and Web manifests in a temp dir:
+#   • Replace GHCR image references with local image names
+#   • Set imagePullPolicy: Never  (images are local, no registry push needed)
+#   • Set FRONTEND_ORIGIN to the real VM access URL
+K8S_TMP="$(mktemp -d)"
+trap 'rm -rf "$K8S_TMP"; [ -n "$ASKPASS" ] && rm -f "$ASKPASS"' EXIT
 
-# TLS certificate whose SAN covers the FQDN, short name and IP.
-info "Generating TLS certificate for ${SERVER_FQDN}..."
-rm -rf certs
-CERT_CN="$SHORT_HOST" \
-CERT_FQDN="$SERVER_FQDN" \
-CERT_ALT_IPS="${PRIMARY_IP}" \
-  node scripts/generate-certs.js
-ok "Certificate generated"
+sed \
+  -e "s|image: ghcr.io/raghavendra-bhaskar/hcl-learning-hub-api:latest|image: ${API_IMAGE}|g" \
+  -e "s|imagePullPolicy: Always|imagePullPolicy: Never|g" \
+  -e "s|http://hcl-learning-hub.hcl-software.com|${ACCESS_URL}|g" \
+  k8s/4-api.yaml > "$K8S_TMP/4-api.yaml"
+$KUBECTL apply -f "$K8S_TMP/4-api.yaml"
+ok "API Deployment applied"
 
-# Deployment config consumed by start.sh / stop.sh / sync.sh
+sed \
+  -e "s|image: ghcr.io/raghavendra-bhaskar/hcl-learning-hub-web:latest|image: ${WEB_IMAGE}|g" \
+  -e "s|imagePullPolicy: Always|imagePullPolicy: Never|g" \
+  -e "s|replicas: 3|replicas: 1|g" \
+  k8s/5-web.yaml > "$K8S_TMP/5-web.yaml"
+$KUBECTL apply -f "$K8S_TMP/5-web.yaml"
+ok "Web Deployment applied (1 replica)"
+
+# NodePort service — external access at http://NODE-IP:30080
+cat > "$K8S_TMP/nodeport.yaml" <<NODEPORT_EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-nodeport
+  namespace: hcl-learning-hub
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: ${WEB_PORT}
+NODEPORT_EOF
+$KUBECTL apply -f "$K8S_TMP/nodeport.yaml"
+ok "NodePort service applied — access at port ${WEB_PORT}"
+
+# hub.env for any remaining deploy/*.sh scripts that read it
 cat > deploy/hub.env <<HUBENV
 APP_NAME=${APP_NAME}
 SERVER_FQDN=${SERVER_FQDN}
-UI_PORT=${UI_PORT}
-API_PORT=${API_PORT}
-DB_HOST=${DB_HOST}
-DB_PORT=${DB_PORT}
+DEPLOY_MODE=kubernetes
+K8S_NAMESPACE=${K8S_NS}
+WEB_PORT=${WEB_PORT}
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
-DB_CONTAINER_NAME=${DB_CONTAINER_NAME:-hcl-postgres}
-DB_CONTAINER_ENGINE=${DB_CONTAINER_ENGINE:-}
-PG_SERVICE=${PG_SERVICE}
-PG_BIN=${PG_BIN}
-EXTERNAL_DB=${EXTERNAL_DB}
 GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
 HUBENV
 chmod 600 deploy/hub.env
 
 find deploy -maxdepth 1 -type f -name '*.sh' -exec chmod u+x {} \;
-ok "Deploy scripts marked executable"
 
-# Credentials summary (kept out of git by .gitignore)
-cat > .deploy-credentials <<CREDS
-# HCL Software Learning Hub — Deployment Credentials
+# ── Step 7: Wait for PostgreSQL ───────────────────────────────────────────────
+banner "Step 7/10: Wait for PostgreSQL"
+
+info "Waiting for PostgreSQL pod (up to 3 minutes) ..."
+$KUBECTL wait pod -l app=postgres -n "$K8S_NS" \
+  --for=condition=ready --timeout=180s \
+  || fail "PostgreSQL pod did not become ready.
+  Diagnose with:
+    $KUBECTL describe pod -l app=postgres -n $K8S_NS
+    $KUBECTL logs -l app=postgres -n $K8S_NS"
+ok "PostgreSQL pod is ready"
+
+# ── Step 8: Database restore ─────────────────────────────────────────────────
+banner "Step 8/10: Database restore"
+
+[ -n "$DUMP_FILE" ] || DUMP_FILE="$INSTALL_DIR/scripts/backup.dump"
+PG_POD="$($KUBECTL get pod -n "$K8S_NS" -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+
+if [ "$SKIP_DB_RESTORE" = true ]; then
+  warn "--skip-db-restore given — database will be seeded by the API on first start"
+elif [ -z "$PG_POD" ]; then
+  warn "Cannot resolve postgres pod name — skipping restore"
+elif [ -f "$DUMP_FILE" ]; then
+  info "Copying dump to pod ${PG_POD} ..."
+  $KUBECTL cp "$DUMP_FILE" "${K8S_NS}/${PG_POD}:/tmp/backup.dump"
+
+  RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
+  MAGIC="$(head -c 5 "$DUMP_FILE" | tr -d '\0' || true)"
+  set +e
+  if [ "$MAGIC" = "PGDMP" ]; then
+    $KUBECTL exec -n "$K8S_NS" "$PG_POD" -- \
+      sh -c "PGPASSWORD='${DB_PASSWORD}' pg_restore \
+             -U ${DB_USER} -d ${DB_NAME} \
+             --clean --if-exists --no-owner --no-acl \
+             /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
+  else
+    $KUBECTL exec -n "$K8S_NS" "$PG_POD" -- \
+      sh -c "PGPASSWORD='${DB_PASSWORD}' psql \
+             -U ${DB_USER} -d ${DB_NAME} \
+             -f /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
+  fi
+  RC=$?
+  set -e
+  if [ $RC -ne 0 ]; then
+    warn "Restore exited with code $RC — see $RESTORE_LOG"
+    warn "Errors about missing roles or DROP are normal on a fresh database"
+  else
+    ok "Database restored from $(basename "$DUMP_FILE")"
+  fi
+  # Clean up dump from pod
+  $KUBECTL exec -n "$K8S_NS" "$PG_POD" -- rm -f /tmp/backup.dump 2>/dev/null || true
+else
+  warn "No dump found at $DUMP_FILE — database will be empty until the API seeds it"
+  info "To restore later:  kubectl cp <dump> ${K8S_NS}/\$(kubectl get pod -n ${K8S_NS} -l app=postgres -o jsonpath='{.items[0].metadata.name}'):/tmp/backup.dump"
+fi
+
+# ── Step 9: Wait for API + Web ───────────────────────────────────────────────
+banner "Step 9/10: Wait for application pods"
+
+info "Waiting for API pod (up to 3 minutes) ..."
+$KUBECTL wait pod -l app=api -n "$K8S_NS" \
+  --for=condition=ready --timeout=180s \
+  || warn "API pod not ready yet — check: $KUBECTL describe pod -l app=api -n $K8S_NS"
+ok "API pod ready"
+
+info "Waiting for web pod (up to 2 minutes) ..."
+$KUBECTL wait pod -l app=web -n "$K8S_NS" \
+  --for=condition=ready --timeout=120s \
+  || warn "Web pod not ready yet — check: $KUBECTL describe pod -l app=web -n $K8S_NS"
+ok "Web pod ready"
+
+# ── Step 10: Firewall ─────────────────────────────────────────────────────────
+banner "Step 10/10: Firewall"
+
+if command -v firewall-cmd >/dev/null 2>&1 && sudo systemctl is-active --quiet firewalld 2>/dev/null; then
+  sudo firewall-cmd --permanent --add-port="${WEB_PORT}/tcp" >/dev/null 2>&1 || true
+  sudo firewall-cmd --reload >/dev/null 2>&1 || true
+  ok "firewalld: port ${WEB_PORT}/tcp opened"
+elif command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
+  sudo ufw allow "${WEB_PORT}/tcp" >/dev/null 2>&1 || true
+  ok "ufw: port ${WEB_PORT}/tcp opened"
+else
+  warn "No managed firewall detected — ensure port ${WEB_PORT}/tcp is reachable from your browser"
+fi
+
+# Save credentials
+cat > "$INSTALL_DIR/.deploy-credentials" <<CREDS
+# HCL Software Learning Hub — Kubernetes Deployment Credentials
 # Generated: $(date -Iseconds)
 INSTALL_DIR=${INSTALL_DIR}
 SERVER_FQDN=${SERVER_FQDN}
-ACCESS_URL=${FRONTEND_ORIGIN}
+ACCESS_URL=${ACCESS_URL}
+DEPLOY_MODE=kubernetes
+K8S_NAMESPACE=${K8S_NS}
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
@@ -502,136 +444,30 @@ JWT_SECRET=${JWT_SECRET}
 ADMIN_USERNAME=admin@local
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 CREDS
-chmod 600 .deploy-credentials
+chmod 600 "$INSTALL_DIR/.deploy-credentials"
 ok "Credentials saved to ${INSTALL_DIR}/.deploy-credentials"
-
-if [ "$SAVE_TOKEN" = true ] && [ -n "$GITHUB_TOKEN" ]; then
-  printf '%s' "$GITHUB_TOKEN" > .hub-token
-  chmod 600 .hub-token
-  ok "GitHub token stored at ${INSTALL_DIR}/.hub-token (mode 600) for sync.sh"
-fi
-
-# ── Step 8: Database restore + migrations ────────────────────────────────────
-banner "Step 8/9: Database"
-
-[ -n "$DUMP_FILE" ] || DUMP_FILE="$INSTALL_DIR/scripts/backup.dump"
-
-if [ "$SKIP_DB_RESTORE" = true ]; then
-  warn "--skip-db-restore given — starting with an empty database"
-elif [ -f "$DUMP_FILE" ]; then
-  info "Restoring database from $(basename "$DUMP_FILE")..."
-  RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
-  MAGIC="$(head -c 5 "$DUMP_FILE" | tr -d '\0' || true)"
-
-  # A custom archive stores its format version at byte 6; pg_restore refuses
-  # anything newer than itself. 1.15 needs PG16, 1.16 needs PG17, and so on.
-  if [ "$MAGIC" = "PGDMP" ]; then
-    ARCHIVE_VMIN="$(od -An -tu1 -j6 -N1 "$DUMP_FILE" 2>/dev/null | tr -d ' ' || true)"
-    PGR_MAJOR="$(pg_restore --version 2>/dev/null | awk '{print $NF}' | cut -d. -f1 || true)"
-    if [ -n "$ARCHIVE_VMIN" ] && [ -n "$PGR_MAJOR" ] && [ "$ARCHIVE_VMIN" -ge 15 ] 2>/dev/null; then
-      NEED_MAJOR=$((ARCHIVE_VMIN + 1))
-      if [ "$PGR_MAJOR" -lt "$NEED_MAJOR" ] 2>/dev/null; then
-        warn "Dump archive version 1.${ARCHIVE_VMIN} needs pg_restore ${NEED_MAJOR}+, but this host has ${PGR_MAJOR}"
-        info "Restore will fail. Use a PostgreSQL ${NEED_MAJOR}+ container and restore with ITS pg_restore:"
-        info "  podman cp '$DUMP_FILE' hcl-postgres:/tmp/backup.dump"
-        info "  podman exec -e PGPASSWORD=<pw> hcl-postgres pg_restore -U ${DB_USER} -d ${DB_NAME} \\"
-        info "      --clean --if-exists --no-owner --no-acl /tmp/backup.dump"
-      fi
-    fi
-  fi
-  set +e
-  if [ "$MAGIC" = "PGDMP" ]; then
-    PGPASSWORD="$DB_PASSWORD" pg_restore -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-      --clean --if-exists --no-owner --no-acl "$DUMP_FILE" > "$RESTORE_LOG" 2>&1
-  else
-    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-      --set ON_ERROR_STOP=off -f "$DUMP_FILE" > "$RESTORE_LOG" 2>&1
-  fi
-  RC=$?
-  set -e
-  if [ $RC -ne 0 ]; then
-    warn "Restore exited with code $RC — review $RESTORE_LOG"
-    warn "Errors about missing roles or DROP statements are normal on a fresh database"
-  else
-    ok "Database restored"
-  fi
-else
-  warn "No dump at $DUMP_FILE — the database will only contain the schema"
-fi
-
-info "Generating the Prisma client for this machine..."
-npm run prisma:generate --prefix server >/dev/null
-ok "Prisma client generated"
-
-info "Applying database migrations..."
-npm run prisma:deploy --prefix server >/dev/null 2>&1 \
-  || warn "prisma migrate deploy reported an issue — check with: npm run prisma:deploy --prefix server"
-ok "Migrations applied"
-
-TABLES="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';" 2>/dev/null | tr -d '[:space:]' || true)"
-ok "Database contains ${TABLES:-?} tables"
-
-# Local login authenticates against the User table, so an empty or failed
-# restore would leave no way in. Seed admin@local when no ADMIN row exists.
-ADMINS="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  -tAc "SELECT count(*) FROM \"User\" WHERE role='ADMIN';" 2>/dev/null | tr -d '[:space:]' || true)"
-USERS="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  -tAc "SELECT count(*) FROM \"User\";" 2>/dev/null | tr -d '[:space:]' || true)"
-
-if [ "${ADMINS:-0}" = "0" ]; then
-  info "No ADMIN user found — seeding admin@local..."
-  npm run seed:admin >/dev/null 2>&1 \
-    && ok "Local admin created: admin@local" \
-    || warn "Could not seed admin@local — run manually: npm run seed:admin"
-else
-  ok "Existing users preserved (${USERS:-?} total, ${ADMINS} admin)"
-fi
-
-if [ "${USERS:-0}" = "0" ] || [ "${USERS:-0}" = "1" ]; then
-  warn "The User table has ${USERS:-0} row(s) — the dump's users were NOT restored"
-  info "Check the restore log above, then re-restore with a matching pg_restore version"
-fi
-
-# ── Step 9: Firewall & finish ────────────────────────────────────────────────
-banner "Step 9/9: Firewall"
-
-if command -v firewall-cmd >/dev/null 2>&1 && sudo systemctl is-active --quiet firewalld 2>/dev/null; then
-  sudo firewall-cmd --permanent --add-port="${UI_PORT}/tcp" >/dev/null 2>&1 || true
-  sudo firewall-cmd --permanent --add-port="${API_PORT}/tcp" >/dev/null 2>&1 || true
-  sudo firewall-cmd --reload >/dev/null 2>&1 || true
-  ok "firewalld: ${UI_PORT}/tcp and ${API_PORT}/tcp opened"
-elif command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q "Status: active"; then
-  sudo ufw allow "${UI_PORT}/tcp" >/dev/null 2>&1 || true
-  sudo ufw allow "${API_PORT}/tcp" >/dev/null 2>&1 || true
-  ok "ufw: ${UI_PORT}/tcp and ${API_PORT}/tcp opened"
-else
-  warn "No managed firewall detected — ensure ${UI_PORT}/tcp is reachable"
-fi
-
-chmod +x deploy/*.sh 2>/dev/null || true
-chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
 
 banner "Installation complete"
 cat <<SUMMARY
 
-  Application URL : ${FRONTEND_ORIGIN}
+  Application URL : ${ACCESS_URL}
   Admin login     : admin@local / ${ADMIN_PASSWORD}
   Install dir     : ${INSTALL_DIR}
   Credentials     : ${INSTALL_DIR}/.deploy-credentials
 
-  Start the Hub (UI + API in one command):
-    bash ${INSTALL_DIR}/deploy/start.sh
+  Useful kubectl commands:
+    View all pods        :  $KUBECTL get pods -n ${K8S_NS}
+    Stream API logs      :  $KUBECTL logs -n ${K8S_NS} -l app=api -f
+    Stream web logs      :  $KUBECTL logs -n ${K8S_NS} -l app=web -f
+    Restart API          :  $KUBECTL rollout restart deployment/api -n ${K8S_NS}
+    Restart web          :  $KUBECTL rollout restart deployment/web -n ${K8S_NS}
+    Remove everything    :  $KUBECTL delete namespace ${K8S_NS}
 
-  Stop it:
-    bash ${INSTALL_DIR}/deploy/stop.sh
-
-  Pull the latest code + back up the database:
-    bash ${INSTALL_DIR}/deploy/sync.sh
-
-  The certificate is self-signed: the browser shows a warning once.
-  Click Advanced -> Proceed for both:
-    ${FRONTEND_ORIGIN}
-    https://${SERVER_FQDN}:${API_PORT}/health
+  To rebuild and redeploy after a code change:
+    cd ${INSTALL_DIR}
+    git pull
+    podman build -t hcl-hub/api:latest -f server/Dockerfile ./server
+    podman save hcl-hub/api:latest | sudo k3s ctr images import -
+    $KUBECTL rollout restart deployment/api -n ${K8S_NS}
 
 SUMMARY

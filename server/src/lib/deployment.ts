@@ -393,33 +393,18 @@ function buildRollbackOptions(currentVersion: string, patchArchive: PatchArchive
     return major !== null && major < currentMajor;
   });
   for (const version of olderMajors) {
-    const history = version.minorVersions.length
-      ? version.minorVersions.map(record => ({
-          value: record.version,
-          archiveFile: record.archiveFile,
-          releaseFile: record.releaseFile,
-          notes: record.notes,
-        }))
-      : [{
-          value: version.version,
-          archiveFile: version.archiveFile,
-          releaseFile: version.releaseFile,
-          notes: version.notes,
-        }];
-    for (const historicalVersion of history) {
-      const release = findReleaseByVersion(releases, historicalVersion.value) || findReleaseByVersion(releases, version.version);
-      const archiveAvailable = hasArchiveFile(historicalVersion.archiveFile || '');
-      options.push({
-        value: release?.productVersion || historicalVersion.value,
-        label: formatVersionLabel(historicalVersion.value),
-        status: version.status,
-        available: Boolean(release || archiveAvailable),
-        isMinor: String(historicalVersion.value).includes('.'),
-        notes: historicalVersion.notes?.length ? historicalVersion.notes : version.notes,
-        releaseFilePath: release?.filePath || historicalVersion.releaseFile || version.releaseFile || '',
-        archiveFilePath: archiveAvailable ? resolveRepoPath(historicalVersion.archiveFile || '') : '',
-      });
-    }
+    const release = findReleaseByVersion(releases, version.version);
+    const archiveAvailable = hasArchiveFile(version.archiveFile);
+    options.push({
+      value: release?.productVersion || version.version,
+      label: version.version,
+      status: version.status,
+      available: Boolean(release || archiveAvailable),
+      isMinor: false,
+      notes: version.notes,
+      releaseFilePath: release?.filePath || version.releaseFile || '',
+      archiveFilePath: archiveAvailable ? resolveRepoPath(version.archiveFile) : '',
+    });
   }
   const currentMajorHistory = [
     ...(currentMajorRecord?.minorVersions || []).map(record => record.version),

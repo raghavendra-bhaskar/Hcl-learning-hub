@@ -4,7 +4,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 PROTECTED_TOP_LEVEL = {
     '.git',
@@ -30,12 +30,28 @@ def copy_preserved_files(install_dir: Path, staging_dir: Path) -> None:
         shutil.copy2(source, target)
 
 
+def extract_with_path_normalization(archive_path: Path, extract_dir: Path) -> None:
+    """Extract zip, converting Windows backslash paths to forward-slash paths."""
+    with zipfile.ZipFile(archive_path, 'r') as archive:
+        for member in archive.infolist():
+            normalized_name = member.filename.replace('\\', '/')
+            if normalized_name != member.filename or normalized_name.endswith('/'):
+                target = extract_dir / PurePosixPath(normalized_name)
+                if normalized_name.endswith('/'):
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as src, open(target, 'wb') as dst:
+                    shutil.copyfileobj(src, dst)
+            else:
+                archive.extract(member, extract_dir)
+
+
 def sync_archive(archive_path: Path, install_dir: Path) -> None:
     with tempfile.TemporaryDirectory(prefix='ai-quest-archive-') as temp_dir:
         extract_dir = Path(temp_dir) / 'extract'
         extract_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(archive_path, 'r') as archive:
-            archive.extractall(extract_dir)
+        extract_with_path_normalization(archive_path, extract_dir)
 
         copy_preserved_files(install_dir, extract_dir)
 
