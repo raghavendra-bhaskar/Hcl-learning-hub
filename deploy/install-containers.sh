@@ -110,6 +110,52 @@ elif command -v docker >/dev/null 2>&1; then
 else
   fail "Neither podman nor docker found"
 fi
+
+version_ge() {
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
+}
+runtime_version_ok() {
+  local runtime_path runtime_name runtime_version minimum_version
+  runtime_path="$1"
+  [ -x "$runtime_path" ] || return 1
+  runtime_name="$(basename "$runtime_path")"
+  runtime_version="$("$runtime_path" --version 2>/dev/null | sed -n '1{s/.*version[[:space:]]\([0-9][0-9.]*\).*/\1/p;q}')"
+  [ -n "$runtime_version" ] || return 1
+  if [ "$runtime_name" = "crun" ]; then
+    minimum_version="1.14.3"
+  else
+    minimum_version="1.1.11"
+  fi
+  version_ge "$runtime_version" "$minimum_version"
+}
+configure_podman_runtime() {
+  local current_runtime configured_runtime candidate conf_dir conf_file
+  [ "$ENGINE" = "podman" ] || return 0
+  current_runtime="$(podman info --format '{{.Host.OCIRuntime.Path}}' 2>/dev/null || true)"
+  if [ -n "$current_runtime" ] && runtime_version_ok "$current_runtime"; then
+    ok "Podman OCI runtime: $current_runtime"
+    return 0
+  fi
+  configured_runtime=""
+  for candidate in /usr/local/bin/crun "$(command -v crun 2>/dev/null || true)" "$(command -v runc 2>/dev/null || true)" /usr/bin/crun /usr/sbin/runc /usr/bin/runc; do
+    [ -n "$candidate" ] || continue
+    if runtime_version_ok "$candidate"; then
+      configured_runtime="$candidate"
+      break
+    fi
+  done
+  [ -n "$configured_runtime" ] || fail "Podman is installed, but no compatible OCI runtime was found. Update crun to >= 1.14.3 or install a current runc."
+  conf_dir="$HOME/.config/containers"
+  conf_file="$conf_dir/containers.conf"
+  mkdir -p "$conf_dir"
+  cat > "$conf_file" <<EOF
+[engine]
+runtime = "$configured_runtime"
+EOF
+  runtime_version_ok "$configured_runtime" || fail "Configured Podman runtime is still incompatible: $configured_runtime"
+  ok "Podman OCI runtime configured: $configured_runtime"
+}
+configure_podman_runtime
 if [ "$ENGINE" = "podman" ]; then
   sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80 >/dev/null 2>&1 || true
   if [ -d /etc/sysctl.d ]; then
