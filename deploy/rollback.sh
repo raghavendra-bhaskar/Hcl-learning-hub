@@ -307,10 +307,18 @@ else
 fi
 
 banner "Rollback — step 4/5: Dependencies and Prisma"
-npm install --no-fund --no-audit
-npm install --prefix server --no-fund --no-audit
-npm run prisma:generate --prefix server >/dev/null
-ok "Dependencies and Prisma client refreshed"
+if [ "${DEPLOY_MODE:-}" = "containers" ]; then
+  ENGINE="${CONTAINER_ENGINE:-podman}"
+  command -v "$ENGINE" >/dev/null 2>&1 || fail "Container engine not found: $ENGINE"
+  "$ENGINE" build -t hcl-hub/api:latest -f server/Dockerfile ./server || fail "API image build failed"
+  "$ENGINE" build -t hcl-hub/web:latest -f Dockerfile . || fail "Web image build failed"
+  ok "Container images rebuilt"
+else
+  npm install --no-fund --no-audit
+  npm install --prefix server --no-fund --no-audit
+  npm run prisma:generate --prefix server >/dev/null
+  ok "Dependencies and Prisma client refreshed"
+fi
 
 if [ "$NO_RESTORE" = false ]; then
   banner "Rollback — step 5/5: Restore database"
@@ -321,7 +329,9 @@ if [ "$NO_RESTORE" = false ]; then
   RC=$?
   set -e
   [ $RC -eq 0 ] && ok "Restore complete" || warn "Restore exited $RC — see $RESTORE_LOG"
-  npm run prisma:deploy --prefix server >/dev/null || warn "prisma migrate deploy reported an issue after restore"
+  if [ "${DEPLOY_MODE:-}" != "containers" ]; then
+    npm run prisma:deploy --prefix server >/dev/null || warn "prisma migrate deploy reported an issue after restore"
+  fi
 else
   banner "Rollback — step 5/5: Database restore skipped"
 fi

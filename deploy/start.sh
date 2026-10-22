@@ -31,12 +31,111 @@ if [ "${1:-}" = "--foreground" ]; then FOREGROUND=true; fi
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 SERVER_FQDN="${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
 
+# ── Container mode ────────────────────────────────────────────────────────────
+if [ "${DEPLOY_MODE:-}" = "containers" ]; then
+  ENGINE="${CONTAINER_ENGINE:-podman}"
+  command -v "$ENGINE" >/dev/null 2>&1 || fail "Container engine not found: $ENGINE"
+  NETWORK_NAME="${NETWORK_NAME:-hcl-hub-net}"
+  DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-hub-postgres}"
+  API_CONTAINER_NAME="${API_CONTAINER_NAME:-hcl-hub-api}"
+  WEB_CONTAINER_NAME="${WEB_CONTAINER_NAME:-hcl-hub-web}"
+  DB_VOLUME="${DB_VOLUME:-hcl-hub-postgres-data}"
+  API_VOLUME="${API_VOLUME:-hcl-hub-api-data}"
+  HTTPS_PORT="${HTTPS_PORT:-443}"
+  HTTP_PORT="${HTTP_PORT:-80}"
+  CREDS="$INSTALL_DIR/.deploy-credentials"
+  [ -f "$CREDS" ] || fail "Missing $CREDS"
+  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
+  JWT_SECRET="$(grep -E '^JWT_SECRET=' "$CREDS" | head -1 | cut -d= -f2-)"
+  ADMIN_PASSWORD="$(grep -E '^ADMIN_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
+  [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+  RUNTIME_DIR="$INSTALL_DIR/deploy/runtime"
+  CERT_DIR="$RUNTIME_DIR/certs"
+
+  banner "Starting ${APP_NAME:-hcl-learning-hub} (Containers)"
+
+  "$ENGINE" network inspect "$NETWORK_NAME" >/dev/null 2>&1 || "$ENGINE" network create "$NETWORK_NAME" >/dev/null
+
+  if "$ENGINE" ps -a --format '{{.Names}}' 2>/dev/null | grep -Fxq "$DB_CONTAINER_NAME"; then
+    "$ENGINE" start "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
+  else
+    "$ENGINE" run -d \
+      --name "$DB_CONTAINER_NAME" \
+      --network "$NETWORK_NAME" \
+      --restart unless-stopped \
+      -e POSTGRES_DB="${DB_NAME:-hcl_learning_hub}" \
+      -e POSTGRES_USER="${DB_USER:-hcl_hub}" \
+      -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+      -v "$DB_VOLUME:/var/lib/postgresql/data" \
+      postgres:16-alpine >/dev/null || fail "Could not start PostgreSQL container"
+  fi
+
+  for _ in $(seq 1 60); do
+    if "$ENGINE" exec "$DB_CONTAINER_NAME" pg_isready -U "${DB_USER:-hcl_hub}" -d "${DB_NAME:-hcl_learning_hub}" >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  "$ENGINE" exec "$DB_CONTAINER_NAME" pg_isready -U "${DB_USER:-hcl_hub}" -d "${DB_NAME:-hcl_learning_hub}" >/dev/null 2>&1 \
+    || fail "PostgreSQL container did not become ready"
+  ok "PostgreSQL ready"
+
+  "$ENGINE" rm -f "$API_CONTAINER_NAME" >/dev/null 2>&1 || true
+  "$ENGINE" run -d \
+    --name "$API_CONTAINER_NAME" \
+    --network "$NETWORK_NAME" \
+    --restart unless-stopped \
+    -e DATABASE_URL="postgresql://${DB_USER:-hcl_hub}:${DB_PASSWORD}@${DB_CONTAINER_NAME}:5432/${DB_NAME:-hcl_learning_hub}" \
+    -e NODE_ENV=production \
+    -e PORT=4000 \
+    -e FRONTEND_ORIGIN="https://${SERVER_FQDN}" \
+    -e ENABLE_LOCAL_ADMIN=true \
+    -e LOCAL_ADMIN_USERNAME=admin \
+    -e LOCAL_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+    -e LOCAL_ADMIN_JWT_SECRET="$JWT_SECRET" \
+    -v "$API_VOLUME:/app/data" \
+    hcl-hub/api:latest >/dev/null || fail "Could not start API container"
+  ok "API container started"
+
+  [ -f "$RUNTIME_DIR/nginx.ssl.conf" ] || fail "Missing $RUNTIME_DIR/nginx.ssl.conf"
+  [ -f "$CERT_DIR/tls.crt" ] || fail "Missing TLS cert: $CERT_DIR/tls.crt"
+  [ -f "$CERT_DIR/tls.key" ] || fail "Missing TLS key: $CERT_DIR/tls.key"
+  "$ENGINE" rm -f "$WEB_CONTAINER_NAME" >/dev/null 2>&1 || true
+  "$ENGINE" run -d \
+    --name "$WEB_CONTAINER_NAME" \
+    --network "$NETWORK_NAME" \
+    --restart unless-stopped \
+    -p "${HTTP_PORT}:80" \
+    -p "${HTTPS_PORT}:443" \
+    -v "$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro" \
+    -v "$CERT_DIR:/etc/nginx/certs:ro" \
+    hcl-hub/web:latest >/dev/null || fail "Could not start web container"
+  ok "Web container started"
+
+  banner "Running"
+  cat <<CONTAINER_SUMMARY
+
+  Application : https://${SERVER_FQDN}
+  Logs (API)  : $ENGINE logs -f ${API_CONTAINER_NAME}
+  Logs (web)  : $ENGINE logs -f ${WEB_CONTAINER_NAME}
+  Stop        : bash ${INSTALL_DIR}/deploy/stop.sh
+
+CONTAINER_SUMMARY
+  exit 0
+fi
+
 # ── Kubernetes mode ───────────────────────────────────────────────────────────
 if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-  KUBECTL="kubectl"
-  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+  KUBECTL="${KUBECTL_BIN:-}"
+  if [ -z "$KUBECTL" ] || [ ! -x "$KUBECTL" ]; then
+    if [ -x /usr/local/bin/kubectl ]; then
+      KUBECTL="/usr/local/bin/kubectl"
+    elif command -v kubectl >/dev/null 2>&1; then
+      KUBECTL="$(command -v kubectl)"
+    else
+      fail "kubectl not found. Re-run deploy/install.sh --mode kubernetes"
+    fi
+  fi
 
   banner "Starting ${APP_NAME:-hcl-learning-hub} (Kubernetes)"
 

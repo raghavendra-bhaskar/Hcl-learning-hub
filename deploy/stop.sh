@@ -27,12 +27,47 @@ if [ "${1:-}" = "--with-db" ]; then WITH_DB=true; fi
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/hub.env" ]; then . "$SCRIPT_DIR/hub.env"; fi
 
+# ── Container mode ────────────────────────────────────────────────────────────
+if [ "${DEPLOY_MODE:-}" = "containers" ]; then
+  ENGINE="${CONTAINER_ENGINE:-podman}"
+  command -v "$ENGINE" >/dev/null 2>&1 || { warn "Container engine not found: $ENGINE"; exit 1; }
+  DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-hcl-hub-postgres}"
+  API_CONTAINER_NAME="${API_CONTAINER_NAME:-hcl-hub-api}"
+  WEB_CONTAINER_NAME="${WEB_CONTAINER_NAME:-hcl-hub-web}"
+
+  banner "Stopping ${APP_NAME:-hcl-learning-hub} (Containers)"
+
+  info "Stopping application containers ..."
+  "$ENGINE" stop "$WEB_CONTAINER_NAME" "$API_CONTAINER_NAME" >/dev/null 2>&1 || true
+  ok "Application containers stopped"
+
+  if [ "$WITH_DB" = true ]; then
+    info "Stopping PostgreSQL container ..."
+    "$ENGINE" stop "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
+    ok "PostgreSQL stopped"
+  else
+    info "PostgreSQL keeps running (use --with-db to stop it too)"
+  fi
+
+  ok "Stopped. All data is intact."
+  exit 0
+fi
+
 # ── Kubernetes mode ───────────────────────────────────────────────────────────
 if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-  KUBECTL="kubectl"
-  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+  KUBECTL="${KUBECTL_BIN:-}"
+  if [ -z "$KUBECTL" ] || [ ! -x "$KUBECTL" ]; then
+    if [ -x /usr/local/bin/kubectl ]; then
+      KUBECTL="/usr/local/bin/kubectl"
+    elif command -v kubectl >/dev/null 2>&1; then
+      KUBECTL="$(command -v kubectl)"
+    else
+      warn "kubectl not found"
+      exit 1
+    fi
+  fi
 
   banner "Stopping ${APP_NAME:-hcl-learning-hub} (Kubernetes)"
 

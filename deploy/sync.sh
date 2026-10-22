@@ -446,12 +446,92 @@ if [ -n "${PG_BIN:-}" ]; then export PATH="$PG_BIN:$PATH"; fi
 # shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/db-runtime.sh" ]; then . "$SCRIPT_DIR/db-runtime.sh"; fi
 
+# ── Container sync (early exit) ───────────────────────────────────────────────
+if [ "${DEPLOY_MODE:-}" = "containers" ]; then
+  ENGINE="${CONTAINER_ENGINE:-podman}"
+  command -v "$ENGINE" >/dev/null 2>&1 || fail "Container engine not found: $ENGINE"
+  API_IMAGE="hcl-hub/api:latest"
+  WEB_IMAGE="hcl-hub/web:latest"
+  CREDS="$INSTALL_DIR/.deploy-credentials"
+  [ -f "$CREDS" ] || fail "Missing $CREDS — run deploy/install.sh first"
+  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
+  [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
+  resolve_db_runtime
+
+  cd "$INSTALL_DIR"
+
+  if [ "$CODE_ONLY" = false ] && [ "$NO_BACKUP" = false ]; then
+    banner "Container Sync — step 1/4: Back up the current database"
+    mkdir -p "$INSTALL_DIR/backups"
+    CT_TS="$(date +%Y%m%d-%H%M%S)"
+    CT_BKP="$INSTALL_DIR/backups/hcl-hub-${CT_TS}.dump"
+    if _db_dump "$CT_BKP" 2>/dev/null; then
+      cp -f "$CT_BKP" "$INSTALL_DIR/backups/latest.dump" 2>/dev/null || true
+      ok "Backup: $CT_BKP"
+    else
+      warn "DB backup failed — continuing without backup"
+    fi
+  else
+    banner "Container Sync — step 1/4: Database backup skipped"
+  fi
+
+  if [ "$BACKUP_ONLY" = true ]; then
+    ok "--backup-only complete."
+    exit 0
+  fi
+
+  banner "Container Sync — step 2/4: Pull latest code"
+  CT_ASKPASS=""
+  if [ -f "$INSTALL_DIR/.hub-token" ]; then
+    CT_ASKPASS="$(mktemp)"; chmod 700 "$CT_ASKPASS"
+    cat > "$CT_ASKPASS" <<'ASK'
+#!/bin/bash
+case "$1" in
+  *[Uu]sername*) echo "x-access-token" ;;
+  *) echo "${HCL_HUB_GIT_TOKEN}" ;;
+esac
+ASK
+    export GIT_ASKPASS="$CT_ASKPASS"
+    HCL_HUB_GIT_TOKEN="$(cat "$INSTALL_DIR/.hub-token")"
+    export HCL_HUB_GIT_TOKEN
+    export GIT_TERMINAL_PROMPT=0
+  fi
+  if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    git stash push -m "sync.sh containers auto-stash $(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  fi
+  git pull origin "$GIT_BRANCH" 2>/dev/null && ok "Code updated" || warn "git pull failed — using existing code"
+  [ -n "$CT_ASKPASS" ] && rm -f "$CT_ASKPASS" || true
+
+  banner "Container Sync — step 3/4: Rebuild images"
+  "$ENGINE" build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed — sync aborted."
+  "$ENGINE" build -t "$WEB_IMAGE" -f Dockerfile . || fail "Web image build failed — sync aborted."
+  ok "Images rebuilt"
+
+  banner "Container Sync — step 4/4: Restart containers"
+  bash "$SCRIPT_DIR/start.sh"
+
+  banner "Container Sync complete"
+  echo ""
+  echo "  Application : https://${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
+  echo ""
+  exit 0
+fi
+
 # ── Kubernetes sync (early exit — replaces the source deployment flow) ────────
 if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-  KUBECTL="kubectl"
-  command -v kubectl >/dev/null 2>&1 || KUBECTL="k3s kubectl"
+  KUBECTL="${KUBECTL_BIN:-}"
+  if [ -z "$KUBECTL" ] || [ ! -x "$KUBECTL" ]; then
+    if [ -x /usr/local/bin/kubectl ]; then
+      KUBECTL="/usr/local/bin/kubectl"
+    elif command -v kubectl >/dev/null 2>&1; then
+      KUBECTL="$(command -v kubectl)"
+    else
+      fail "kubectl not found. Re-run deploy/install.sh --mode kubernetes"
+    fi
+  fi
+  K3S_BIN="${K3S_BIN:-/usr/local/bin/k3s}"
   BUILD_CMD="podman"
   command -v podman >/dev/null 2>&1 || BUILD_CMD="docker"
   API_IMAGE="hcl-hub/api:latest"
@@ -531,10 +611,10 @@ ASK
   ok "Images built"
 
   info "Importing API image into k3s containerd ..."
-  $BUILD_CMD save "$API_IMAGE" | sudo k3s ctr images import - \
+  $BUILD_CMD save "$API_IMAGE" | sudo "$K3S_BIN" ctr images import - \
     || fail "API image import failed"
   info "Importing web image into k3s containerd ..."
-  $BUILD_CMD save "$WEB_IMAGE" | sudo k3s ctr images import - \
+  $BUILD_CMD save "$WEB_IMAGE" | sudo "$K3S_BIN" ctr images import - \
     || fail "Web image import failed"
   ok "Images imported into k3s"
 
