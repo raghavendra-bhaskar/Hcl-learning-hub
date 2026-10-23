@@ -68,6 +68,7 @@ API_IMAGE="localhost/hcl-hub/api:latest"
 WEB_IMAGE="localhost/hcl-hub/web:latest"
 API_REPLICAS=1
 WEB_REPLICAS=1
+POSTGRES_RESTORE_IMAGE="postgres:17-alpine"
 
 read_saved_credential() {
   local key file
@@ -309,7 +310,7 @@ fi
 banner "Step 4/10: Build container images"
 
 info "Building API image from server/Dockerfile ..."
-$BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed"
+$BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile . || fail "API image build failed"
 ok "API image built: $API_IMAGE"
 
 info "Building web image from Dockerfile ..."
@@ -524,27 +525,64 @@ resolve_install_dump() {
 DUMP_FILE="$(resolve_install_dump)"
 info "Install restore source: $DUMP_FILE"
 PG_POD="$("$KUBECTL" get pod -n "$K8S_NS" -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+RESTORE_STATUS="skipped"
+RESTORE_LOG=""
+BOOTSTRAP_ADMIN_MESSAGE="Configured bootstrap admin secret: admin@local / ${ADMIN_PASSWORD}"
 if [ "$SKIP_DB_RESTORE" = true ]; then
   warn "--skip-db-restore given — database will be seeded by the API on first start"
+  if [ "$RESET_DATA" != true ]; then
+    BOOTSTRAP_ADMIN_MESSAGE="Existing Kubernetes database/secret state preserved — admin@local keeps its current database password"
+  fi
 elif [ -z "$PG_POD" ]; then
   warn "Cannot resolve postgres pod name — skipping restore"
+  if [ "$RESET_DATA" != true ]; then
+    BOOTSTRAP_ADMIN_MESSAGE="Existing Kubernetes database/secret state preserved — admin@local keeps its current database password"
+  fi
 elif [ -f "$DUMP_FILE" ]; then
-  info "Copying dump to pod ${PG_POD} ..."
-  "$KUBECTL" cp "$DUMP_FILE" "${K8S_NS}/${PG_POD}:/tmp/backup.dump"
+  K8S_RESTORE_POD="pg-restore-helper-$(date +%s)"
+  info "Starting PostgreSQL restore helper pod ${K8S_RESTORE_POD} ..."
   RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
   MAGIC="$(head -c 5 "$DUMP_FILE" | tr -d '\0' || true)"
   set +e
-  if [ "$MAGIC" = "PGDMP" ]; then
-    "$KUBECTL" exec -n "$K8S_NS" "$PG_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' pg_restore -U ${DB_USER} -d ${DB_NAME} --clean --if-exists --no-owner --no-acl /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
-  else
-    "$KUBECTL" exec -n "$K8S_NS" "$PG_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' psql -U ${DB_USER} -d ${DB_NAME} -f /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
-  fi
+  "$KUBECTL" run "$K8S_RESTORE_POD" -n "$K8S_NS" --image="$POSTGRES_RESTORE_IMAGE" --restart=Never --command -- sleep 600 > "$RESTORE_LOG" 2>&1
   RC=$?
+  if [ $RC -eq 0 ]; then
+    "$KUBECTL" wait pod -n "$K8S_NS" "$K8S_RESTORE_POD" --for=condition=Ready --timeout=120s >> "$RESTORE_LOG" 2>&1
+    RC=$?
+  fi
+  if [ $RC -eq 0 ]; then
+    "$KUBECTL" cp "$DUMP_FILE" "${K8S_NS}/${K8S_RESTORE_POD}:/tmp/backup.dump" >> "$RESTORE_LOG" 2>&1
+    RC=$?
+  fi
+  if [ $RC -eq 0 ] && [ "$MAGIC" = "PGDMP" ]; then
+    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' pg_restore -h postgres -U ${DB_USER} -d ${DB_NAME} --clean --if-exists --no-owner --no-acl /tmp/backup.dump" >> "$RESTORE_LOG" 2>&1
+    RC=$?
+  elif [ $RC -eq 0 ]; then
+    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/backup.dump" >> "$RESTORE_LOG" 2>&1
+    RC=$?
+  else
+    RC=$RC
+  fi
+  "$KUBECTL" delete pod -n "$K8S_NS" "$K8S_RESTORE_POD" --ignore-not-found=true >/dev/null 2>&1 || true
   set -e
-  [ $RC -eq 0 ] && ok "Database restored from $(basename "$DUMP_FILE")" || warn "Restore exited with code $RC — see $RESTORE_LOG"
-  "$KUBECTL" exec -n "$K8S_NS" "$PG_POD" -- rm -f /tmp/backup.dump 2>/dev/null || true
+  if [ $RC -eq 0 ]; then
+    RESTORE_STATUS="restored"
+    BOOTSTRAP_ADMIN_MESSAGE="Database restored from $(basename "$DUMP_FILE") — use the admin password stored in that dump"
+    ok "Database restored from $(basename "$DUMP_FILE")"
+  else
+    RESTORE_STATUS="failed"
+    warn "Restore exited with code $RC — see $RESTORE_LOG"
+    if [ "$RESET_DATA" != true ]; then
+      BOOTSTRAP_ADMIN_MESSAGE="Restore failed and existing Kubernetes database was preserved — admin@local keeps its current database password"
+    else
+      BOOTSTRAP_ADMIN_MESSAGE="Restore failed on a reset database — bootstrap secret applies only if admin@local was not restored"
+    fi
+  fi
 else
   warn "No dump found at $DUMP_FILE — database will be empty until the API seeds it"
+  if [ "$RESET_DATA" != true ]; then
+    BOOTSTRAP_ADMIN_MESSAGE="Existing Kubernetes database/secret state preserved — admin@local keeps its current database password"
+  fi
 fi
 
 banner "Step 9/10: Wait for application pods"
@@ -588,9 +626,11 @@ cat <<SUMMARY
 
   Application URL : ${ACCESS_URL}
   (self-signed cert — click Advanced → Proceed in the browser)
-  Admin login     : admin@local / ${ADMIN_PASSWORD}
+  Restore status  : ${RESTORE_STATUS}
+  ${BOOTSTRAP_ADMIN_MESSAGE}
   Install dir     : ${INSTALL_DIR}
   Credentials     : ${INSTALL_DIR}/.deploy-credentials
+  ${RESTORE_LOG:+Restore log     : ${RESTORE_LOG}}
 
   Useful commands:
     ${KUBECTL} get pods -n ${K8S_NS}

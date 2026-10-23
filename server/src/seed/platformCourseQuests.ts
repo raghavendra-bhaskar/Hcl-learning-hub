@@ -126,12 +126,12 @@ function transformQuestPack(
 }
 
 export async function getPlatformCourseQuests() {
-  const aiIndexModule = await import(new URL('../../../src/data/index.js', import.meta.url).href);
-  const aiSolutionModule = await import(new URL('../../../src/data/solutionCenter.js', import.meta.url).href);
-  const devopsIndexModule = await import(new URL('../../../src/data/devopsIndex.js', import.meta.url).href);
-  const devopsP1Module = await import(new URL('../../../src/data/devopsQuestsP1.js', import.meta.url).href);
-  const devopsP2Module = await import(new URL('../../../src/data/devopsQuestsP2.js', import.meta.url).href);
-  const devopsSolutionModule = await import(new URL('../../../src/data/devopsSolutionCenter.js', import.meta.url).href);
+  const aiIndexModule = await import(new URL('../../data/index.js', import.meta.url).href);
+  const aiSolutionModule = await import(new URL('../../data/solutionCenter.js', import.meta.url).href);
+  const devopsIndexModule = await import(new URL('../../data/devopsIndex.js', import.meta.url).href);
+  const devopsP1Module = await import(new URL('../../data/devopsQuestsP1.js', import.meta.url).href);
+  const devopsP2Module = await import(new URL('../../data/devopsQuestsP2.js', import.meta.url).href);
+  const devopsSolutionModule = await import(new URL('../../data/devopsSolutionCenter.js', import.meta.url).href);
 
   const aiQuests = ((aiIndexModule as any).QUESTS || []) as LegacyQuest[];
   const aiSolutionCenter = ((aiSolutionModule as any).SOLUTION_CENTER || {}) as Record<string, any>;

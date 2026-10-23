@@ -509,7 +509,7 @@ ASK
   [ -n "$CT_ASKPASS" ] && rm -f "$CT_ASKPASS" || true
 
   banner "Container Sync — step 3/4: Rebuild images"
-  "$ENGINE" build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed — sync aborted."
+  "$ENGINE" build -t "$API_IMAGE" -f server/Dockerfile . || fail "API image build failed — sync aborted."
   "$ENGINE" build -t "$WEB_IMAGE" -f Dockerfile . || fail "Web image build failed — sync aborted."
   ok "Images rebuilt"
 
@@ -518,7 +518,7 @@ ASK
 
   banner "Container Sync complete"
   echo ""
-  echo "  Application : https://${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}"
+  echo "  Application : ${ACCESS_URL:-https://${SERVER_FQDN:-$(hostname -f 2>/dev/null || hostname)}}"
   echo ""
   exit 0
 fi
@@ -609,7 +609,7 @@ ASK
   # ── Rebuild images ───────────────────────────────────────────────────────────
   banner "K8s Sync — step 3/4: Rebuild and import images"
   info "Building API image ..."
-  $BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile ./server \
+  $BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile . \
     || fail "API image build failed — sync aborted."
   info "Building web image ..."
   $BUILD_CMD build -t "$WEB_IMAGE" -f Dockerfile . \

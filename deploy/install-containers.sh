@@ -84,6 +84,7 @@ API_VOLUME="hcl-hub-api-data"
 API_IMAGE="hcl-hub/api:latest"
 WEB_IMAGE="hcl-hub/web:latest"
 POSTGRES_IMAGE="docker.io/library/postgres:16-alpine"
+POSTGRES_RESTORE_IMAGE="docker.io/library/postgres:17-alpine"
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -152,6 +153,10 @@ read_existing_container_env() {
   key="$2"
   "$ENGINE" inspect "$container_name" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
     | grep -E "^${key}=" | head -1 | cut -d= -f2-
+}
+
+volume_exists() {
+  "$ENGINE" volume inspect "$1" >/dev/null 2>&1
 }
 
 version_ge() {
@@ -302,7 +307,7 @@ normalize_permissions() {
 }
 
 banner "Step 3/9: Build container images"
-$ENGINE build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed"
+$ENGINE build -t "$API_IMAGE" -f server/Dockerfile . || fail "API image build failed"
 ok "API image built: $API_IMAGE"
 $ENGINE build -t "$WEB_IMAGE" -f Dockerfile . || fail "Web image build failed"
 ok "Web image built: $WEB_IMAGE"
@@ -413,6 +418,7 @@ DB_USER=${DB_USER}
 GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
 POSTGRES_IMAGE=${POSTGRES_IMAGE}
+POSTGRES_RESTORE_IMAGE=${POSTGRES_RESTORE_IMAGE}
 WEB_CONF_MOUNT=${WEB_CONF_MOUNT}
 WEB_CERT_MOUNT=${WEB_CERT_MOUNT}
 HUBENV
@@ -420,6 +426,12 @@ chmod 600 deploy/hub.env
 normalize_permissions
 
 banner "Step 6/9: Start PostgreSQL container"
+EXISTING_DB_STATE=false
+if $ENGINE ps -a --format '{{.Names}}' | grep -Fxq "$DB_CONTAINER_NAME"; then
+  EXISTING_DB_STATE=true
+elif volume_exists "$DB_VOLUME"; then
+  EXISTING_DB_STATE=true
+fi
 $ENGINE network inspect "$NETWORK_NAME" >/dev/null 2>&1 || $ENGINE network create "$NETWORK_NAME" >/dev/null
 if $ENGINE ps -a --format '{{.Names}}' | grep -Fxq "$DB_CONTAINER_NAME"; then
   $ENGINE start "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -444,25 +456,60 @@ ok "PostgreSQL container is ready"
 banner "Step 7/9: Database restore"
 DUMP_FILE="$(resolve_install_dump)"
 info "Install restore source: $DUMP_FILE"
+RESTORE_STATUS="skipped"
+RESTORE_LOG=""
+BOOTSTRAP_ADMIN_MESSAGE="Configured bootstrap admin secret: admin@local / ${ADMIN_PASSWORD}"
 if [ "$SKIP_DB_RESTORE" = true ]; then
   warn "--skip-db-restore given — database will be seeded by the API on first start"
+  if [ "$EXISTING_DB_STATE" = true ]; then
+    BOOTSTRAP_ADMIN_MESSAGE="Existing database detected — admin@local keeps its current database password"
+  fi
 elif [ -f "$DUMP_FILE" ]; then
-  info "Copying dump into PostgreSQL container ..."
-  $ENGINE cp "$DUMP_FILE" "$DB_CONTAINER_NAME:/tmp/backup.dump"
+  info "Restoring dump with PostgreSQL client image ${POSTGRES_RESTORE_IMAGE} ..."
   MAGIC="$(head -c 5 "$DUMP_FILE" | tr -d '\0' || true)"
   RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
+  RESTORE_DUMP_MOUNT="$DUMP_FILE:/tmp/backup.dump:ro"
+  if [ "$ENGINE" = "podman" ] && command -v getenforce >/dev/null 2>&1; then
+    if [ "$(getenforce 2>/dev/null || true)" != "Disabled" ]; then
+      RESTORE_DUMP_MOUNT="$DUMP_FILE:/tmp/backup.dump:ro,Z"
+    fi
+  fi
   set +e
   if [ "$MAGIC" = "PGDMP" ]; then
-    $ENGINE exec -e PGPASSWORD="$DB_PASSWORD" "$DB_CONTAINER_NAME" pg_restore -U "$DB_USER" -d "$DB_NAME" --clean --if-exists --no-owner --no-acl /tmp/backup.dump > "$RESTORE_LOG" 2>&1
+    $ENGINE run --rm \
+      --network "$NETWORK_NAME" \
+      -e PGPASSWORD="$DB_PASSWORD" \
+      -v "$RESTORE_DUMP_MOUNT" \
+      "$POSTGRES_RESTORE_IMAGE" \
+      sh -c "pg_restore -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} --clean --if-exists --no-owner --no-acl /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
   else
-    $ENGINE exec -e PGPASSWORD="$DB_PASSWORD" "$DB_CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -f /tmp/backup.dump > "$RESTORE_LOG" 2>&1
+    $ENGINE run --rm \
+      --network "$NETWORK_NAME" \
+      -e PGPASSWORD="$DB_PASSWORD" \
+      -v "$RESTORE_DUMP_MOUNT" \
+      "$POSTGRES_RESTORE_IMAGE" \
+      sh -c "psql -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} -f /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
   fi
   RC=$?
   set -e
-  [ $RC -eq 0 ] && ok "Database restored from $(basename "$DUMP_FILE")" || warn "Restore exited with code $RC — see $RESTORE_LOG"
-  $ENGINE exec "$DB_CONTAINER_NAME" rm -f /tmp/backup.dump >/dev/null 2>&1 || true
+  if [ $RC -eq 0 ]; then
+    RESTORE_STATUS="restored"
+    BOOTSTRAP_ADMIN_MESSAGE="Database restored from $(basename "$DUMP_FILE") — use the admin password stored in that dump"
+    ok "Database restored from $(basename "$DUMP_FILE")"
+  else
+    RESTORE_STATUS="failed"
+    warn "Restore exited with code $RC — see $RESTORE_LOG"
+    if [ "$EXISTING_DB_STATE" = true ]; then
+      BOOTSTRAP_ADMIN_MESSAGE="Restore failed and existing database was preserved — admin@local keeps its current database password"
+    else
+      BOOTSTRAP_ADMIN_MESSAGE="Restore failed on a fresh database — bootstrap secret applies only if admin@local was not restored"
+    fi
+  fi
 else
   warn "No dump found at $DUMP_FILE — database will be empty until the API seeds it"
+  if [ "$EXISTING_DB_STATE" = true ]; then
+    BOOTSTRAP_ADMIN_MESSAGE="Existing database detected — admin@local keeps its current database password"
+  fi
 fi
 
 banner "Step 8/9: Start application containers"
@@ -487,9 +534,11 @@ cat <<SUMMARY
 
   Application URL : ${ACCESS_URL}
   (self-signed cert — click Advanced → Proceed in the browser)
-  Admin login     : admin@local / ${ADMIN_PASSWORD}
+  Restore status  : ${RESTORE_STATUS}
+  ${BOOTSTRAP_ADMIN_MESSAGE}
   Install dir     : ${INSTALL_DIR}
   Credentials     : ${INSTALL_DIR}/.deploy-credentials
+  ${RESTORE_LOG:+Restore log     : ${RESTORE_LOG}}
 
   Useful commands:
     bash ${INSTALL_DIR}/deploy/start.sh

@@ -1,12 +1,13 @@
 FROM node:20-alpine AS build
 RUN apk add --no-cache openssl openssl-dev
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY server/package.json server/package-lock.json* ./
 RUN npm install
-COPY prisma ./prisma
+COPY server/prisma ./prisma
 RUN npx prisma generate
-COPY tsconfig.json ./
-COPY src ./src
+COPY server/tsconfig.json ./tsconfig.json
+COPY server/src ./src
+COPY src/data ./data
 RUN npm run build
 
 FROM node:20-alpine
@@ -18,6 +19,7 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/data ./data
 
 # Runtime data directory — holds oidc-config.json (Okta settings saved by admin UI).
 # Mount a named volume here so config persists across container restarts.
