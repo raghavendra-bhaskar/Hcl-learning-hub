@@ -11,6 +11,23 @@ warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
+port_is_bound() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH "( sport = :${port} )" 2>/dev/null | grep -q .
+    return $?
+  fi
+  return 1
+}
+format_https_url() {
+  local host="$1"
+  local port="$2"
+  if [ "$port" = "443" ]; then
+    printf 'https://%s\n' "$host"
+  else
+    printf 'https://%s:%s\n' "$host" "$port"
+  fi
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -54,8 +71,8 @@ command -v sudo >/dev/null 2>&1 || fail "sudo is required but not installed"
 APP_NAME="hcl-learning-hub"
 INSTALL_DIR="$PARENT_DIR"
 RUN_USER="$(id -un)"
-HTTPS_PORT=443
-HTTP_PORT=80
+HTTPS_PORT=30080
+HTTP_PORT=30081
 DB_USER="hcl_hub"
 DB_NAME="hcl_learning_hub"
 DB_CONTAINER_NAME="hcl-hub-postgres"
@@ -66,10 +83,20 @@ DB_VOLUME="hcl-hub-postgres-data"
 API_VOLUME="hcl-hub-api-data"
 API_IMAGE="hcl-hub/api:latest"
 WEB_IMAGE="hcl-hub/web:latest"
+POSTGRES_IMAGE="docker.io/library/postgres:16-alpine"
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-ACCESS_URL="https://${SERVER_FQDN}"
+if [ "$HTTPS_PORT" = "443" ] && port_is_bound 443; then
+  warn "Host port 443 is already in use; using 30080 for the container HTTPS endpoint"
+  HTTPS_PORT=30080
+fi
+if [ "$HTTP_PORT" = "80" ] && port_is_bound 80; then
+  warn "Host port 80 is already in use; using 30081 for the container HTTP endpoint"
+  HTTP_PORT=30081
+fi
+[ "$HTTP_PORT" != "$HTTPS_PORT" ] || HTTP_PORT=30081
+ACCESS_URL="$(format_https_url "$SERVER_FQDN" "$HTTPS_PORT")"
 
 clear || true
 cat <<BANNER
@@ -239,6 +266,25 @@ resolve_install_dump() {
   printf '%s\n' "$INSTALL_DIR/scripts/backup.dump"
 }
 
+ensure_execute_permissions() {
+  while IFS= read -r -d '' script; do
+    chmod 755 "$script" 2>/dev/null || true
+  done < <(
+    find "$INSTALL_DIR" \
+      \( -path "$INSTALL_DIR/.git" -o -path "$INSTALL_DIR/.git/*" \
+         -o -path "$INSTALL_DIR/node_modules" -o -path "$INSTALL_DIR/node_modules/*" \
+         -o -path "$INSTALL_DIR/server/node_modules" -o -path "$INSTALL_DIR/server/node_modules/*" \
+         -o -path "$INSTALL_DIR/dist" -o -path "$INSTALL_DIR/dist/*" \
+         -o -path "$INSTALL_DIR/server/dist" -o -path "$INSTALL_DIR/server/dist/*" \) -prune \
+      -o -type f -name '*.sh' -print0 2>/dev/null
+  )
+}
+
+normalize_permissions() {
+  chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
+  ensure_execute_permissions
+}
+
 banner "Step 3/9: Build container images"
 $ENGINE build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed"
 ok "API image built: $API_IMAGE"
@@ -339,7 +385,7 @@ GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
 HUBENV
 chmod 600 deploy/hub.env
-find deploy -maxdepth 1 -type f -name '*.sh' -exec chmod u+x {} \;
+normalize_permissions
 
 banner "Step 6/9: Start PostgreSQL container"
 $ENGINE network inspect "$NETWORK_NAME" >/dev/null 2>&1 || $ENGINE network create "$NETWORK_NAME" >/dev/null
@@ -350,11 +396,11 @@ else
     --name "$DB_CONTAINER_NAME" \
     --network "$NETWORK_NAME" \
     --restart unless-stopped \
-    -e POSTGRES_DB="$DB_NAME" \
-    -e POSTGRES_USER="$DB_USER" \
-    -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+    -e POSTGRES_DB="${DB_NAME}" \
+    -e POSTGRES_USER="${DB_USER}" \
+    -e POSTGRES_PASSWORD="${DB_PASSWORD}" \
     -v "$DB_VOLUME:/var/lib/postgresql/data" \
-    postgres:16-alpine >/dev/null || fail "Could not start PostgreSQL container"
+    "$POSTGRES_IMAGE" >/dev/null || fail "Could not start PostgreSQL container"
 fi
 for _ in $(seq 1 60); do
   if $ENGINE exec "$DB_CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then break; fi

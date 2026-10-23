@@ -97,6 +97,25 @@ wait_for_pvc_deletion() {
   return 1
 }
 
+ensure_execute_permissions() {
+  while IFS= read -r -d '' script; do
+    chmod 755 "$script" 2>/dev/null || true
+  done < <(
+    find "$INSTALL_DIR" \
+      \( -path "$INSTALL_DIR/.git" -o -path "$INSTALL_DIR/.git/*" \
+         -o -path "$INSTALL_DIR/node_modules" -o -path "$INSTALL_DIR/node_modules/*" \
+         -o -path "$INSTALL_DIR/server/node_modules" -o -path "$INSTALL_DIR/server/node_modules/*" \
+         -o -path "$INSTALL_DIR/dist" -o -path "$INSTALL_DIR/dist/*" \
+         -o -path "$INSTALL_DIR/server/dist" -o -path "$INSTALL_DIR/server/dist/*" \) -prune \
+      -o -type f -name '*.sh' -print0 2>/dev/null
+  )
+}
+
+normalize_permissions() {
+  chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
+  ensure_execute_permissions
+}
+
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 ACCESS_URL="https://${SERVER_FQDN}"
@@ -475,7 +494,7 @@ K3S_BIN=${K3S_BIN}
 KUBECTL_BIN=${KUBECTL}
 HUBENV
 chmod 600 deploy/hub.env
-find deploy -maxdepth 1 -type f -name '*.sh' -exec chmod u+x {} \;
+normalize_permissions
 
 banner "Step 7/10: Wait for PostgreSQL"
 "$KUBECTL" wait pod -l app=postgres -n "$K8S_NS" --for=condition=ready --timeout=180s || fail "PostgreSQL pod did not become ready"

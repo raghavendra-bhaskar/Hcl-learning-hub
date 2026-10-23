@@ -37,11 +37,17 @@ banner() { echo ""; echo "========================================"; echo "  $1"
 MANUAL_ADMIN_DUMP_GLOB='hcl-hub-manual-admin-v*.dump'
 
 ensure_execute_permissions() {
-  local script=""
-  for script in "$SCRIPT_DIR"/*.sh; do
-    [ -f "$script" ] || continue
+  while IFS= read -r -d '' script; do
     chmod 755 "$script" 2>/dev/null || true
-  done
+  done < <(
+    find "$INSTALL_DIR" \
+      \( -path "$INSTALL_DIR/.git" -o -path "$INSTALL_DIR/.git/*" \
+         -o -path "$INSTALL_DIR/node_modules" -o -path "$INSTALL_DIR/node_modules/*" \
+         -o -path "$INSTALL_DIR/server/node_modules" -o -path "$INSTALL_DIR/server/node_modules/*" \
+         -o -path "$INSTALL_DIR/dist" -o -path "$INSTALL_DIR/dist/*" \
+         -o -path "$INSTALL_DIR/server/dist" -o -path "$INSTALL_DIR/server/dist/*" \) -prune \
+      -o -type f -name '*.sh' -print0 2>/dev/null
+  )
 }
 
 normalize_permissions() {

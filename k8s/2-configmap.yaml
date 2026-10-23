@@ -9,4 +9,4 @@ data:
   NODE_ENV:           "production"
   PORT:               "4000"
   ENABLE_LOCAL_ADMIN: "true"
-  ADMIN_USERNAME:     "admin"
+  ADMIN_USERNAME:     "admin@local"

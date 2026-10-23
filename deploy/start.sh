@@ -23,6 +23,23 @@ warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
+port_is_bound() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH "( sport = :${port} )" 2>/dev/null | grep -q .
+    return $?
+  fi
+  return 1
+}
+format_https_url() {
+  local host="$1"
+  local port="$2"
+  if [ "$port" = "443" ]; then
+    printf 'https://%s\n' "$host"
+  else
+    printf 'https://%s:%s\n' "$host" "$port"
+  fi
+}
 
 FOREGROUND=false
 if [ "${1:-}" = "--foreground" ]; then FOREGROUND=true; fi
@@ -41,8 +58,19 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
   WEB_CONTAINER_NAME="${WEB_CONTAINER_NAME:-hcl-hub-web}"
   DB_VOLUME="${DB_VOLUME:-hcl-hub-postgres-data}"
   API_VOLUME="${API_VOLUME:-hcl-hub-api-data}"
-  HTTPS_PORT="${HTTPS_PORT:-443}"
-  HTTP_PORT="${HTTP_PORT:-80}"
+  POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:16-alpine}"
+  HTTPS_PORT="${HTTPS_PORT:-30080}"
+  HTTP_PORT="${HTTP_PORT:-30081}"
+  if [ "$HTTPS_PORT" = "443" ] && port_is_bound 443; then
+    warn "Host port 443 is already in use; using 30080 for the container HTTPS endpoint"
+    HTTPS_PORT=30080
+  fi
+  if [ "$HTTP_PORT" = "80" ] && port_is_bound 80; then
+    warn "Host port 80 is already in use; using 30081 for the container HTTP endpoint"
+    HTTP_PORT=30081
+  fi
+  [ "$HTTP_PORT" != "$HTTPS_PORT" ] || HTTP_PORT=30081
+  ACCESS_URL="$(format_https_url "$SERVER_FQDN" "$HTTPS_PORT")"
   CREDS="$INSTALL_DIR/.deploy-credentials"
   [ -f "$CREDS" ] || fail "Missing $CREDS"
   DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
@@ -67,7 +95,7 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
       -e POSTGRES_USER="${DB_USER:-hcl_hub}" \
       -e POSTGRES_PASSWORD="$DB_PASSWORD" \
       -v "$DB_VOLUME:/var/lib/postgresql/data" \
-      postgres:16-alpine >/dev/null || fail "Could not start PostgreSQL container"
+      "$POSTGRES_IMAGE" >/dev/null || fail "Could not start PostgreSQL container"
   fi
 
   for _ in $(seq 1 60); do
@@ -86,9 +114,9 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
     -e DATABASE_URL="postgresql://${DB_USER:-hcl_hub}:${DB_PASSWORD}@${DB_CONTAINER_NAME}:5432/${DB_NAME:-hcl_learning_hub}" \
     -e NODE_ENV=production \
     -e PORT=4000 \
-    -e FRONTEND_ORIGIN="https://${SERVER_FQDN}" \
+    -e FRONTEND_ORIGIN="$ACCESS_URL" \
     -e ENABLE_LOCAL_ADMIN=true \
-    -e LOCAL_ADMIN_USERNAME=admin \
+    -e LOCAL_ADMIN_USERNAME=admin@local \
     -e LOCAL_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
     -e LOCAL_ADMIN_JWT_SECRET="$JWT_SECRET" \
     -v "$API_VOLUME:/app/data" \
@@ -113,7 +141,7 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
   banner "Running"
   cat <<CONTAINER_SUMMARY
 
-  Application : https://${SERVER_FQDN}
+  Application : ${ACCESS_URL}
   Logs (API)  : $ENGINE logs -f ${API_CONTAINER_NAME}
   Logs (web)  : $ENGINE logs -f ${WEB_CONTAINER_NAME}
   Stop        : bash ${INSTALL_DIR}/deploy/stop.sh

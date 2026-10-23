@@ -2,6 +2,7 @@ import './load-env.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import bcrypt from 'bcryptjs';
 import { env } from './env.js';
 import { authenticate } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
@@ -42,6 +43,28 @@ const SEED_COURSE_SELECT = {
   helpSpaceName: true,
   helpSpaceHint: true,
 };
+
+async function ensureLocalAdmin() {
+  if (!env.enableLocalAdmin) return;
+  const email = env.localAdminUser.trim().toLowerCase() || 'admin@local';
+  const passwordHash = await bcrypt.hash(env.localAdminPass, 12);
+  await prisma.user.upsert({
+    where: { email },
+    update: {
+      name: 'Administrator',
+      role: 'ADMIN',
+      isLocalUser: true,
+      passwordHash,
+    },
+    create: {
+      email,
+      name: 'Administrator',
+      role: 'ADMIN',
+      isLocalUser: true,
+      passwordHash,
+    },
+  });
+}
 
 async function seedPlatformCourses() {
   try {
@@ -185,6 +208,7 @@ const server = app.listen(env.port, () => {
   console.log(`[server] listening on http://localhost:${env.port}`);
   console.log(`[server] frontend origin: ${env.frontendOrigin}`);
   console.log(`[server] local admin: ${env.enableLocalAdmin ? 'ENABLED' : 'disabled'}`);
+  ensureLocalAdmin().catch((error) => console.error('[seed] ensureLocalAdmin error:', error));
   seedPlatformCourses();
 });
 

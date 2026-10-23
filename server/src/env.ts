@@ -24,7 +24,7 @@ export const env = {
   oktaManagerIdClaim: process.env.OKTA_MANAGER_ID_CLAIM?.trim() || 'managerId',
 
   enableLocalAdmin: bool('ENABLE_LOCAL_ADMIN', true),
-  localAdminUser: process.env.LOCAL_ADMIN_USERNAME ?? 'admin',
+  localAdminUser: process.env.LOCAL_ADMIN_USERNAME ?? 'admin@local',
   localAdminPass: process.env.LOCAL_ADMIN_PASSWORD ?? 'admin',
   localAdminSecret: required('LOCAL_ADMIN_JWT_SECRET', 'dev-only-change-me'),
 };
