@@ -138,6 +138,22 @@ else
   fail "Neither podman nor docker found"
 fi
 
+read_saved_credential() {
+  local key file
+  key="$1"
+  file="$INSTALL_DIR/.deploy-credentials"
+  [ -f "$file" ] || return 1
+  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2-
+}
+
+read_existing_container_env() {
+  local container_name key
+  container_name="$1"
+  key="$2"
+  "$ENGINE" inspect "$container_name" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | grep -E "^${key}=" | head -1 | cut -d= -f2-
+}
+
 version_ge() {
   [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
 }
@@ -335,13 +351,17 @@ server {
     }
 }
 NGINX_EOF
-chmod 600 "$CERT_DIR/tls.crt" "$CERT_DIR/tls.key"
+chmod 644 "$RUNTIME_DIR/nginx.ssl.conf" "$CERT_DIR/tls.crt"
+chmod 600 "$CERT_DIR/tls.key"
 ok "TLS cert and nginx HTTPS config generated"
 
 banner "Step 5/9: Runtime secrets"
-DB_PASSWORD="$(openssl rand -hex 16)"
-JWT_SECRET="$(openssl rand -hex 32)"
-ADMIN_PASSWORD="$(openssl rand -hex 9)"
+DB_PASSWORD="$(read_existing_container_env "$DB_CONTAINER_NAME" POSTGRES_PASSWORD || read_saved_credential 'DB_PASSWORD' || true)"
+JWT_SECRET="$(read_saved_credential 'JWT_SECRET' || true)"
+ADMIN_PASSWORD="$(read_saved_credential 'ADMIN_PASSWORD' || true)"
+[ -n "$DB_PASSWORD" ] || DB_PASSWORD="$(openssl rand -hex 16)"
+[ -n "$JWT_SECRET" ] || JWT_SECRET="$(openssl rand -hex 32)"
+[ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$(openssl rand -hex 9)"
 cat > "$INSTALL_DIR/.deploy-credentials" <<CREDS
 INSTALL_DIR=${INSTALL_DIR}
 SERVER_FQDN=${SERVER_FQDN}
@@ -366,6 +386,15 @@ CREDS
 chmod 600 "$INSTALL_DIR/.deploy-credentials"
 ok "Credentials saved to ${INSTALL_DIR}/.deploy-credentials"
 
+WEB_CONF_MOUNT="$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro"
+WEB_CERT_MOUNT="$CERT_DIR:/etc/nginx/certs:ro"
+if [ "$ENGINE" = "podman" ] && command -v getenforce >/dev/null 2>&1; then
+  if [ "$(getenforce 2>/dev/null || true)" != "Disabled" ]; then
+    WEB_CONF_MOUNT="$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro,Z"
+    WEB_CERT_MOUNT="$CERT_DIR:/etc/nginx/certs:ro,Z"
+  fi
+fi
+
 cat > deploy/hub.env <<HUBENV
 APP_NAME=${APP_NAME}
 SERVER_FQDN=${SERVER_FQDN}
@@ -383,6 +412,9 @@ DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
+POSTGRES_IMAGE=${POSTGRES_IMAGE}
+WEB_CONF_MOUNT=${WEB_CONF_MOUNT}
+WEB_CERT_MOUNT=${WEB_CERT_MOUNT}
 HUBENV
 chmod 600 deploy/hub.env
 normalize_permissions

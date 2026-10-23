@@ -23,6 +23,13 @@ warn()   { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fail()   { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info()   { echo -e "  ${CYAN}->${NC} $*"; }
 banner() { echo ""; echo "========================================"; echo "  $1"; echo "========================================"; }
+read_existing_container_env() {
+  local engine="$1"
+  local container_name="$2"
+  local key="$3"
+  "$engine" inspect "$container_name" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | grep -E "^${key}=" | head -1 | cut -d= -f2-
+}
 port_is_bound() {
   local port="$1"
   if command -v ss >/dev/null 2>&1; then
@@ -73,12 +80,20 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
   ACCESS_URL="$(format_https_url "$SERVER_FQDN" "$HTTPS_PORT")"
   CREDS="$INSTALL_DIR/.deploy-credentials"
   [ -f "$CREDS" ] || fail "Missing $CREDS"
-  DB_PASSWORD="$(grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
+  DB_PASSWORD="$(read_existing_container_env "$ENGINE" "$DB_CONTAINER_NAME" POSTGRES_PASSWORD || grep -E '^DB_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
   JWT_SECRET="$(grep -E '^JWT_SECRET=' "$CREDS" | head -1 | cut -d= -f2-)"
   ADMIN_PASSWORD="$(grep -E '^ADMIN_PASSWORD=' "$CREDS" | head -1 | cut -d= -f2-)"
   [ -n "$DB_PASSWORD" ] || fail "DB_PASSWORD not found in $CREDS"
   RUNTIME_DIR="$INSTALL_DIR/deploy/runtime"
   CERT_DIR="$RUNTIME_DIR/certs"
+  WEB_CONF_MOUNT="${WEB_CONF_MOUNT:-$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro}"
+  WEB_CERT_MOUNT="${WEB_CERT_MOUNT:-$CERT_DIR:/etc/nginx/certs:ro}"
+  if [ "$ENGINE" = "podman" ] && command -v getenforce >/dev/null 2>&1; then
+    if [ "$(getenforce 2>/dev/null || true)" != "Disabled" ]; then
+      WEB_CONF_MOUNT="$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro,Z"
+      WEB_CERT_MOUNT="$CERT_DIR:/etc/nginx/certs:ro,Z"
+    fi
+  fi
 
   banner "Starting ${APP_NAME:-hcl-learning-hub} (Containers)"
 
@@ -133,8 +148,8 @@ if [ "${DEPLOY_MODE:-}" = "containers" ]; then
     --restart unless-stopped \
     -p "${HTTP_PORT}:80" \
     -p "${HTTPS_PORT}:443" \
-    -v "$RUNTIME_DIR/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro" \
-    -v "$CERT_DIR:/etc/nginx/certs:ro" \
+    -v "$WEB_CONF_MOUNT" \
+    -v "$WEB_CERT_MOUNT" \
     hcl-hub/web:latest >/dev/null || fail "Could not start web container"
   ok "Web container started"
 
