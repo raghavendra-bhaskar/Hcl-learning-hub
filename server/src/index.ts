@@ -47,6 +47,19 @@ const SEED_COURSE_SELECT = {
 async function ensureLocalAdmin() {
   if (!env.enableLocalAdmin) return;
   const email = env.localAdminUser.trim().toLowerCase() || 'admin@local';
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser?.isLocalUser && existingUser.passwordHash) {
+    await prisma.user.update({
+      where: { email },
+      data: {
+        name: 'Administrator',
+        role: 'ADMIN',
+        isLocalUser: true,
+      },
+    });
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(env.localAdminPass, 12);
   await prisma.user.upsert({
     where: { email },
