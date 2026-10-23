@@ -190,26 +190,31 @@ carry the network alias `api`.
 | Mode | Entry point | When to use |
 |---|---|---|
 | Local development | `docker-compose.yml` | Laptop development with hot reload off |
-| Connected server | `hcl-learning-hub-setup.sh` | VM with internet — installs Docker CE + k3s and builds from source |
-| **Source on a VM** | `deploy/` scripts | VM with internet, running Vite + API directly (no containers) |
+| Connected server | `hcl-learning-hub-setup.sh` | VM with internet — installs Docker CE + k3s and builds containerized Kubernetes workloads |
+| **Connected VM install** | `deploy/install.sh --mode containers` or `--mode kubernetes` | VM with internet, running either direct Podman/Docker containers or k3s workloads |
 | **Air-gap / offline** | `packaging/` bundles | No internet, no registry — pre-built images shipped as tar archives |
 
-### Source deployment (`deploy/`)
+### Connected VM deployment (`deploy/`)
 
-For a connected VM that runs the Hub straight from source rather than in
-containers. `install.sh` is a standalone bootstrap — it is the only file that
-needs downloading; everything else arrives with the clone.
+For a connected VM that runs the Hub either as direct VM containers or as k3s
+workloads. `install.sh` is a standalone bootstrap wrapper — it is the only file
+that needs downloading; everything else arrives with the clone.
 
 | Component | Purpose |
 |---|---|
-| `deploy/install.sh` | Installs Node 20, PostgreSQL (initdb, role, scram auth), clones into `hcl-learning-hub/`, installs both workspaces, writes `server/.env`, generates a FQDN-matching TLS cert, restores `scripts/backup.dump`, runs migrations, opens the firewall |
-| `deploy/start.sh` | One command for PostgreSQL + API + UI. Wraps the root `npm run dev` (which already runs both tiers) as a background process group with `logs/hub.log`, `run/hub.pid` and health checks |
-| `deploy/stop.sh` | Terminates the whole process group, then frees ports 5173/4000; `--with-db` also stops PostgreSQL |
-| `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, reinstalls deps, regenerates the Prisma client, migrates, restarts. Supports `--version`, `--restore`, `--no-restart`, `--backup-only`, and re-applies recursive `777` plus executable bits after Windows-driven uploads |
-| `deploy/rollback.sh` | Rolls the source deployment back to the previous or requested recorded version, takes a fresh safety backup, optionally restores the matching DB dump, and restarts |
-| `deploy/uninstall.sh` | Stops and removes the source deployment from the VM, with optional final backup, DB purge, and backup purge |
+| `deploy/install.sh` | Thin bootstrap wrapper that prompts for `containers` or `kubernetes`, bootstraps the repo clone when needed, and dispatches to the correct worker installer |
+| `deploy/install-containers.sh` | Connected-VM container installer: builds local images, restores the freshest install dump, writes TLS/runtime config, and starts Podman/Docker containers |
+| `deploy/install-kubernetes.sh` | Connected-VM k3s installer: builds/imports local images, restores the freshest install dump, writes `hub.env`, and deploys Kubernetes workloads |
+| `deploy/start.sh` | Starts the active deployment mode. In Kubernetes mode it now honors configured `API_REPLICAS` / `WEB_REPLICAS`; PostgreSQL remains fixed at one replica |
+| `deploy/stop.sh` | Stops the active deployment mode. In Kubernetes mode it scales `api` and `web` to `0`; `--with-db` also scales `postgres` to `0` |
+| `deploy/sync.sh` | Post-development refresh: backs up the DB first, stops, `git pull`, rebuilds or refreshes the runtime, and restarts. Supports `--version`, `--restore`, `--no-restart`, and `--backup-only` |
+| `deploy/rollback.sh` | Rolls the deployment back to the previous or requested recorded version, takes a fresh safety backup, optionally restores the matching DB dump, and restarts |
+| `deploy/uninstall.sh` | Removes the legacy/source deployment path from a VM, with optional final backup, DB purge, and backup purge |
+| `deploy/uninstall-kubernetes.sh` | Removes the k3s deployment by deleting the namespace, with optional PVC cleanup |
 | `deploy/Backup-Remote.ps1` | Windows-side puller: triggers `sync.sh --backup-only` over SSH, downloads the dump via scp, verifies the `PGDMP` header, prunes by age, and can register a daily scheduled task |
 | `deploy/hub.env` | Generated config (FQDN, ports, DB, PostgreSQL service/bin path, git origin) shared by the scripts; git-ignored |
+| `scripts/refresh-install-dump.ts` | Captures a fresh development DB dump, writes a new versioned manual-admin dump, refreshes `backups/latest.dump`, and refreshes `scripts/backup.dump` for clean installs |
+| `k8s/README.md` | Kubernetes operations guide covering install dump refresh, sync, uninstall, and the current scaling limits |
 
 Backup and restore both use the application role `hcluser` (owner of `hclhub`),
 never the `postgres` superuser; the password lives only in `.deploy-credentials`
@@ -233,6 +238,21 @@ Private-repo access uses `GIT_ASKPASS`, keeping the token out of argv, the
 remote URL and shell history. `install.sh` optionally stores it at `.hub-token`
 (mode 600) so `sync.sh` can pull unattended.
 
+Fresh installs now prefer the newest available repository baseline dump in this
+order:
+
+1. explicit `--dump <file>`
+2. newest `scripts/hcl-hub-manual-admin-v*.dump`
+3. `backups/latest.dump`
+4. legacy `scripts/backup.dump`
+
+To regenerate that baseline from the current development database before a new
+VM install or bundle build, run from the repo root:
+
+```bash
+npm run dump:refresh-install
+```
+
 `install.sh` also guards against npm/cli#4828: if a lockfile written on another
 OS omits this platform's optional native packages, it detects the broken `vite`
 and reinstalls without the lockfile.
@@ -241,12 +261,13 @@ and reinstalls without the lockfile.
 
 Not always. This repository supports multiple runtime targets:
 
-- `deploy/` = direct **source deployment on a VM**
-- `k8s/` and `hcl-learning-hub-setup.sh` = **k3s / Kubernetes deployment**
+- `deploy/install.sh --mode containers` = **direct VM container deployment**
+- `deploy/install.sh --mode kubernetes`, `k8s/`, and `hcl-learning-hub-setup.sh` = **k3s / Kubernetes deployment**
 - `packaging/` = offline container deployment bundle
 
-If you install with `deploy/install.sh`, that host is **not** running the app as
-Kubernetes pods. It runs the UI/API from source and uses PostgreSQL directly.
+If you install with `deploy/install.sh --mode kubernetes`, that host is running
+the app as Kubernetes workloads. If you install with `--mode containers`, that
+host is running Podman/Docker containers directly on the VM.
 
 To check whether a host is using the k3s deployment path:
 
@@ -261,6 +282,10 @@ Expected main Kubernetes workloads:
 - `deployment/web`
 - `deployment/api`
 - `statefulset/postgres`
+
+Only `api` and `web` are horizontally scalable in the current manifests.
+`postgres` is still a single-primary StatefulSet and must stay at one replica
+until the database layer is redesigned for HA replication/failover.
 
 `scripts/validate.sh` also auto-detects `k3s`, `podman`, `docker`, or unknown
 runtime mode and prints the active pod/container status.
@@ -282,8 +307,10 @@ The packaging pipeline removes that dependency:
 | `packaging/bundle/restore-db.sh` / `Restore-Db.ps1` | Format-detecting restore (`PGDMP` → `pg_restore`, otherwise `psql`) |
 
 The bundle carries `hcl-learning-hub-api`, `hcl-learning-hub-web` and
-`postgres:16-alpine` as `images/*.tar`, plus `db/backup.dump`. Installation
-performs no network calls.
+`postgres:16-alpine` as `images/*.tar`, plus `db/backup.dump`. The bundle
+builders now prefer the freshest repository baseline dump (newest manual-admin
+dump, then `backups/latest.dump`, then `scripts/backup.dump`) unless a dump is
+explicitly supplied. Installation performs no network calls.
 
 **Database restore ordering:** the dump is restored after PostgreSQL reports
 healthy but *before* the API container starts, so `prisma migrate deploy` sees

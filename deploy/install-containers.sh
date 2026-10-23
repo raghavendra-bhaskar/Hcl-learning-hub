@@ -214,6 +214,31 @@ if [ "$SAVE_TOKEN" = true ] && [ -n "$GITHUB_TOKEN" ]; then
   ok "GitHub token stored at ${INSTALL_DIR}/.hub-token (mode 600)"
 fi
 
+# Pick the freshest repo-shipped baseline dump for a clean install.
+# Order matters:
+#   1. explicit --dump passed by the operator
+#   2. newest manual admin capture in scripts/
+#   3. refreshed latest pointer in backups/
+#   4. legacy static scripts/backup.dump fallback
+resolve_install_dump() {
+  local latest_manual=""
+  local latest_pointer="$INSTALL_DIR/backups/latest.dump"
+  if [ -n "$DUMP_FILE" ]; then
+    printf '%s\n' "$DUMP_FILE"
+    return 0
+  fi
+  latest_manual="$(ls -1t "$INSTALL_DIR"/scripts/hcl-hub-manual-admin-v*.dump 2>/dev/null | head -1 || true)"
+  if [ -n "$latest_manual" ]; then
+    printf '%s\n' "$latest_manual"
+    return 0
+  fi
+  if [ -f "$latest_pointer" ]; then
+    printf '%s\n' "$latest_pointer"
+    return 0
+  fi
+  printf '%s\n' "$INSTALL_DIR/scripts/backup.dump"
+}
+
 banner "Step 3/9: Build container images"
 $ENGINE build -t "$API_IMAGE" -f server/Dockerfile ./server || fail "API image build failed"
 ok "API image built: $API_IMAGE"
@@ -339,7 +364,8 @@ $ENGINE exec "$DB_CONTAINER_NAME" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/n
 ok "PostgreSQL container is ready"
 
 banner "Step 7/9: Database restore"
-[ -n "$DUMP_FILE" ] || DUMP_FILE="$INSTALL_DIR/scripts/backup.dump"
+DUMP_FILE="$(resolve_install_dump)"
+info "Install restore source: $DUMP_FILE"
 if [ "$SKIP_DB_RESTORE" = true ]; then
   warn "--skip-db-restore given — database will be seeded by the API on first start"
 elif [ -f "$DUMP_FILE" ]; then

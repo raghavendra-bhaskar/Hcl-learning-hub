@@ -36,16 +36,39 @@ fail() { echo -e "${RED}[FAIL]${NC} $*" >&2; exit 1; }
 info() { echo -e "  ${CYAN}->${NC} $*"; }
 step() { echo ""; echo "=== $1 ==="; }
 
+# Prefer the freshest repository baseline dump unless the operator explicitly
+# overrides it with --dump. This keeps offline bundles aligned with the newest
+# manual-admin capture and latest development snapshot.
+resolve_default_dump() {
+  local manual_latest=""
+  if [ -n "${DUMP_SRC_OVERRIDE:-}" ]; then
+    printf '%s\n' "$DUMP_SRC_OVERRIDE"
+    return 0
+  fi
+  manual_latest="$(ls -1t "$REPO_ROOT"/scripts/hcl-hub-manual-admin-v*.dump 2>/dev/null | head -1 || true)"
+  if [ -n "$manual_latest" ]; then
+    printf '%s\n' "$manual_latest"
+    return 0
+  fi
+  if [ -f "$REPO_ROOT/backups/latest.dump" ]; then
+    printf '%s\n' "$REPO_ROOT/backups/latest.dump"
+    return 0
+  fi
+  printf '%s\n' "$REPO_ROOT/scripts/backup.dump"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-docker)    WITH_DOCKER=true; shift ;;
     --docker-version) DOCKER_VERSION="$2"; shift 2 ;;
-    --dump)           DUMP_SRC="$2"; shift 2 ;;
+    --dump)           DUMP_SRC_OVERRIDE="$2"; shift 2 ;;
     --output)         OUTPUT_DIR="$2"; shift 2 ;;
     -h|--help)        sed -n '2,22p' "$0"; exit 0 ;;
     *) fail "Unknown argument: $1" ;;
   esac
 done
+
+DUMP_SRC="$(resolve_default_dump)"
 
 # ── Read bundle.env for image names / version ────────────────────────────────
 source "$BUNDLE_SRC/lib/common.sh"

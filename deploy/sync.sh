@@ -534,8 +534,8 @@ if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   K3S_BIN="${K3S_BIN:-/usr/local/bin/k3s}"
   BUILD_CMD="podman"
   command -v podman >/dev/null 2>&1 || BUILD_CMD="docker"
-  API_IMAGE="hcl-hub/api:latest"
-  WEB_IMAGE="hcl-hub/web:latest"
+  API_IMAGE="localhost/hcl-hub/api:latest"
+  WEB_IMAGE="localhost/hcl-hub/web:latest"
   CREDS="$INSTALL_DIR/.deploy-credentials"
 
   cd "$INSTALL_DIR"

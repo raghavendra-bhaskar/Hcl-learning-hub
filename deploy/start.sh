@@ -125,6 +125,8 @@ fi
 # ── Kubernetes mode ───────────────────────────────────────────────────────────
 if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   K8S_NS="${K8S_NAMESPACE:-hcl-learning-hub}"
+  API_REPLICAS="${API_REPLICAS:-1}"
+  WEB_REPLICAS="${WEB_REPLICAS:-1}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
   KUBECTL="${KUBECTL_BIN:-}"
   if [ -z "$KUBECTL" ] || [ ! -x "$KUBECTL" ]; then
@@ -139,14 +141,20 @@ if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
 
   banner "Starting ${APP_NAME:-hcl-learning-hub} (Kubernetes)"
 
+  # PostgreSQL remains a single-primary StatefulSet in this deployment design.
+  # Always scale it to exactly one replica unless the manifests are redesigned
+  # for HA Postgres with replication/failover support.
   info "Ensuring PostgreSQL is running ..."
   $KUBECTL scale statefulset/postgres -n "$K8S_NS" --replicas=1 2>/dev/null || true
   $KUBECTL wait pod -l app=postgres -n "$K8S_NS" \
     --for=condition=ready --timeout=120s 2>/dev/null \
     && ok "PostgreSQL ready" || warn "PostgreSQL not ready yet — continuing anyway"
 
-  info "Scaling API and web deployments to 1 ..."
-  $KUBECTL scale deployment/api deployment/web -n "$K8S_NS" --replicas=1 2>/dev/null || true
+  # API and web are stateless and can scale horizontally. The default values
+  # come from deploy/hub.env written by install-kubernetes.sh.
+  info "Scaling API to ${API_REPLICAS} replica(s) and web to ${WEB_REPLICAS} replica(s) ..."
+  $KUBECTL scale deployment/api -n "$K8S_NS" --replicas="$API_REPLICAS" 2>/dev/null || true
+  $KUBECTL scale deployment/web -n "$K8S_NS" --replicas="$WEB_REPLICAS" 2>/dev/null || true
   $KUBECTL rollout status deployment/api -n "$K8S_NS" --timeout=120s 2>/dev/null \
     && ok "API deployment ready" || warn "API rollout still in progress"
   $KUBECTL rollout status deployment/web -n "$K8S_NS" --timeout=120s 2>/dev/null \

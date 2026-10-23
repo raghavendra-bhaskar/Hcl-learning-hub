@@ -112,11 +112,15 @@ There are two ways to install on a VM that has internet access:
 
 | Option | Entry point | Result |
 |---|---|---|
-| **Source** (recommended for this VM) | `deploy/install.sh` | Runs Vite + API directly on the host, managed by `start.sh` / `stop.sh` / `sync.sh` |
-| Containers | [hcl-learning-hub-setup.sh](hcl-learning-hub-setup.sh) | Installs Docker CE + k3s and deploys the Hub as containers |
+| **Containers** | `bash deploy/install.sh --mode containers` | Builds local Podman/Docker images, restores the latest install dump, and runs the Hub as VM containers |
+| **Kubernetes** | `bash deploy/install.sh --mode kubernetes` | Builds local images, imports them into k3s, restores the latest install dump, and deploys the Hub as Kubernetes workloads |
 
 Both are separate from the air-gap bundle flow further below. Do not use either
 build-from-source path on a host without internet.
+
+The installer is now a mode-selection wrapper. It dispatches to
+`deploy/install-containers.sh` or `deploy/install-kubernetes.sh` instead of
+embedding the full worker logic in one script.
 
 ### Running from source on Windows
 
@@ -189,11 +193,12 @@ otherwise be executed as a script:
 head -3 install.sh    # must start with #!/bin/bash
 ```
 
-### Running from source on a connected VM
+### Running on a connected VM
 
 `deploy/install.sh` is a self-contained bootstrap: download **only that file**,
 run it, and it installs every prerequisite, clones the repo into
-`hcl-learning-hub/`, restores the database and leaves the Hub ready to start.
+`hcl-learning-hub/`, restores the database and leaves the selected runtime
+ready to start.
 
 Run it as your normal user — **not** with `sudo`. It calls `sudo` itself for the
 package steps; running the whole script as root leaves `node_modules` and the
@@ -201,30 +206,39 @@ clone owned by root.
 
 ```bash
 cd ~/software
-bash install.sh                      # clones into ~/software/hcl-learning-hub
+bash install.sh                      # prompts for containers or kubernetes
+bash install.sh --mode kubernetes
+bash install.sh --mode containers
 ```
 
-It installs and configures, in order:
+The current connected-VM installer path does the following:
 
 | Step | What it does |
 |---|---|
-| 1–2 | `git`, `curl`, `openssl`, then Node.js 20 LTS from NodeSource |
-| 3–4 | PostgreSQL server, `initdb`, password auth on localhost, role + database |
-| 5 | `git clone` into `hcl-learning-hub/` (prompts for the token if private) |
-| 6 | `npm install` for **both** workspaces (root UI and `server/`) |
-| 7 | `server/.env` with generated secrets, plus a TLS cert matching this FQDN |
-| 8 | Restores `scripts/backup.dump`, generates the Prisma client, applies migrations |
-| 9 | Opens the firewall ports |
+| 1 | Installs `git`, `curl`, `openssl`, and a container build runtime |
+| 2 | Installs or reuses the selected runtime target (`podman`/`docker` containers or `k3s`) |
+| 3 | Clones `hcl-learning-hub/` (prompts for the token if private) |
+| 4 | Builds the API and web images from the current repository state |
+| 5 | Restores the **freshest install dump** it can find |
+| 6 | Starts the selected runtime and opens the required ports |
+
+Fresh install dump selection order is now:
+
+1. `--dump <file>` if supplied
+2. newest `scripts/hcl-hub-manual-admin-v*.dump`
+3. `backups/latest.dump`
+4. legacy `scripts/backup.dump`
 
 Useful options:
 
 ```bash
 bash install.sh --host blmycldtl596461.nonprod.hclpnp.com   # explicit FQDN
-bash install.sh --dir /opt                                  # /opt/hcl-learning-hub
+bash install.sh --mode kubernetes                           # skip the interactive prompt
+bash install.sh --dump /tmp/current.dump                    # restore a specific dump
 bash install.sh --skip-db-restore                           # empty database
 bash install.sh --branch develop
-bash install.sh --database-url postgresql://u:p@dbhost:5432/hclhub   # external DB
-bash install.sh --pg-version 15                             # PGDG major version
+bash install.sh --repo https://github.com/example/private-repo.git
+bash install.sh --token <github-pat>
 ```
 
 #### If PostgreSQL cannot be installed
@@ -493,6 +507,18 @@ are static dump files kept in the repository for install/restore scenarios. New
 operational backups created on the VM are written under `backups/`, not back into
 `scripts/`.
 
+To refresh the install baseline from the current development database before a
+new clean VM install, run this from the repository root on the development
+machine:
+
+```bash
+npm run dump:refresh-install
+```
+
+That command creates a fresh custom-format PostgreSQL dump from the current dev
+database, writes a new versioned `scripts/hcl-hub-manual-admin-v*.dump`, updates
+`backups/latest.dump`, and refreshes `scripts/backup.dump` for older workflows.
+
 ### Rollback and uninstall
 
 Rollback script:
@@ -519,12 +545,12 @@ backup before removing the source deployment.
 
 Not every deployment of this project runs on Kubernetes.
 
-- `deploy/` scripts = **source deployment on a VM**, not Kubernetes
-- `hcl-learning-hub-setup.sh` and `k8s/` = **k3s / Kubernetes deployment path**
+- `deploy/install.sh --mode containers` = **VM container deployment**
+- `deploy/install.sh --mode kubernetes` and `k8s/` = **k3s / Kubernetes deployment path**
 - `packaging/` = offline container bundle path
 
-So if you install with `deploy/install.sh` on the VM, that VM is running the Hub
-directly from source with PostgreSQL as a service. It is **not** using k3s pods.
+If you are operating a k3s deployment, use the dedicated Kubernetes operations
+guide in `k8s/README.md` for scaling, sync, uninstall, and restore workflows.
 
 If you want to check whether a host is running the Kubernetes flavor:
 
@@ -539,6 +565,10 @@ Expected main workloads in k3s mode are:
 - `deployment/web`
 - `deployment/api`
 - `statefulset/postgres`
+
+Only `api` and `web` are horizontally scalable in the current manifests.
+`postgres` remains a single-primary StatefulSet and must stay at `1` replica
+unless the database layer is redesigned for HA replication/failover.
 
 There is also a helper validator:
 

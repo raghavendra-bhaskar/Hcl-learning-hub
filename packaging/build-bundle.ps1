@@ -24,7 +24,8 @@
     Embed a Docker Desktop installer placed in packaging\payload\.
 
 .PARAMETER DumpFile
-    Database dump to ship. Default: scripts\backup.dump
+    Database dump to ship. Default: newest manual-admin dump, otherwise
+    backups\latest.dump, otherwise scripts\backup.dump.
 
 .PARAMETER OutputDir
     Where to write the archive. Default: dist-bundle\
@@ -45,7 +46,27 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot  = Split-Path -Parent $PSScriptRoot
 $BundleSrc = Join-Path $PSScriptRoot 'bundle'
 if (-not $OutputDir) { $OutputDir = Join-Path $RepoRoot 'dist-bundle' }
-if (-not $DumpFile)  { $DumpFile  = Join-Path $RepoRoot 'scripts\backup.dump' }
+
+function Resolve-DefaultDumpFile {
+    param([string]$RepoRoot, [string]$RequestedDumpFile)
+
+    # Prefer the freshest repository baseline dump unless the operator explicitly
+    # overrides it with -DumpFile. This keeps Windows bundle builds aligned with
+    # the latest manual-admin capture and development snapshot.
+    if ($RequestedDumpFile) { return $RequestedDumpFile }
+
+    $manualLatest = Get-ChildItem -Path (Join-Path $RepoRoot 'scripts') -Filter 'hcl-hub-manual-admin-v*.dump' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($manualLatest) { return $manualLatest.FullName }
+
+    $latestDump = Join-Path $RepoRoot 'backups\latest.dump'
+    if (Test-Path -LiteralPath $latestDump) { return $latestDump }
+
+    return (Join-Path $RepoRoot 'scripts\backup.dump')
+}
+
+$DumpFile = Resolve-DefaultDumpFile -RepoRoot $RepoRoot -RequestedDumpFile $DumpFile
 
 . (Join-Path $BundleSrc 'lib\Common.ps1')
 $null = Import-BundleEnv (Join-Path $BundleSrc 'bundle.env')

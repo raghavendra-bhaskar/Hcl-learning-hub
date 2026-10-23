@@ -1045,11 +1045,11 @@ function AuthRealmTab() {
       {/* OpenID Provider */}
       <div className="rounded-2xl p-6 space-y-4" style={getCardStyle(isLight)}>
         <h3 className={`font-bold text-base ${isLight ? 'text-slate-900' : 'text-white'}`}>OpenID Provider &amp; Client Identity</h3>
-        <Field label="Client ID *" field="clientId" placeholder="0oa13io7fhtx5FBLw1d8"/>
+        <Field label="Client ID *" field="clientId" placeholder="enter the client id"/>
         <div>
           <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Client Secret</label>
           <div className="relative">
-            <input type={showSecret?'text':'password'} value={cfg.clientSecret||''} placeholder="Leave blank for PKCE (recommended)"
+            <input type={showSecret?'text':'password'} value={cfg.clientSecret||''} placeholder="enter the client secret"
               onChange={e => setCfg(c => ({...c,clientSecret:e.target.value}))}
               className="w-full rounded-xl px-3 py-2.5 pr-20 text-sm text-white placeholder-slate-600 focus:outline-none"
               style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)}/>
@@ -1058,7 +1058,7 @@ function AuthRealmTab() {
               {showSecret?'HIDE':'SHOW'}
             </button>
           </div>
-          <p className="text-[10px] text-slate-600 mt-0.5">PKCE does not require a client secret. Only set for confidential clients.</p>
+          <p className="text-[10px] text-slate-600 mt-0.5">PKCE does not require a client secret..</p>
         </div>
         <div>
           <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Issuer *</label>

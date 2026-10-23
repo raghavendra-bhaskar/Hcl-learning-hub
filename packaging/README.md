@@ -50,9 +50,23 @@ Both builders:
 1. Build `hcl-learning-hub-api` and `hcl-learning-hub-web` from the repo.
 2. Pull `postgres:16-alpine`.
 3. `save` all three images into `images/*.tar`.
-4. Copy `scripts/backup.dump` into `db/`.
+4. Copy the freshest install baseline dump into `db/`.
 5. Copy the installer / start / stop / restore scripts.
 6. Emit the archive plus a `.sha256` checksum into `dist-bundle/`.
+
+Default dump selection order is:
+
+1. explicit `--dump <file>` / `-DumpFile <file>`
+2. newest `scripts/hcl-hub-manual-admin-v*.dump`
+3. `backups/latest.dump`
+4. `scripts/backup.dump`
+
+To refresh that baseline from the current development database before building a
+new bundle:
+
+```bash
+npm run dump:refresh-install
+```
 
 ## Configuration
 

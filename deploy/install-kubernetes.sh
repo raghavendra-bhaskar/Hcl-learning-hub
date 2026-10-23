@@ -21,6 +21,7 @@ DUMP_FILE=""
 GITHUB_TOKEN=""
 SKIP_DB_RESTORE=false
 SAVE_TOKEN=true
+RESET_DATA=false
 K3S_BIN="/usr/local/bin/k3s"
 KUBECTL_BIN="/usr/local/bin/kubectl"
 
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --token)           GITHUB_TOKEN="$2"; shift 2 ;;
     --skip-db-restore) SKIP_DB_RESTORE=true; shift ;;
     --no-save-token)   SAVE_TOKEN=false; shift ;;
+    --reset-data)      RESET_DATA=true; shift ;;
     -h|--help)
       cat <<EOF
 Usage: bash deploy/install.sh --mode kubernetes [options]
@@ -43,6 +45,7 @@ Usage: bash deploy/install.sh --mode kubernetes [options]
   --token <pat>
   --skip-db-restore
   --no-save-token
+  --reset-data
 EOF
       exit 0
       ;;
@@ -61,8 +64,38 @@ HTTPS_PORT=443
 HTTP_PORT=80
 DB_USER="hcl_hub"
 DB_NAME="hcl_learning_hub"
-API_IMAGE="hcl-hub/api:latest"
-WEB_IMAGE="hcl-hub/web:latest"
+API_IMAGE="localhost/hcl-hub/api:latest"
+WEB_IMAGE="localhost/hcl-hub/web:latest"
+API_REPLICAS=1
+WEB_REPLICAS=1
+
+read_saved_credential() {
+  local key file
+  key="$1"
+  file="$INSTALL_DIR/.deploy-credentials"
+  [ -f "$file" ] || return 1
+  grep -E "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2-
+}
+
+read_existing_secret_value() {
+  local key encoded
+  key="$1"
+  encoded="$($KUBECTL get secret hcl-learning-hub-secrets -n "$K8S_NS" -o go-template="{{index .data \"$key\"}}" 2>/dev/null || true)"
+  [ -n "$encoded" ] || return 1
+  printf '%s' "$encoded" | base64 -d 2>/dev/null
+}
+
+wait_for_pvc_deletion() {
+  local pvc_name
+  pvc_name="$1"
+  for _ in $(seq 1 60); do
+    if ! "$KUBECTL" get pvc "$pvc_name" -n "$K8S_NS" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
 PRIMARY_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -276,12 +309,39 @@ ok "Web image imported"
 
 banner "Step 6/10: Apply Kubernetes resources"
 
-DB_PASSWORD="$(openssl rand -hex 16)"
-JWT_SECRET="$(openssl rand -hex 32)"
-ADMIN_PASSWORD="$(openssl rand -hex 9)"
-
 "$KUBECTL" apply -f k8s/0-namespace.yaml
 ok "Namespace: $K8S_NS"
+
+if [ "$RESET_DATA" = true ]; then
+  # A fresh reinstall must remove the PVC-backed PostgreSQL cluster before the
+  # manifests are re-applied, otherwise PostgreSQL keeps the old data directory
+  # and the new restore does not start from a clean state.
+  banner "Step 6a/10: Reset Kubernetes data"
+  info "Deleting current workloads and PVCs for a clean reinstall ..."
+  "$KUBECTL" delete deployment api web -n "$K8S_NS" --ignore-not-found=true >/dev/null 2>&1 || true
+  "$KUBECTL" delete statefulset postgres -n "$K8S_NS" --ignore-not-found=true >/dev/null 2>&1 || true
+  "$KUBECTL" delete pvc postgres-pvc api-data-pvc -n "$K8S_NS" --ignore-not-found=true >/dev/null 2>&1 || true
+  wait_for_pvc_deletion postgres-pvc || warn "postgres-pvc deletion is still in progress"
+  wait_for_pvc_deletion api-data-pvc || warn "api-data-pvc deletion is still in progress"
+  ok "Previous PVC-backed data cleared"
+fi
+
+# Reinstall must preserve existing credentials by default so a reused postgres
+# PVC and the application secret stay aligned. When --reset-data is requested,
+# skip the in-cluster secret lookup so the reinstall is driven by the saved
+# deployment credentials or fresh generated values after the PVC reset.
+if [ "$RESET_DATA" = true ]; then
+  DB_PASSWORD="$(read_saved_credential 'DB_PASSWORD' || true)"
+  JWT_SECRET="$(read_saved_credential 'JWT_SECRET' || true)"
+  ADMIN_PASSWORD="$(read_saved_credential 'ADMIN_PASSWORD' || true)"
+else
+  DB_PASSWORD="$(read_existing_secret_value 'db-password' || read_saved_credential 'DB_PASSWORD' || true)"
+  JWT_SECRET="$(read_existing_secret_value 'jwt-secret' || read_saved_credential 'JWT_SECRET' || true)"
+  ADMIN_PASSWORD="$(read_existing_secret_value 'admin-password' || read_saved_credential 'ADMIN_PASSWORD' || true)"
+fi
+[ -n "$DB_PASSWORD" ] || DB_PASSWORD="$(openssl rand -hex 16)"
+[ -n "$JWT_SECRET" ] || JWT_SECRET="$(openssl rand -hex 32)"
+[ -n "$ADMIN_PASSWORD" ] || ADMIN_PASSWORD="$(openssl rand -hex 9)"
 
 "$KUBECTL" create secret generic hcl-learning-hub-secrets \
   --namespace "$K8S_NS" \
@@ -318,6 +378,7 @@ trap 'rm -rf "$K8S_TMP"; [ -n "$ASKPASS" ] && rm -f "$ASKPASS"' EXIT
 
 sed \
   -e "s|image: ghcr.io/raghavendra-bhaskar/hcl-learning-hub-api:latest|image: ${API_IMAGE}|g" \
+  -e "s|replicas: 1|replicas: ${API_REPLICAS}|g" \
   -e "s|imagePullPolicy: Always|imagePullPolicy: Never|g" \
   -e "s|http://hcl-learning-hub.hcl-software.com|${ACCESS_URL}|g" \
   k8s/4-api.yaml > "$K8S_TMP/4-api.yaml"
@@ -327,10 +388,16 @@ ok "API Deployment applied"
 sed \
   -e "s|image: ghcr.io/raghavendra-bhaskar/hcl-learning-hub-web:latest|image: ${WEB_IMAGE}|g" \
   -e "s|imagePullPolicy: Always|imagePullPolicy: Never|g" \
-  -e "s|replicas: 3|replicas: 1|g" \
+  -e "s|replicas: 3|replicas: ${WEB_REPLICAS}|g" \
   k8s/5-web.yaml > "$K8S_TMP/5-web.yaml"
 "$KUBECTL" apply -f "$K8S_TMP/5-web.yaml"
-ok "Web Deployment applied (1 replica)"
+ok "Web Deployment applied (${WEB_REPLICAS} replica(s))"
+
+# The local image tags stay constant (`localhost/...:latest`). Force a rollout
+# restart after import/apply so k3s replaces pods that still point at the older
+# image instance or were previously stuck in ErrImageNeverPull.
+"$KUBECTL" rollout restart deployment/api -n "$K8S_NS" >/dev/null 2>&1 || true
+"$KUBECTL" rollout restart deployment/web -n "$K8S_NS" >/dev/null 2>&1 || true
 
 cat > "$K8S_TMP/ingress-tls.yaml" <<INGRESS_EOF
 apiVersion: traefik.io/v1alpha1
@@ -400,6 +467,8 @@ HTTP_PORT=${HTTP_PORT}
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
 DB_CONTAINER_NAME=hcl-hub-postgres
+API_REPLICAS=${API_REPLICAS}
+WEB_REPLICAS=${WEB_REPLICAS}
 GIT_REPO=${GIT_REPO}
 GIT_BRANCH=${GIT_BRANCH}
 K3S_BIN=${K3S_BIN}
@@ -414,7 +483,27 @@ ok "PostgreSQL pod is ready"
 
 banner "Step 8/10: Database restore"
 
-[ -n "$DUMP_FILE" ] || DUMP_FILE="$INSTALL_DIR/scripts/backup.dump"
+resolve_install_dump() {
+  local latest_manual=""
+  local latest_pointer="$INSTALL_DIR/backups/latest.dump"
+  if [ -n "$DUMP_FILE" ]; then
+    printf '%s\n' "$DUMP_FILE"
+    return 0
+  fi
+  latest_manual="$(ls -1t "$INSTALL_DIR"/scripts/hcl-hub-manual-admin-v*.dump 2>/dev/null | head -1 || true)"
+  if [ -n "$latest_manual" ]; then
+    printf '%s\n' "$latest_manual"
+    return 0
+  fi
+  if [ -f "$latest_pointer" ]; then
+    printf '%s\n' "$latest_pointer"
+    return 0
+  fi
+  printf '%s\n' "$INSTALL_DIR/scripts/backup.dump"
+}
+
+DUMP_FILE="$(resolve_install_dump)"
+info "Install restore source: $DUMP_FILE"
 PG_POD="$("$KUBECTL" get pod -n "$K8S_NS" -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 if [ "$SKIP_DB_RESTORE" = true ]; then
   warn "--skip-db-restore given — database will be seeded by the API on first start"
