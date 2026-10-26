@@ -104,6 +104,14 @@ finalize_sync_exit() {
   fi
 }
 
+select_latest_manual_dump() {
+  local dir
+  for dir in "$INSTALL_DIR/scripts" /tmp; do
+    [ -d "$dir" ] || continue
+    find "$dir" -maxdepth 1 -type f -name "$MANUAL_ADMIN_DUMP_GLOB" -printf '%f\t%p\n' 2>/dev/null
+  done | sed -n 's/^hcl-hub-manual-admin-v\([0-9][0-9]*\)-\([0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]\)\.dump\t\(.*\)$/\1\t\2\t\3/p' | sort -t "$(printf '\t')" -k1,1nr -k2,2r | head -1 | cut -f3-
+}
+
 resolve_restore_file() {
   local requested="$1"
   local -a dirs=("$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "/tmp")
@@ -125,10 +133,7 @@ resolve_restore_file() {
     done
   fi
 
-  manual_latest="$({
-    ls -1t "$INSTALL_DIR"/scripts/$MANUAL_ADMIN_DUMP_GLOB 2>/dev/null || true
-    ls -1t /tmp/$MANUAL_ADMIN_DUMP_GLOB 2>/dev/null || true
-  } | head -1)"
+  manual_latest="$(select_latest_manual_dump)"
 
   if [ -n "$manual_latest" ]; then
     printf '%s\n' "$manual_latest"
@@ -542,6 +547,7 @@ if [ "${DEPLOY_MODE:-}" = "kubernetes" ]; then
   command -v podman >/dev/null 2>&1 || BUILD_CMD="docker"
   API_IMAGE="localhost/hcl-hub/api:latest"
   WEB_IMAGE="localhost/hcl-hub/web:latest"
+  POSTGRES_RESTORE_IMAGE="postgres:17-alpine"
   CREDS="$INSTALL_DIR/.deploy-credentials"
 
   cd "$INSTALL_DIR"
@@ -606,8 +612,14 @@ ASK
     || warn "git pull failed — using existing code"
   [ -n "$K8S_ASKPASS" ] && rm -f "$K8S_ASKPASS" || true
 
+  # ── Optional restore ─────────────────────────────────────────────────────────
+  K8S_RESTORE_FILE=""
+  if [ "$CODE_ONLY" = false ] && [ -n "$RESTORE_FILE" ]; then
+    K8S_RESTORE_FILE="$(resolve_restore_file "$RESTORE_FILE")" || fail "Restore file not found: $RESTORE_FILE"
+  fi
+
   # ── Rebuild images ───────────────────────────────────────────────────────────
-  banner "K8s Sync — step 3/4: Rebuild and import images"
+  banner "K8s Sync — step 3/5: Rebuild and import images"
   info "Building API image ..."
   $BUILD_CMD build -t "$API_IMAGE" -f server/Dockerfile . \
     || fail "API image build failed — sync aborted."
@@ -624,8 +636,46 @@ ASK
     || fail "Web image import failed"
   ok "Images imported into k3s"
 
+  # ── Optional restore ─────────────────────────────────────────────────────────
+  banner "K8s Sync — step 4/5: Optional restore"
+  if [ "$CODE_ONLY" = true ]; then
+    info "--code-only: database restore skipped"
+  elif [ -n "$K8S_RESTORE_FILE" ]; then
+    PG_POD="$($KUBECTL get pod -n "$K8S_NS" -l app=postgres -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    [ -n "$PG_POD" ] || fail "No postgres pod found — cannot restore $K8S_RESTORE_FILE"
+    K8S_DB_PWD="$(grep -E '^DB_PASSWORD=' "$CREDS" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+    [ -n "$K8S_DB_PWD" ] || fail "DB_PASSWORD not found in $CREDS"
+    K8S_RESTORE_LOG="$INSTALL_DIR/restore-$(date +%Y%m%d-%H%M%S).log"
+    K8S_RESTORE_POD="pg-restore-helper-$(date +%s)"
+    K8S_MAGIC="$(head -c 5 "$K8S_RESTORE_FILE" | tr -d '\0' || true)"
+    info "Restoring $(basename "$K8S_RESTORE_FILE")"
+    set +e
+    $KUBECTL run "$K8S_RESTORE_POD" -n "$K8S_NS" --image="$POSTGRES_RESTORE_IMAGE" --restart=Never --command -- sleep 600 > "$K8S_RESTORE_LOG" 2>&1
+    K8S_RC=$?
+    if [ $K8S_RC -eq 0 ]; then
+      $KUBECTL wait pod -n "$K8S_NS" "$K8S_RESTORE_POD" --for=condition=Ready --timeout=120s >> "$K8S_RESTORE_LOG" 2>&1
+      K8S_RC=$?
+    fi
+    if [ $K8S_RC -eq 0 ]; then
+      $KUBECTL cp "$K8S_RESTORE_FILE" "${K8S_NS}/${K8S_RESTORE_POD}:/tmp/backup.dump" >> "$K8S_RESTORE_LOG" 2>&1
+      K8S_RC=$?
+    fi
+    if [ $K8S_RC -eq 0 ] && [ "$K8S_MAGIC" = "PGDMP" ]; then
+      $KUBECTL exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -ec "pg_restore --clean --if-exists --no-owner --no-acl --file /tmp/restore.sql /tmp/backup.dump && grep -v 'SET transaction_timeout = 0;' /tmp/restore.sql > /tmp/restore.filtered.sql && PGPASSWORD='${K8S_DB_PWD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.filtered.sql" >> "$K8S_RESTORE_LOG" 2>&1
+      K8S_RC=$?
+    elif [ $K8S_RC -eq 0 ]; then
+      $KUBECTL exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -ec "grep -v 'SET transaction_timeout = 0;' /tmp/backup.dump > /tmp/restore.sql && PGPASSWORD='${K8S_DB_PWD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.sql" >> "$K8S_RESTORE_LOG" 2>&1
+      K8S_RC=$?
+    fi
+    $KUBECTL delete pod -n "$K8S_NS" "$K8S_RESTORE_POD" --ignore-not-found=true >/dev/null 2>&1 || true
+    set -e
+    [ $K8S_RC -eq 0 ] && ok "Restore complete: $K8S_RESTORE_FILE" || fail "Restore failed — see $K8S_RESTORE_LOG"
+  else
+    info "No --restore given — keeping the current data"
+  fi
+
   # ── Rollout restart ──────────────────────────────────────────────────────────
-  banner "K8s Sync — step 4/4: Rollout restart"
+  banner "K8s Sync — step 5/5: Rollout restart"
   $KUBECTL rollout restart deployment/api deployment/web -n "$K8S_NS"
   $KUBECTL rollout status deployment/api -n "$K8S_NS" --timeout=180s \
     && ok "API rolled out" || warn "API rollout still in progress — check: $KUBECTL rollout status deployment/api -n $K8S_NS"

@@ -83,6 +83,7 @@ DB_VOLUME="hcl-hub-postgres-data"
 API_VOLUME="hcl-hub-api-data"
 API_IMAGE="hcl-hub/api:latest"
 WEB_IMAGE="hcl-hub/web:latest"
+MANUAL_ADMIN_DUMP_GLOB='hcl-hub-manual-admin-v*.dump'
 POSTGRES_IMAGE="docker.io/library/postgres:16-alpine"
 POSTGRES_RESTORE_IMAGE="docker.io/library/postgres:17-alpine"
 
@@ -275,7 +276,7 @@ resolve_install_dump() {
     printf '%s\n' "$DUMP_FILE"
     return 0
   fi
-  latest_manual="$(ls -1t "$INSTALL_DIR"/scripts/hcl-hub-manual-admin-v*.dump 2>/dev/null | head -1 || true)"
+  latest_manual="$(select_latest_manual_dump)"
   if [ -n "$latest_manual" ]; then
     printf '%s\n' "$latest_manual"
     return 0
@@ -481,14 +482,14 @@ elif [ -f "$DUMP_FILE" ]; then
       -e PGPASSWORD="$DB_PASSWORD" \
       -v "$RESTORE_DUMP_MOUNT" \
       "$POSTGRES_RESTORE_IMAGE" \
-      sh -c "pg_restore -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} --clean --if-exists --no-owner --no-acl /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
+      sh -ec "pg_restore --clean --if-exists --no-owner --no-acl --file /tmp/restore.sql /tmp/backup.dump && grep -v 'SET transaction_timeout = 0;' /tmp/restore.sql > /tmp/restore.filtered.sql && PGPASSWORD='${DB_PASSWORD}' psql -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.filtered.sql" > "$RESTORE_LOG" 2>&1
   else
     $ENGINE run --rm \
       --network "$NETWORK_NAME" \
       -e PGPASSWORD="$DB_PASSWORD" \
       -v "$RESTORE_DUMP_MOUNT" \
       "$POSTGRES_RESTORE_IMAGE" \
-      sh -c "psql -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} -f /tmp/backup.dump" > "$RESTORE_LOG" 2>&1
+      sh -ec "grep -v 'SET transaction_timeout = 0;' /tmp/backup.dump > /tmp/restore.sql && PGPASSWORD='${DB_PASSWORD}' psql -h ${DB_CONTAINER_NAME} -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.sql" > "$RESTORE_LOG" 2>&1
   fi
   RC=$?
   set -e

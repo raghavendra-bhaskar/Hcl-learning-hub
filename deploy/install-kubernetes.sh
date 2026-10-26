@@ -68,6 +68,7 @@ API_IMAGE="localhost/hcl-hub/api:latest"
 WEB_IMAGE="localhost/hcl-hub/web:latest"
 API_REPLICAS=1
 WEB_REPLICAS=1
+MANUAL_ADMIN_DUMP_GLOB='hcl-hub-manual-admin-v*.dump'
 POSTGRES_RESTORE_IMAGE="postgres:17-alpine"
 
 read_saved_credential() {
@@ -115,6 +116,14 @@ ensure_execute_permissions() {
 normalize_permissions() {
   chmod -R u+rwX,go+rX "$INSTALL_DIR" 2>/dev/null || true
   ensure_execute_permissions
+}
+
+select_latest_manual_dump() {
+  local dir
+  for dir in "$INSTALL_DIR/scripts" /tmp; do
+    [ -d "$dir" ] || continue
+    find "$dir" -maxdepth 1 -type f -name "$MANUAL_ADMIN_DUMP_GLOB" -printf '%f\t%p\n' 2>/dev/null
+  done | sed -n 's/^hcl-hub-manual-admin-v\([0-9][0-9]*\)-\([0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]\)\.dump\t\(.*\)$/\1\t\2\t\3/p' | sort -t "$(printf '\t')" -k1,1nr -k2,2r | head -1 | cut -f3-
 }
 
 [ -n "$SERVER_FQDN" ] || SERVER_FQDN="$(hostname -f 2>/dev/null || hostname)"
@@ -510,7 +519,7 @@ resolve_install_dump() {
     printf '%s\n' "$DUMP_FILE"
     return 0
   fi
-  latest_manual="$(ls -1t "$INSTALL_DIR"/scripts/hcl-hub-manual-admin-v*.dump 2>/dev/null | head -1 || true)"
+  latest_manual="$(select_latest_manual_dump)"
   if [ -n "$latest_manual" ]; then
     printf '%s\n' "$latest_manual"
     return 0
@@ -555,10 +564,10 @@ elif [ -f "$DUMP_FILE" ]; then
     RC=$?
   fi
   if [ $RC -eq 0 ] && [ "$MAGIC" = "PGDMP" ]; then
-    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' pg_restore -h postgres -U ${DB_USER} -d ${DB_NAME} --clean --if-exists --no-owner --no-acl /tmp/backup.dump" >> "$RESTORE_LOG" 2>&1
+    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -ec "pg_restore --clean --if-exists --no-owner --no-acl --file /tmp/restore.sql /tmp/backup.dump && grep -v 'SET transaction_timeout = 0;' /tmp/restore.sql > /tmp/restore.filtered.sql && PGPASSWORD='${DB_PASSWORD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.filtered.sql" >> "$RESTORE_LOG" 2>&1
     RC=$?
   elif [ $RC -eq 0 ]; then
-    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -c "PGPASSWORD='${DB_PASSWORD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/backup.dump" >> "$RESTORE_LOG" 2>&1
+    "$KUBECTL" exec -n "$K8S_NS" "$K8S_RESTORE_POD" -- sh -ec "grep -v 'SET transaction_timeout = 0;' /tmp/backup.dump > /tmp/restore.sql && PGPASSWORD='${DB_PASSWORD}' psql -h postgres -U ${DB_USER} -d ${DB_NAME} -f /tmp/restore.sql" >> "$RESTORE_LOG" 2>&1
     RC=$?
   else
     RC=$RC
