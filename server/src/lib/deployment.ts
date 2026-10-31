@@ -12,6 +12,7 @@ const PATCHES_DIR = join(REPO_ROOT, 'patches');
 const RELEASES_DIR = join(REPO_ROOT, 'releases');
 const LOGS_DIR = join(REPO_ROOT, 'logs');
 const PATCHES_INDEX_FILE = join(PATCHES_DIR, 'index.json');
+const PATCH_ARCHIVE_MANIFEST_FILE = join(PATCHES_DIR, 'version-archives', 'manifest.json');
 const CURRENT_RELEASE_FILE = join(RELEASES_DIR, 'current-release.env');
 const PREVIOUS_RELEASE_FILE = join(RELEASES_DIR, 'previous-release.env');
 const UPGRADE_SCRIPT = join(DEPLOY_DIR, 'upgrade.sh');
@@ -87,6 +88,21 @@ type DeploymentVersionOption = {
   notes: string[];
   releaseFilePath: string;
   archiveFilePath: string;
+};
+
+type PatchArchiveManifestEntry = {
+  version: string;
+  majorVersion: number;
+  minorVersion: number;
+  archiveFile: string;
+  sourceDirectory?: string;
+  modifiedAt?: string;
+  notes?: string[];
+};
+
+type PatchArchiveManifest = {
+  currentVersion?: string;
+  entries?: PatchArchiveManifestEntry[];
 };
 
 function run(command: string, args: string[], cwd = REPO_ROOT) {
@@ -187,25 +203,92 @@ function findReleaseByVersion(releases: ReleaseInfo[], version: string) {
   return releases.find(release => sameVersion(release.productVersion, version)) || null;
 }
 
+function readPatchArchiveManifest() {
+  const manifest = readJsonFile<PatchArchiveManifest>(PATCH_ARCHIVE_MANIFEST_FILE, {});
+  const entries = Array.isArray(manifest.entries)
+    ? manifest.entries.filter((entry): entry is PatchArchiveManifestEntry => Boolean(entry)
+      && typeof entry.version === 'string'
+      && typeof entry.archiveFile === 'string'
+      && Number.isFinite(entry.majorVersion)
+      && Number.isFinite(entry.minorVersion))
+    : [];
+  return {
+    currentVersion: typeof manifest.currentVersion === 'string' ? manifest.currentVersion : '',
+    entries,
+  };
+}
+
+function buildVersionRecordsFromManifestEntries(
+  entries: PatchArchiveManifestEntry[],
+  majorVersion: number,
+  fallbackStatus: string,
+): PatchVersionRecord | null {
+  if (!Number.isFinite(majorVersion) || majorVersion <= 0) return null;
+  const matchingEntries = entries
+    .filter(entry => entry.majorVersion === majorVersion)
+    .sort((left, right) => compareVersions(left.version, right.version));
+  if (!matchingEntries.length) return null;
+  const majorEntry = matchingEntries.find(entry => entry.minorVersion === 0) || matchingEntries[0];
+  return {
+    version: String(majorVersion),
+    displayVersion: `${majorVersion}.0.0`,
+    defaultNextPatch: `${majorVersion}.${Math.max(...matchingEntries.map(entry => entry.minorVersion)) + 1}`,
+    status: fallbackStatus,
+    metadataFile: '',
+    recordedReleaseMetadata: false,
+    releaseMetadataSource: 'patch archive manifest',
+    releaseFile: '',
+    archiveFile: majorEntry.archiveFile || '',
+    archiveSourceDirectory: majorEntry.sourceDirectory || '',
+    archiveModifiedAt: majorEntry.modifiedAt || '',
+    minorVersions: matchingEntries.map(entry => ({
+      version: entry.version,
+      releaseFile: '',
+      archiveFile: entry.archiveFile || '',
+      archiveSourceDirectory: entry.sourceDirectory || '',
+      archiveModifiedAt: entry.modifiedAt || '',
+      notes: Array.isArray(entry.notes) ? entry.notes.filter((note): note is string => typeof note === 'string') : [],
+    })),
+    notes: Array.isArray(majorEntry.notes) ? majorEntry.notes.filter((note): note is string => typeof note === 'string') : [],
+  };
+}
+
 function readPatchArchive(): PatchArchive {
   const rawIndex = readJsonFile<{ product?: string; purpose?: string; currentVersion?: string; nextUpgradeVersion?: string; availableVersions?: PatchIndexVersion[] }>(PATCHES_INDEX_FILE, {});
-  const versions = (rawIndex.availableVersions || []).map(entry => {
+  const manifest = readPatchArchiveManifest();
+  const manifestEntries = manifest.entries;
+  const manifestMajors = Array.from(new Set(manifestEntries.map((entry) => entry.majorVersion).filter((major) => Number.isFinite(major) && major > 0))).sort((left, right) => left - right);
+  const availableVersions = Array.isArray(rawIndex.availableVersions) && rawIndex.availableVersions.length
+    ? rawIndex.availableVersions
+    : manifestMajors.map(major => ({
+      version: String(major),
+      displayVersion: `${major}.0.0`,
+      defaultNextPatch: `${major}.1`,
+      status: manifest.currentVersion && sameVersion(String(major), manifest.currentVersion)
+        ? 'current'
+        : manifest.currentVersion && compareVersions(String(major), manifest.currentVersion) < 0
+          ? 'archived'
+          : '',
+      metadataFile: '',
+    } satisfies PatchIndexVersion));
+  const versions = availableVersions.map(entry => {
     const metadataPath = entry.metadataFile ? join(REPO_ROOT, entry.metadataFile) : '';
     const metadata = metadataPath
       ? readJsonFile<Partial<PatchVersionRecord>>(metadataPath, {})
       : {};
+    const fallbackManifestRecord = buildVersionRecordsFromManifestEntries(manifestEntries, getMajorVersion(entry.version) || 0, entry.status || 'archived');
     return {
-      version: metadata.version || entry.version,
-      displayVersion: metadata.displayVersion || entry.displayVersion || entry.version,
-      defaultNextPatch: metadata.defaultNextPatch || entry.defaultNextPatch || '',
-      status: metadata.status || entry.status || '',
+      version: metadata.version || fallbackManifestRecord?.version || entry.version,
+      displayVersion: metadata.displayVersion || fallbackManifestRecord?.displayVersion || entry.displayVersion || entry.version,
+      defaultNextPatch: metadata.defaultNextPatch || fallbackManifestRecord?.defaultNextPatch || entry.defaultNextPatch || '',
+      status: metadata.status || fallbackManifestRecord?.status || entry.status || '',
       metadataFile: entry.metadataFile || '',
       recordedReleaseMetadata: Boolean(metadata.recordedReleaseMetadata),
-      releaseMetadataSource: metadata.releaseMetadataSource || '',
-      releaseFile: metadata.releaseFile || '',
-      archiveFile: typeof metadata.archiveFile === 'string' ? metadata.archiveFile : '',
-      archiveSourceDirectory: typeof metadata.archiveSourceDirectory === 'string' ? metadata.archiveSourceDirectory : '',
-      archiveModifiedAt: typeof metadata.archiveModifiedAt === 'string' ? metadata.archiveModifiedAt : '',
+      releaseMetadataSource: metadata.releaseMetadataSource || fallbackManifestRecord?.releaseMetadataSource || '',
+      releaseFile: metadata.releaseFile || fallbackManifestRecord?.releaseFile || '',
+      archiveFile: typeof metadata.archiveFile === 'string' && metadata.archiveFile ? metadata.archiveFile : (fallbackManifestRecord?.archiveFile || ''),
+      archiveSourceDirectory: typeof metadata.archiveSourceDirectory === 'string' && metadata.archiveSourceDirectory ? metadata.archiveSourceDirectory : (fallbackManifestRecord?.archiveSourceDirectory || ''),
+      archiveModifiedAt: typeof metadata.archiveModifiedAt === 'string' && metadata.archiveModifiedAt ? metadata.archiveModifiedAt : (fallbackManifestRecord?.archiveModifiedAt || ''),
       minorVersions: Array.isArray(metadata.minorVersions)
         ? metadata.minorVersions
           .filter(record => record && typeof record.version === 'string')
@@ -218,14 +301,14 @@ function readPatchArchive(): PatchArchive {
             notes: Array.isArray(record.notes) ? record.notes.filter(note => typeof note === 'string') : [],
           }))
           .sort((left, right) => compareVersions(left.version, right.version))
-        : [],
-      notes: Array.isArray(metadata.notes) ? metadata.notes.filter(note => typeof note === 'string') : [],
+        : fallbackManifestRecord?.minorVersions || [],
+      notes: Array.isArray(metadata.notes) ? metadata.notes.filter(note => typeof note === 'string') : fallbackManifestRecord?.notes || [],
     };
   }).sort((left, right) => compareVersions(left.version, right.version));
   return {
     product: rawIndex.product || 'HCL Learning Hub',
     purpose: rawIndex.purpose || '',
-    currentVersion: rawIndex.currentVersion || BASELINE_VERSION,
+    currentVersion: rawIndex.currentVersion || manifest.currentVersion || BASELINE_VERSION,
     nextUpgradeVersion: rawIndex.nextUpgradeVersion || '',
     versions,
   };

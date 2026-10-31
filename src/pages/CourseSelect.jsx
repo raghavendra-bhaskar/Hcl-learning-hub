@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, ShieldCheck, Search, BookOpen, Sparkles } from 'lucide-react';
+import { ChevronRight, ExternalLink, FileText, Lock, LogOut, ChevronDown, UserCircle, Pencil, GraduationCap, ShieldCheck, Search, BookOpen, Sparkles } from 'lucide-react';
 import { clearAuth, getAuth, signOut } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
 import { api } from '../lib/api.js';
@@ -14,10 +14,10 @@ import HCLSoftwareWordmark from '../components/HCLSoftwareWordmark.jsx';
 // database-managed courses, adds filtering/search/progress awareness, and is
 // the main entry point learners and moderators use before entering a course.
 const COURSE_FILTERS = [
-  { id: 'all', label: 'All Courses', description: 'Browse every learning category' },
-  { id: 'process', label: 'Process', description: 'Process-focused learning tracks' },
   { id: 'product', label: 'Product', description: 'Product enablement and product skills' },
   { id: 'technology', label: 'Technology', description: 'Technology and platform training' },
+  { id: 'process', label: 'Process', description: 'Process-focused learning tracks' },
+  { id: 'all', label: 'All Categories', description: 'Browse every learning category' },
 ];
 
 const COURSE_CATEGORY_META = {
@@ -44,8 +44,8 @@ const COURSES = [
     status: 'live',
     category: 'technology',
     route: '/devops-loop',
-    badge: '8 Modules',
-    totalQuests: 21,
+    badge: '18 Quests',
+    totalQuests: 18,
   },
   {
     id: 'ai-quest',
@@ -282,7 +282,7 @@ function CourseCard({ course, isAdmin, isLight, dragId, dragOverId, onDragStart,
               </h3>
             </div>
           </div>
-          <p className={`mt-3 text-[12px] leading-relaxed whitespace-normal break-words ${isLight ? 'text-slate-700' : 'text-white'}`}
+          <p className={`mt-3 text-[12px] leading-relaxed whitespace-normal break-words ${isLight ? 'text-slate-700' : 'text-slate-300'}`}
             style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {course.subtitle || courseBrief}
           </p>
@@ -380,6 +380,7 @@ export default function CourseSelect() {
   const [dragOverId, setDragOverId] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [sessionInvalid, setSessionInvalid] = useState(false);
+  const [processDocs, setProcessDocs] = useState([]);
 
   const profileRef = useRef(null);
   const filterRef = useRef(null);
@@ -393,6 +394,12 @@ export default function CourseSelect() {
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  useEffect(() => {
+    api.get('/courses-api/process-docs').then(data => {
+      if (Array.isArray(data)) setProcessDocs(data);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -475,12 +482,14 @@ export default function CourseSelect() {
 
   const visibleCourses = useMemo(() => allCourses
     .map(course => ({ ...course, searchScore: scoreSearch(course) }))
-    .filter(course => course.searchScore > 0 && matchesFilter(course.category))
+    .filter(course => course.searchScore > 0
+      && matchesFilter(course.category)
+      && (course.status === 'live' || isAdmin || course.canEdit))
     .sort((a, b) => categoryPriority(a.category) - categoryPriority(b.category)
       || statusPriority(a.status) - statusPriority(b.status)
       || b.searchScore - a.searchScore
       || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
-      || a.title.localeCompare(b.title)), [allCourses, courseSearch, courseFilter]);
+      || a.title.localeCompare(b.title)), [allCourses, courseSearch, courseFilter, isAdmin]);
 
   const moderatedCourses = useMemo(() => allCourses
     .filter(course => course.canEdit)
@@ -789,8 +798,8 @@ export default function CourseSelect() {
             <div className="min-w-0">
               <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
                 <div>
-                  <p className={`font-orbitron text-xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Course Hub</p>
-                  <p className="text-xs text-slate-500">{totalVisibleCount} result{totalVisibleCount !== 1 ? 's' : ''} · {activeFilter.description}</p>
+                  <p className={`font-orbitron text-xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}></p>
+                  <p className="text-xs text-slate-500">{totalVisibleCount + (courseFilter === 'process' || courseFilter === 'all' ? processDocs.length : 0)} result{(totalVisibleCount + (courseFilter === 'process' || courseFilter === 'all' ? processDocs.length : 0)) !== 1 ? 's' : ''} · {activeFilter.description}</p>
                 </div>
               </div>
 
@@ -820,7 +829,7 @@ export default function CourseSelect() {
                   />
                 ))}
 
-                {totalVisibleCount === 0 && (
+                {totalVisibleCount === 0 && courseFilter !== 'process' && (
                   <div className="sm:col-span-2 xl:col-span-3 2xl:col-span-4 rounded-2xl p-10 text-center border border-dashed" style={{ borderColor: isLight ? 'rgba(71,85,105,0.28)' : 'rgba(255,255,255,0.08)', background: isLight ? 'rgba(148,163,184,0.16)' : 'transparent' }}>
                     <Search size={24} className="text-slate-400 mx-auto mb-3" />
                     <p className="text-slate-500 text-sm">No courses match "<span className={isLight ? 'text-slate-700' : 'text-slate-300'}>{courseSearch}</span>"</p>
@@ -829,6 +838,46 @@ export default function CourseSelect() {
                 )}
               </div>
             </div>
+
+            {(courseFilter === 'all' || courseFilter === 'process') && processDocs.length > 0 && (
+              <div className="mt-10">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.28)' }}>
+                    <FileText size={18} className="text-orange-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-orbitron text-lg font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Process</p>
+                    <p className="text-xs text-slate-500">Team processes, policies, and reference documents</p>
+                  </div>
+                  <a href="https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors flex-shrink-0">
+                    <span>Open folder</span> <ExternalLink size={12} />
+                  </a>
+                </div>
+                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {processDocs.map(doc => (
+                    <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer"
+                      className={`flex items-start gap-4 rounded-2xl p-5 border transition-all hover:opacity-90 active:scale-[0.99] no-underline ${isLight ? 'bg-white/85' : 'bg-white/[0.02]'}`}
+                      style={{ borderColor: isLight ? 'rgba(249,115,22,0.28)' : 'rgba(249,115,22,0.22)' }}>
+                      <span className="text-2xl leading-none mt-0.5 flex-shrink-0">{doc.icon || '📋'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>{doc.title}</p>
+                        {doc.description && <p className={`text-[11px] mt-1.5 leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{doc.description}</p>}
+                        {doc.tags && (
+                          <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316' }}>Process</span>
+                            {doc.tags.split(',').filter(Boolean).map(tag => (
+                              <span key={tag.trim()} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isLight ? 'text-slate-500 border-slate-200' : 'text-slate-500 border-white/10'}`}>{tag.trim()}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <ExternalLink size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

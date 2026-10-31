@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Bot, GraduationCap, KeyRound, Rocket, Settings, ShieldCheck, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, BookOpen, Bot, ExternalLink, FileText, GraduationCap, KeyRound, Pencil, Plus, Rocket, Settings, ShieldCheck, Trash2, UserCog, Users, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
@@ -1589,9 +1589,216 @@ function DeploymentTab() {
   );
 }
 
+// ── Process Documents Tab ─────────────────────────────────────────────────────
+const DRIVE_FOLDER_URL = 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA';
+const PRESET_DOCS = [
+  { title: 'Team Meeting Notes', description: 'Decisions and policy updates from team meetings. Includes Sev1 response time changes (20 min) and other process decisions.', url: 'https://docs.google.com/document/d/1FH9Tmj05UW2u2ZcdvZwIu0WWYSFnxm23lCQqRnEru9I/edit', icon: '📋', tags: 'Sev1, Response Time, Policy', knowledgeText: 'Severity 1 (Sev1) case response time is 20 minutes. This was reduced from the previous 45-minute expectation. Source: Team Meeting Notes.' },
+  { title: 'Escalation Template', description: 'Standard template for escalating support cases (EscalationTemplate 2.0 / 3.0). Used by the HCLSupp-UC-WW team.', url: 'https://drive.google.com/drive/folders/1AwTOzsgWksWWzarQnYRGogGUiaM0wTgz', icon: '🔺', tags: 'Escalation, Case Management', knowledgeText: 'Escalation template documents guide how to properly escalate support cases. Versions include EscalationTemplate_2.0 and EscalationTemplate_3.0. Used internally by the HCL support team.' },
+  { title: 'Self Sufficiency Goal', description: 'Team self-sufficiency objectives and milestones for HCLSupp-UC-WW.', url: 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA', icon: '🎯', tags: 'Goals, Self-Sufficiency', knowledgeText: 'The Self Sufficiency Goal document outlines the team targets for handling support cases independently without escalation.' },
+  { title: 'UCD Training Schedule', description: 'Training schedule for UrbanCode Deploy (UCD) team members.', url: 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA', icon: '📅', tags: 'Training, UCD, Schedule', knowledgeText: 'UCD_Training_Schedule contains the planned training sessions and schedule for the UrbanCode Deploy support team.' },
+  { title: 'Cloud Native Platform', description: 'Reference documents and processes for Cloud Native Platform support.', url: 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA', icon: '☁️', tags: 'Cloud Native, Platform', knowledgeText: 'Cloud Native Platform process documents cover support and operational processes for cloud-native deployments.' },
+];
+
+const EMPTY_FORM = { title: '', description: '', url: '', icon: '📋', tags: '', knowledgeText: '', order: 0 };
+
+function ProcessTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const [docs, setDocs]         = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing]   = useState(null);
+  const [form, setForm]         = useState(EMPTY_FORM);
+  const [saving, setSaving]     = useState(false);
+  const [msg, setMsg]           = useState({ text: '', ok: true });
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setDocs(await api.get('/admin/process-docs')); }
+    catch (err) { setError(err?.message || 'Failed to load process documents'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openNew = (preset = null) => {
+    setEditing(null);
+    setForm(preset ? { ...EMPTY_FORM, ...preset } : EMPTY_FORM);
+    setMsg({ text: '', ok: true });
+    setFormOpen(true);
+  };
+
+  const openEdit = (doc) => {
+    setEditing(doc);
+    setForm({ title: doc.title, description: doc.description || '', url: doc.url, icon: doc.icon || '📋', tags: doc.tags || '', knowledgeText: doc.knowledgeText || '', order: doc.order || 0 });
+    setMsg({ text: '', ok: true });
+    setFormOpen(true);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.url.trim()) { setMsg({ text: 'Title and URL are required.', ok: false }); return; }
+    setSaving(true); setMsg({ text: '', ok: true });
+    try {
+      if (editing) {
+        const updated = await api.put(`/admin/process-docs/${editing.id}`, { ...form, order: Number(form.order) || 0 });
+        setDocs(prev => prev.map(d => d.id === editing.id ? updated : d));
+        setMsg({ text: 'Document updated.', ok: true });
+      } else {
+        const created = await api.post('/admin/process-docs', { ...form, order: Number(form.order) || 0 });
+        setDocs(prev => [...prev, created]);
+        setMsg({ text: 'Document added.', ok: true });
+      }
+      setFormOpen(false);
+      setEditing(null);
+    } catch (err) { setMsg({ text: err?.message || 'Save failed', ok: false }); }
+    finally { setSaving(false); }
+  };
+
+  const handleDelete = async (doc) => {
+    if (!confirm(`Delete "${doc.title}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/admin/process-docs/${doc.id}`);
+      setDocs(prev => prev.filter(d => d.id !== doc.id));
+    } catch (err) { alert(err?.message || 'Delete failed'); }
+  };
+
+  const alreadyAdded = (preset) => docs.some(d => d.url === preset.url || d.title === preset.title);
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className={`text-[11px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>AI Knowledge Base</p>
+          <p className={`text-xs mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Documents added here are automatically available to the AI tutor in Help mode.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <a href={DRIVE_FOLDER_URL} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+            style={{ background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316' }}>
+            <ExternalLink size={13} /> Open Drive Folder
+          </a>
+          <button onClick={() => openNew()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all"
+            style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)' }}>
+            <Plus size={14} /> Add Document
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="rounded-xl px-4 py-3 text-sm text-red-400 border border-red-500/25 bg-red-500/10">{error}</div>}
+
+      {/* Quick-add presets */}
+      {PRESET_DOCS.some(p => !alreadyAdded(p)) && (
+        <div className="rounded-2xl p-4 border" style={{ background: isLight ? 'rgba(249,115,22,0.06)' : 'rgba(249,115,22,0.08)', borderColor: 'rgba(249,115,22,0.22)' }}>
+          <p className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${isLight ? 'text-orange-700' : 'text-orange-400'}`}>Quick-add from Drive folder</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESET_DOCS.filter(p => !alreadyAdded(p)).map(p => (
+              <button key={p.title} onClick={() => openNew(p)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+                style={{ background: isLight ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.06)', border: isLight ? '1px solid rgba(249,115,22,0.3)' : '1px solid rgba(249,115,22,0.25)', color: isLight ? '#9a3412' : '#fdba74' }}>
+                <span>{p.icon}</span> {p.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Document list */}
+      {loading ? (
+        <div className="py-16 flex justify-center"><div className="w-6 h-6 border-2 border-white/20 border-t-orange-400 rounded-full animate-spin" /></div>
+      ) : docs.length === 0 ? (
+        <div className="rounded-2xl p-12 text-center border border-dashed" style={{ borderColor: isLight ? 'rgba(100,116,139,0.3)' : 'rgba(255,255,255,0.08)' }}>
+          <FileText size={28} className="text-slate-500 mx-auto mb-3" />
+          <p className={`text-sm ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>No process documents yet.</p>
+          <p className={`text-xs mt-1 ${isLight ? 'text-slate-500' : 'text-slate-600'}`}>Use "Quick-add" above or click "Add Document" to get started.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {docs.map(doc => (
+            <div key={doc.id} className="rounded-2xl p-4 flex items-start gap-4" style={getCardStyle(isLight)}>
+              <span className="text-2xl leading-none mt-0.5 flex-shrink-0">{doc.icon || '📋'}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className={`text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{doc.title}</p>
+                  {doc.tags && doc.tags.split(',').filter(Boolean).map(tag => (
+                    <span key={tag.trim()} className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.28)', color: '#f97316' }}>{tag.trim()}</span>
+                  ))}
+                </div>
+                {doc.description && <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{doc.description}</p>}
+                {doc.knowledgeText && (
+                  <div className="mt-2 rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: isLight ? 'rgba(249,115,22,0.07)' : 'rgba(249,115,22,0.08)', color: isLight ? '#7c2d12' : '#fdba74' }}>
+                    <span className="font-bold">AI Knowledge: </span>{doc.knowledgeText.slice(0, 180)}{doc.knowledgeText.length > 180 ? '…' : ''}
+                  </div>
+                )}
+                <a href={doc.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-cyan-500 hover:text-cyan-400 mt-2">
+                  <ExternalLink size={11} /> {doc.url.replace(/^https?:\/\//, '').slice(0, 60)}…
+                </a>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => openEdit(doc)} className={`p-2 rounded-lg transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-700' : 'hover:bg-white/5 text-slate-600 hover:text-slate-300'}`}><Pencil size={14} /></button>
+                <button onClick={() => handleDelete(doc)} className="p-2 rounded-lg transition-colors hover:bg-red-500/10 text-slate-600 hover:text-red-400"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add / Edit modal */}
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-2xl rounded-2xl overflow-hidden" style={{ background: isLight ? '#ffffff' : '#0f172a', border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: isLight ? 'rgba(148,163,184,0.2)' : 'rgba(255,255,255,0.08)' }}>
+              <p className={`font-bold text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}>{editing ? 'Edit Document' : 'Add Process Document'}</p>
+              <button onClick={() => setFormOpen(false)} className="text-slate-500 hover:text-slate-300 transition-colors"><X size={18} /></button>
+            </div>
+            <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              <div className="grid sm:grid-cols-[auto_1fr] gap-4 items-start">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Icon</label>
+                  <input value={form.icon} onChange={e => setForm(p => ({ ...p, icon: e.target.value }))} maxLength={4} className="w-14 text-center text-2xl rounded-xl px-2 py-2 focus:outline-none" style={getInputStyle(isLight)} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Title *</label>
+                  <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="e.g. Escalation Template" className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none ${isLight ? 'text-slate-900' : 'text-white'}`} style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Document URL *</label>
+                <input value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://docs.google.com/..." type="url" className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none ${isLight ? 'text-slate-900' : 'text-white'}`} style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Description</label>
+                <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} rows={2} placeholder="Short description shown on the card" className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none ${isLight ? 'text-slate-900' : 'text-white'}`} style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">Tags (comma-separated)</label>
+                <input value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="e.g. Escalation, Policy, Sev1" className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none ${isLight ? 'text-slate-900' : 'text-white'}`} style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-1">AI Knowledge Text</label>
+                <p className="text-[10px] text-slate-500 mb-1.5">Paste key facts, policy text, or Q&amp;A summaries that the AI tutor should learn. The AI will use this to answer questions in Help mode.</p>
+                <textarea value={form.knowledgeText} onChange={e => setForm(p => ({ ...p, knowledgeText: e.target.value }))} rows={5} placeholder="e.g. Severity 1 response time is 20 minutes. The escalation template includes fields for: case ID, severity, description, impact, steps taken..." className={`w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none font-mono ${isLight ? 'text-slate-900' : 'text-white'}`} style={getInputStyle(isLight)} onFocus={onFocus} onBlur={getOnBlur(isLight)} />
+              </div>
+              {msg.text && <p className={`text-xs ${msg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg.text}</p>}
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50" style={{ background: 'linear-gradient(135deg,#f97316,#ea580c)' }}>{saving ? 'Saving…' : editing ? 'Save Changes' : 'Add Document'}</button>
+                <button type="button" onClick={() => setFormOpen(false)} className={`px-5 py-2.5 rounded-xl text-sm transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main AdminPanel ───────────────────────────────────────────────────────────
 const PRIMARY_TABS = [
   { id:'courses',         label:'Courses',              Icon: BookOpen,      description:'Manage course metadata, moderators, and course content entry points.' },
+  { id:'process-docs',   label:'Process',              Icon: FileText,      description:'Manage team process documents, policies, and AI-readable knowledge entries.' },
   { id:'deployment',      label:'Deployment',           Icon: Rocket,        description:'Review backups, rollback targets, and deployment support actions.' },
   { id:'learner-tracker', label:'Learner Tracker',      Icon: GraduationCap, description:'Track learner, team, and manager progress across courses.' },
   { id:'help-settings',   label:'Help Settings',        Icon: Settings,      description:'Configure global and course-specific help contact details.' },
@@ -1712,6 +1919,7 @@ export default function AdminPanel() {
           {activeTab==='ai-provider'     && <AIProviderTab/>}
           {activeTab==='mcp'             && <McpIntegrationTab/>}
           {activeTab==='auth-realm'      && <AuthRealmTab/>}
+          {activeTab==='process-docs'    && <ProcessTab/>}
         </div>
       </main>
     </div>

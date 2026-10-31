@@ -393,3 +393,42 @@ adminRouter.post('/oidc-config/discover', async (req, res) => {
     res.status(502).json({ error: 'Failed to fetch OIDC discovery document' });
   }
 });
+
+// ── Process Documents ─────────────────────────────────────────────────────────
+const processDocSchema = z.object({
+  title:         z.string().trim().min(1).max(200),
+  description:   z.string().trim().max(1000).optional().default(''),
+  url:           z.string().trim().url().max(2000),
+  icon:          z.string().trim().max(8).optional().default('📋'),
+  tags:          z.string().trim().max(500).optional().default(''),
+  knowledgeText: z.string().trim().max(8000).optional().default(''),
+  order:         z.number().int().optional().default(0),
+}).strict();
+
+adminRouter.get('/process-docs', async (_req, res) => {
+  const docs = await (prisma as any).processDocument.findMany({ orderBy: [{ order: 'asc' }, { createdAt: 'asc' }] });
+  res.json(docs);
+});
+
+adminRouter.post('/process-docs', async (req, res) => {
+  const parsed = processDocSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const doc = await (prisma as any).processDocument.create({ data: parsed.data });
+  res.status(201).json(doc);
+});
+
+adminRouter.put('/process-docs/:id', async (req, res) => {
+  const parsed = processDocSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const doc = await (prisma as any).processDocument.update({ where: { id: req.params.id }, data: parsed.data });
+    res.json(doc);
+  } catch { res.status(404).json({ error: 'Process document not found' }); }
+});
+
+adminRouter.delete('/process-docs/:id', async (req, res) => {
+  try {
+    await (prisma as any).processDocument.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch { res.status(404).json({ error: 'Process document not found' }); }
+});

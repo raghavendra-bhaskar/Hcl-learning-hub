@@ -6,7 +6,6 @@ export const DEVOPS_LOOP_PATHS = [
   { id: 'devops-control', title: 'DevOps Control', description: 'Git hosting, code review, and source traceability', icon: '🗂️', gradient: 'from-indigo-500 to-blue-600', color: '#6366f1', quests: ['dq-control-overview', 'dq-pull-requests', 'dq-traceability'] },
   { id: 'devops-build', title: 'DevOps Build', description: 'CI pipeline, agents, templates, and CodeStation artifacts', icon: '🏗️', gradient: 'from-amber-500 to-orange-600', color: '#f59e0b', quests: ['dq-build-overview', 'dq-build-agents', 'dq-build-templates', 'dq-codestation'] },
   { id: 'devops-deploy-test-measure', title: 'Deploy · Test · Measure', description: 'Enterprise deployments, test automation, and value stream insights', icon: '🚀', gradient: 'from-emerald-500 to-teal-600', color: '#10b981', quests: ['dq-deploy-overview', 'dq-deploy-elements', 'dq-test-hub', 'dq-measure'] },
-  { id: 'loop-installation', title: 'Installation & Operations', description: 'CNAPP installation, first steps, and troubleshooting', icon: '🛠️', gradient: 'from-rose-500 to-red-600', color: '#f43f5e', quests: ['dq-install-cnapp', 'dq-install-steps', 'dq-troubleshoot'] },
 ];
 
 export const DEVOPS_QUESTS_P1 = [

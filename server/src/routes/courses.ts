@@ -601,3 +601,12 @@ coursesRouter.delete('/quests/:id', async (req, res) => {
   await (prisma as any).courseQuest.delete({ where: { id: req.params.id } });
   res.json({ ok: true });
 });
+
+// ── Process Documents (public — any authenticated user) ───────────────────────
+coursesRouter.get('/process-docs', async (_req, res) => {
+  const docs = await (prisma as any).processDocument.findMany({
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, title: true, description: true, url: true, icon: true, tags: true, order: true },
+  });
+  res.json(docs);
+});

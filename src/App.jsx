@@ -37,6 +37,7 @@ import PathEditorPage from './pages/PathEditorPage.jsx';
 import StarField from './components/StarField.jsx';
 import HelpButton from './components/HelpButton.jsx';
 import QuestLaunchGate from './components/QuestLaunchGate.jsx';
+import GlassNavbar from './components/GlassNavbar.jsx';
 
 const StoreContext = createContext(null);
 export const useAppStore = () => useContext(StoreContext);
@@ -137,6 +138,7 @@ function AppShell() {
         {isLight ? <Moon size={16} /> : <Sun size={16} />}
       </button>
       <HelpButton />
+     
       <div className="relative z-10">
         <Routes>
           <Route path="/login" element={<LoginPage />} />

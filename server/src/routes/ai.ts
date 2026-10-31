@@ -887,11 +887,18 @@ const chatSchema = z.object({
   pace: z.enum(['step-by-step', 'balanced', 'advanced']).default('balanced'),
 }).strict().refine(data => data.mode !== 'course' || !!data.courseSlug, { message: 'Choose a course for tutoring.' });
 
+const GREETING_PATTERN = /^(hi|hello|hey|heya|good morning|good afternoon|good evening|yo|hola)([!.\s]+)?$/i;
+
+function isGreetingOnly(message: string) {
+  return GREETING_PATTERN.test(message.trim());
+}
+
 const activeUsers = new Set<string>();
 const lastRequests = new Map<string, number>();
 const EXTERNAL_RESOURCE_PATTERN = /official|documentation|docs|reference|references|resource|resources|link|links|article|video|tutorial|internet|latest|external|web/i;
 aiRouter.post('/chat', handle(async (req, res) => {
   if (!req.user) { res.status(401).json({ error: 'Sign in to use AI.' }); return; }
+
   const input = chatSchema.parse(req.body);
   const userId = req.user.id;
   const now = Date.now();
@@ -947,6 +954,52 @@ aiRouter.post('/chat', handle(async (req, res) => {
         id: 'hub-help', title: 'Learning Hub help', url: '/courses',
         text: `The HCL Learning Hub course hub lists available courses. Open a course learning path to study modules and topics. Quests and assessments provide practice and expert explanations. My Paths contains personal learning paths. Learner Tracker is available to managers and administrators. Help Session offers moderator contact details and a Google Chat support space. General Help moderator: ${helpMap['help.instructor.name'] || 'the HCL Learning Hub moderator'}. Moderator email: ${helpMap['help.instructor.email'] || 'shown in the Help Session panel'}. Moderator title: ${helpMap['help.instructor.title'] || 'HCL Software Learning Hub moderator'}. General support space: ${helpMap['help.spaces.generic.name'] || 'HCL Software General Help Space'}. General support scope: ${helpMap['help.spaces.generic.hint'] || 'login, access, and platform questions'}. Only administrators configure the AI Provider in Administration. AI Tutor is available in course assessments.`,
       });
+
+      // Build an explicit course list so the AI can answer factual questions such as
+      // "how many courses are there" accurately. Static (hard-coded) courses are not
+      // in the DB so they must be added separately.
+      const staticCourseLines = [
+        'DevOps Loop (category: Technology, 18 quests) — End-to-End DevOps Lifecycle: Plan, Control, Build, Deploy, Test, Measure. Route: /devops-loop.',
+        'AI Quest (category: Technology, 21 quests) — Generative AI and Machine Learning: GenAI, ML, NLP, RAG, AI Security, Prompt Engineering, Python, Docker. Route: /ai-quest.',
+      ];
+      const dbCourseLines = courses
+        .filter((c: any) => !['ai-quest', 'devops-loop'].includes(c.slug))
+        .map((c: any) => `${c.title}${c.category ? ` (category: ${c.category})` : ''} — ${c.description || 'A Learning Hub course.'}. Route: /c/${c.slug}.`);
+      const allCourseLines = [...staticCourseLines, ...dbCourseLines];
+      corpus.push({
+        id: 'hub-courses-list',
+        title: 'Learning Hub Available Courses',
+        url: '/courses',
+        text: `The HCL Learning Hub has ${allCourseLines.length} course${allCourseLines.length !== 1 ? 's' : ''} currently available:\n${allCourseLines.join('\n')}`,
+      });
+
+      // Process / policy documents knowledge — loaded dynamically from the ProcessDocument
+      // table so admins can manage the AI knowledge base without code changes.
+      const processDocuments = await (prisma as any).processDocument.findMany({
+        orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true, title: true, description: true, url: true, tags: true, knowledgeText: true },
+      });
+      corpus.push({
+        id: 'proc-documents-folder',
+        title: 'HCL Process Documents',
+        url: 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA',
+        text: `HCL team process documents are stored in a shared Google Drive folder: https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA. There are ${processDocuments.length} process document${processDocuments.length !== 1 ? 's' : ''} in the knowledge base: ${processDocuments.map((d: any) => d.title).join(', ')}.`,
+      });
+      for (const doc of processDocuments) {
+        const textParts: string[] = [`Process document: ${doc.title}.`];
+        if (doc.description) textParts.push(doc.description);
+        if (doc.tags) textParts.push(`Tags: ${doc.tags}.`);
+        if (doc.knowledgeText) textParts.push(doc.knowledgeText);
+        textParts.push(`Reference: ${doc.url}`);
+        corpus.push({ id: `proc-doc-${doc.id}`, title: doc.title, url: doc.url, text: textParts.join(' ') });
+      }
+    }
+    if (isGreetingOnly(input.message)) {
+      const greeting = input.mode === 'course' && courses[0]
+        ? `Hi. I can help with ${courses[0].title}. Ask about a module, quest, topic, or concept from this course.`
+        : 'Hi. I can help with the Learning Hub. Ask about a course, learning path, assessment, or support space.';
+      res.json({ answer: greeting, sources: [], model: runtime.model });
+      return;
     }
     let sources = retrieveSources(corpus, input.message);
 
