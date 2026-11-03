@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Bot, ExternalLink, FileText, GraduationCap, KeyRound, Pencil, Plus, Rocket, Settings, ShieldCheck, Trash2, UserCog, Users, X } from 'lucide-react';
+import { ArrowLeft, BookOpen, Bot, ExternalLink, FileText, Film, GraduationCap, KeyRound, Pencil, Plus, Rocket, Settings, ShieldCheck, Trash2, UserCog, Users, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
@@ -1810,11 +1810,160 @@ const AUTH_TABS = [
   { id:'auth-realm',  label:'Authentication Realm', Icon: KeyRound,  description:'Configure the Okta/OIDC realm and management API access used by sign-in.' },
 ];
 
+// ── VidFlow integration tab ─────────────────────────────────────────────────
+function VidFlowIntegrationTab() {
+  const { theme } = useAppStore();
+  const isLight = theme === 'light';
+  const [config, setConfig]   = useState(null);
+  const [draft, setDraft]     = useState({ enabled: false, endpoint: '', name: 'VidFlow — Script to Screen' });
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [error, setError]     = useState('');
+  const [status, setStatus]   = useState(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    api.get('/vidflow/config').then(cfg => {
+      setConfig(cfg);
+      setDraft({ enabled: cfg.enabled, endpoint: cfg.endpoint, name: cfg.name });
+    }).catch(err => setError(err?.message || 'Failed to load VidFlow config'));
+  }, []);
+
+  const change = (field, value) => { setDraft(d => ({ ...d, [field]: value })); setSaved(false); setError(''); };
+
+  const save = async (e) => {
+    e.preventDefault();
+    setSaving(true); setError(''); setSaved(false);
+    try {
+      const result = await api.put('/vidflow/config', draft);
+      setConfig(result);
+      setDraft({ enabled: result.enabled, endpoint: result.endpoint, name: result.name });
+      setSaved(true);
+    } catch (err) { setError(err?.message || 'Failed to save'); }
+    finally { setSaving(false); }
+  };
+
+  const checkStatus = async () => {
+    setChecking(true); setStatus(null);
+    try {
+      const result = await api.get('/vidflow/status');
+      setStatus(result);
+    } catch (err) { setStatus({ reachable: false, message: err?.message || 'Check failed' }); }
+    finally { setChecking(false); }
+  };
+
+  const inputClass = `w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none disabled:opacity-40 ${isLight ? 'text-slate-900 bg-white border border-slate-300' : 'text-white bg-space-950 border border-white/20'}`;
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 className={`font-orbitron text-sm font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>VidFlow — Script to Screen</h3>
+            <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>Connect the AI-powered video generator to the Learning Hub. Generates narrated MP4 videos from scripts using Google TTS, Gemini AI scenes, and Pexels stock footage.</p>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full"
+            style={{ background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.28)', color: '#a78bfa' }}>
+            External App
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          {[
+            ['📝 Script → MP4', 'Text script to full narrated video with subtitles'],
+            ['🎨 3 Video Styles', 'Animated explainer · AI-generated scenes · Stock footage'],
+            ['🎤 Auto-Narrate', 'Upload a mute screen recording and generate narration from frames'],
+          ].map(([title, desc]) => (
+            <div key={title} className="rounded-xl p-3" style={{ background: isLight ? 'rgba(124,58,237,0.06)' : 'rgba(124,58,237,0.08)', border: isLight ? '1px solid rgba(124,58,237,0.18)' : '1px solid rgba(124,58,237,0.2)' }}>
+              <p className={`text-xs font-bold ${isLight ? 'text-slate-800' : 'text-violet-200'}`}>{title}</p>
+              <p className={`text-[11px] mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{desc}</p>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={save} className="space-y-4">
+          <label className={`block text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>Integration Name
+            <input type="text" value={draft.name} onChange={e => change('name', e.target.value)}
+              maxLength={120} disabled={saving} placeholder="VidFlow — Script to Screen"
+              className={`${inputClass} mt-2`} />
+          </label>
+          <label className={`block text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>VidFlow Server URL
+            <input type="url" value={draft.endpoint} onChange={e => change('endpoint', e.target.value)}
+              maxLength={500} disabled={saving} placeholder="http://hclswl2learninghub:8501"
+              className={`${inputClass} mt-2`} />
+            <span className={`text-[11px] mt-1 block ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>The URL where the VidFlow Streamlit app is running (default port 8501).</span>
+          </label>
+          <label className={`flex items-center gap-3 text-sm ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>
+            <input type="checkbox" checked={draft.enabled} onChange={e => change('enabled', e.target.checked)}
+              disabled={saving} className="w-4 h-4 accent-violet-500" />
+            Show VidFlow launch button to moderators and admins
+          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button type="submit" disabled={saving}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-white text-sm font-semibold disabled:opacity-40"
+              style={{ background: saving ? 'rgba(124,58,237,0.4)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)' }}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button type="button" onClick={checkStatus} disabled={checking || !draft.endpoint}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 ${isLight ? 'text-slate-700 bg-slate-100 border border-slate-300' : 'text-slate-300 border border-white/20'}`}>
+              {checking ? '⏳ Checking…' : '⚡ Check Status'}
+            </button>
+            {draft.endpoint && (
+              <a href={draft.endpoint} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-violet-300 border border-violet-500/30 hover:bg-violet-500/10 transition-colors">
+                <ExternalLink size={14} /> Launch VidFlow
+              </a>
+            )}
+            {saved && <p className={`text-sm ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>✓ VidFlow config saved.</p>}
+          </div>
+          {error && <p className={`text-sm ${isLight ? 'text-red-600' : 'text-red-400'}`}>⚠ {error}</p>}
+        </form>
+
+        {status !== null && (
+          <div className="mt-4 rounded-xl px-4 py-3 text-sm"
+            style={{ background: status.reachable ? (isLight ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.08)') : (isLight ? 'rgba(248,113,113,0.08)' : 'rgba(248,113,113,0.08)'), border: `1px solid ${status.reachable ? 'rgba(16,185,129,0.3)' : 'rgba(248,113,113,0.3)'}` }}>
+            <p className={status.reachable ? (isLight ? 'text-emerald-700' : 'text-emerald-400') : (isLight ? 'text-red-600' : 'text-red-400')}>
+              {status.reachable
+                ? `✓ VidFlow is reachable (HTTP ${status.status || 200})`
+                : `✗ ${status.message || 'VidFlow is not reachable'}`}
+            </p>
+            {!status.reachable && (
+              <p className={`text-[11px] mt-1.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                Ensure VidFlow is running: <code className="font-mono">cd D:\AI\Text_to_Video_AI_Starter_v2 &amp;&amp; streamlit run app.py</code>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl p-5" style={getCardStyle(isLight)}>
+        <p className={`text-[10px] font-bold uppercase tracking-widest ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Required environment variables for full capability</p>
+        <div className="mt-3 space-y-2">
+          {[
+            ['GOOGLE_API_KEY', 'AI-generated scenes (Gemini image model)', false],
+            ['GOOGLE_APPLICATION_CREDENTIALS', 'Google Cloud TTS narration (Indian English voices)', false],
+            ['PEXELS_API_KEY', 'Stock footage video style (Pexels API)', false],
+          ].map(([key, desc, required]) => (
+            <div key={key} className="flex items-start gap-3 rounded-lg px-3 py-2.5"
+              style={{ background: isLight ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.03)', border: isLight ? '1px solid rgba(0,0,0,0.06)' : '1px solid rgba(255,255,255,0.06)' }}>
+              <code className={`text-xs font-mono font-bold shrink-0 ${isLight ? 'text-violet-700' : 'text-violet-300'}`}>{key}</code>
+              <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{desc}</p>
+              <span className={`ml-auto text-[10px] font-bold shrink-0 ${required ? 'text-red-400' : 'text-slate-500'}`}>{required ? 'Required' : 'Optional'}</span>
+            </div>
+          ))}
+        </div>
+        <p className={`text-[11px] mt-3 ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>Set these in <code className="font-mono">D:\AI\Text_to_Video_AI_Starter_v2\.env</code>. The Animated explainer style works fully offline without any API keys.</p>
+      </div>
+    </div>
+  );
+}
+
 // Keep integrations in their own group so installed services such as Ollama and planned MCP
 // connectivity appear together instead of being mixed into the general admin settings list.
 const INTEGRATION_TABS = [
   { id:'ai-provider', label:'AI Provider', Icon: Bot,   description:'Manage AI provider integrations, active runtime selection, and AI Tutor settings.' },
   { id:'mcp',         label:'MCP',    Icon: ShieldCheck, description:'Review the planned MCP connection shape for external course and user-role administration.' },
+  { id:'vidflow',     label:'VidFlow', Icon: Film,       description:'Configure and launch the VidFlow Script-to-Screen AI video generator.' },
 ];
 
 const TAB_META = [...PRIMARY_TABS, ...AUTH_TABS, ...INTEGRATION_TABS];
@@ -1918,6 +2067,7 @@ export default function AdminPanel() {
           {activeTab==='help-settings'   && <HelpSettingsTab/>}
           {activeTab==='ai-provider'     && <AIProviderTab/>}
           {activeTab==='mcp'             && <McpIntegrationTab/>}
+          {activeTab==='vidflow'          && <VidFlowIntegrationTab/>}
           {activeTab==='auth-realm'      && <AuthRealmTab/>}
           {activeTab==='process-docs'    && <ProcessTab/>}
         </div>

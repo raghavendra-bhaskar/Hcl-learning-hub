@@ -13,6 +13,7 @@ import { oidcRouter } from './routes/oidc.js';
 import { coursesRouter } from './routes/courses.js';
 import { settingsRouter } from './routes/settings.js';
 import { aiRouter } from './routes/ai.js';
+import { vidflowRouter } from './routes/vidflow.js';
 import { learningPathsRouter } from './routes/learningPaths.js';
 import { prisma } from './lib/prisma.js';
 import { PLATFORM_LEARNING_PATHS } from './seed/platformLearningPaths.js';
@@ -210,6 +211,7 @@ app.use('/admin', authenticate, adminRouter);
 app.use('/courses-api', authenticate, coursesRouter);
 app.use('/settings', authenticate, settingsRouter);
 app.use('/ai', authenticate, aiRouter);
+app.use('/vidflow', authenticate, vidflowRouter);
 app.use('/learning-paths', authenticate, learningPathsRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
