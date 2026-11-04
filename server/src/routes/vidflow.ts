@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import https from 'node:https';
+import http from 'node:http';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 
@@ -56,6 +58,44 @@ vidflowRouter.put('/config', async (req, res) => {
   }
 });
 
+/**
+ * Probe a VidFlow Streamlit endpoint and return reachability status.
+ *
+ * Uses Node's low-level http/https modules instead of global fetch so we can
+ * set rejectUnauthorized:false — necessary when VidFlow uses a self-signed cert
+ * (the common case for on-prem / LAN deployments).
+ *
+ * The probe hits /_stcore/health which Streamlit exposes as a lightweight 200 OK
+ * once the server is ready, avoiding any redirect or auth overhead.
+ */
+function probeVidFlow(endpoint: string, timeoutMs = 7000): Promise<{ ok: boolean; status: number }> {
+  return new Promise((resolve, reject) => {
+    let base = endpoint.replace(/\/$/, '');
+    const healthUrl = new URL('/_stcore/health', base + '/');
+    const isHttps = healthUrl.protocol === 'https:';
+    const client = isHttps ? https : http;
+    const req = client.request(
+      {
+        hostname: healthUrl.hostname,
+        port: healthUrl.port || (isHttps ? 443 : 80),
+        path: healthUrl.pathname,
+        method: 'GET',
+        timeout: timeoutMs,
+        rejectUnauthorized: false,   // accept self-signed / LAN certs
+        headers: { 'User-Agent': 'HCL-LearningHub-VidFlow-Probe/1.0' },
+      },
+      (r) => {
+        r.resume();
+        const status = r.statusCode ?? 0;
+        resolve({ ok: status >= 200 && status < 400, status });
+      },
+    );
+    req.on('timeout', () => { req.destroy(new Error('Connection timed out after ' + timeoutMs + 'ms')); });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 /* GET /vidflow/status — checks whether the VidFlow Streamlit server is reachable (admin only) */
 vidflowRouter.get('/status', async (req, res) => {
   if (!ensureAdmin(req, res)) return;
@@ -67,11 +107,8 @@ vidflowRouter.get('/status', async (req, res) => {
       return;
     }
     try {
-      const response = await fetch(config.endpoint, {
-        signal: AbortSignal.timeout(6000),
-        redirect: 'follow',
-      });
-      res.json({ reachable: response.ok || response.status === 200 || response.status === 302 || response.status === 301, status: response.status });
+      const result = await probeVidFlow(config.endpoint);
+      res.json(result);
     } catch (fetchErr) {
       res.json({ reachable: false, message: (fetchErr as Error).message || 'Connection failed' });
     }
