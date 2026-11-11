@@ -96,6 +96,14 @@ function probeVidFlow(endpoint: string, timeoutMs = 7000): Promise<{ ok: boolean
   });
 }
 
+function switchEndpointScheme(endpoint: string, scheme: 'http:' | 'https:'): string {
+  const url = new URL(endpoint);
+  url.protocol = scheme;
+  if (scheme === 'https:' && url.port === '80') url.port = '';
+  if (scheme === 'http:' && url.port === '443') url.port = '';
+  return url.toString().replace(/\/$/, '');
+}
+
 /* GET /vidflow/status — checks whether the VidFlow Streamlit server is reachable (admin only) */
 vidflowRouter.get('/status', async (req, res) => {
   if (!ensureAdmin(req, res)) return;
@@ -106,11 +114,69 @@ vidflowRouter.get('/status', async (req, res) => {
       res.json({ reachable: false, message: 'No endpoint configured' });
       return;
     }
+    const endpoint = config.endpoint.replace(/\/$/, '');
+    let protocol = '';
     try {
-      const result = await probeVidFlow(config.endpoint);
-      res.json(result);
+      protocol = new URL(endpoint).protocol;
+    } catch {
+      res.json({ reachable: false, message: 'Invalid endpoint URL' });
+      return;
+    }
+
+    try {
+      const result = await probeVidFlow(endpoint);
+      let httpsReachable: boolean | null = null;
+      let httpsStatus: number | null = null;
+      let httpsEndpoint: string | null = null;
+
+      if (protocol === 'http:') {
+        httpsEndpoint = switchEndpointScheme(endpoint, 'https:');
+        try {
+          const secureProbe = await probeVidFlow(httpsEndpoint);
+          httpsReachable = secureProbe.ok;
+          httpsStatus = secureProbe.status;
+        } catch {
+          httpsReachable = false;
+          httpsStatus = null;
+        }
+      }
+
+      res.json({
+        reachable: result.ok,
+        status: result.status,
+        protocol,
+        endpoint,
+        httpsReachable,
+        httpsStatus,
+        httpsEndpoint,
+      });
     } catch (fetchErr) {
-      res.json({ reachable: false, message: (fetchErr as Error).message || 'Connection failed' });
+      const error = fetchErr as NodeJS.ErrnoException;
+      if (protocol === 'https:') {
+        const httpEndpoint = switchEndpointScheme(endpoint, 'http:');
+        try {
+          const fallback = await probeVidFlow(httpEndpoint);
+          if (fallback.ok) {
+            res.json({
+              reachable: false,
+              protocol,
+              endpoint,
+              message:
+                'HTTPS endpoint is not reachable, but HTTP is reachable. Configure TLS on VidFlow or reverse proxy and save the HTTPS URL.',
+              httpReachable: true,
+              httpStatus: fallback.status,
+              httpEndpoint,
+            });
+            return;
+          }
+        } catch {
+          // fall through to generic error response
+        }
+      }
+      const message = error.code === 'EPROTO' || /wrong version number/i.test(error.message)
+        ? 'VidFlow answered without TLS. Use http:// for a plain HTTP listener, or configure HTTPS on VidFlow/reverse proxy before saving an https:// URL.'
+        : error.message || 'Connection failed';
+      res.json({ reachable: false, message });
     }
   } catch (err) {
     res.status(500).json({ error: 'Status check failed' });

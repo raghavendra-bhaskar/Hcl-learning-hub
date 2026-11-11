@@ -25,6 +25,8 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 | VS Code MCP bridge | `.vscode/mcp.json`, `scripts/mcp-course-server.mjs`, `MCP_CONNECTION_GUIDE.md` | Translates MCP tool calls into authenticated course API requests. Its detailed call flow, available tools, and troubleshooting are in the connection guide. |
 | Hosting and deployment | `nginx.conf`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Serves the built SPA, proxies `/api/` to Express, and packages the frontend/backend for VM deployment. A working HTTPS ingress is required for remote MCP calls. |
 
+VidFlow is an external Streamlit app configured in Administration > Integrations. The saved URL is used both for the browser launch link and for the backend `/_stcore/health` probe; save URL edits before checking status. Match its scheme to the endpoint actually serving that address: local VidFlow defaults to HTTPS on port 8501 with its configured certificate; an HTTP-only VM listener needs an `http://` URL, while a TLS-terminating reverse proxy uses its public `https://` URL. An HTTPS request sent to an HTTP listener returns `EPROTO` (wrong version number). The status API now also checks whether the HTTPS variant of an HTTP URL is reachable, and reports that result in the admin panel so operators can confirm secure reachability before switching URLs. A production Learning Hub should expose VidFlow through a properly certified HTTPS reverse proxy rather than linking users to a plain HTTP listener. Updating the URL here does not deploy or reconfigure either service on the VM.
+
 **Currently live with 2 modules, 7 more planned:**
 
 | Module | Theme | Quests | Status |

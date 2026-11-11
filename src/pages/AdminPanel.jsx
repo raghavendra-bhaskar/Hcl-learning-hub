@@ -1829,7 +1829,7 @@ function VidFlowIntegrationTab() {
     }).catch(err => setError(err?.message || 'Failed to load VidFlow config'));
   }, []);
 
-  const change = (field, value) => { setDraft(d => ({ ...d, [field]: value })); setSaved(false); setError(''); };
+  const change = (field, value) => { setDraft(d => ({ ...d, [field]: value })); setSaved(false); setStatus(null); setError(''); };
 
   const save = async (e) => {
     e.preventDefault();
@@ -1838,6 +1838,7 @@ function VidFlowIntegrationTab() {
       const result = await api.put('/vidflow/config', draft);
       setConfig(result);
       setDraft({ enabled: result.enabled, endpoint: result.endpoint, name: result.name });
+      setStatus(null);
       setSaved(true);
     } catch (err) { setError(err?.message || 'Failed to save'); }
     finally { setSaving(false); }
@@ -1889,7 +1890,7 @@ function VidFlowIntegrationTab() {
           </label>
           <label className={`block text-sm ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>VidFlow Server URL
             <input type="url" value={draft.endpoint} onChange={e => change('endpoint', e.target.value)}
-              maxLength={500} disabled={saving} placeholder="http://hclswl2learninghub:8501"
+              maxLength={500} disabled={saving} placeholder="https://localhost:8501"
               className={`${inputClass} mt-2`} />
             <span className={`text-[11px] mt-1 block ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>The URL where the VidFlow Streamlit app is running (default port 8501).</span>
           </label>
@@ -1904,9 +1905,9 @@ function VidFlowIntegrationTab() {
               style={{ background: saving ? 'rgba(124,58,237,0.4)' : 'linear-gradient(135deg,#7c3aed,#4f46e5)' }}>
               {saving ? 'Saving…' : 'Save'}
             </button>
-            <button type="button" onClick={checkStatus} disabled={checking || !draft.endpoint}
+            <button type="button" onClick={checkStatus} disabled={checking || !draft.endpoint || draft.endpoint !== config?.endpoint}
               className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 ${isLight ? 'text-slate-700 bg-slate-100 border border-slate-300' : 'text-slate-300 border border-white/20'}`}>
-              {checking ? '⏳ Checking…' : '⚡ Check Status'}
+              {checking ? '⏳ Checking…' : '⚡ Check Saved URL'}
             </button>
             {draft.endpoint && (
               <a href={draft.endpoint} target="_blank" rel="noopener noreferrer"
@@ -1917,6 +1918,7 @@ function VidFlowIntegrationTab() {
             {saved && <p className={`text-sm ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>✓ VidFlow config saved.</p>}
           </div>
           {error && <p className={`text-sm ${isLight ? 'text-red-600' : 'text-red-400'}`}>⚠ {error}</p>}
+          {draft.endpoint !== config?.endpoint && <p className="text-xs text-slate-500">Save the new URL before checking its status.</p>}
         </form>
 
         {status !== null && (
@@ -1927,9 +1929,19 @@ function VidFlowIntegrationTab() {
                 ? `✓ VidFlow is reachable (HTTP ${status.status || 200})`
                 : `✗ ${status.message || 'VidFlow is not reachable'}`}
             </p>
+            {status.protocol === 'http:' && status.httpsReachable === true && (
+              <p className={`text-[11px] mt-1.5 ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
+                ✓ HTTPS is also reachable at {status.httpsEndpoint} (HTTP {status.httpsStatus || 200}).
+              </p>
+            )}
+            {status.protocol === 'http:' && status.httpsReachable === false && status.httpsEndpoint && (
+              <p className={`text-[11px] mt-1.5 ${isLight ? 'text-amber-700' : 'text-amber-300'}`}>
+                HTTPS is not reachable at {status.httpsEndpoint}. Configure TLS on VidFlow or reverse proxy, then save the HTTPS URL.
+              </p>
+            )}
             {!status.reachable && (
               <p className={`text-[11px] mt-1.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                Ensure VidFlow is running: <code className="font-mono">cd D:\AI\Text_to_Video_AI_Starter_v2 &amp;&amp; streamlit run app.py</code>
+                Start VidFlow from its project folder and use the exact browser URL, including http or https, in this setting. On the VM, use the public reverse-proxy URL only when it serves HTTPS.
               </p>
             )}
           </div>
