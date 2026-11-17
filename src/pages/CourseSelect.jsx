@@ -5,7 +5,6 @@ import { clearAuth, getAuth, signOut } from './LoginPage.jsx';
 import { useAppStore } from '../App.jsx';
 import { api } from '../lib/api.js';
 import { QUESTS } from '../data/index.js';
-import { DEVOPS_QUESTS } from '../data/devopsIndex.js';
 import AvatarDisplay from '../components/AvatarDisplay.jsx';
 import HCLSoftwareWordmark from '../components/HCLSoftwareWordmark.jsx';
 
@@ -21,7 +20,6 @@ const COURSE_FILTERS = [
 ];
 
 const COURSE_CATEGORY_META = {
-  process: { label: 'Process', color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.24)' },
   product: { label: 'Product', color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.24)' },
   technology: { label: 'Technology', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.24)' },
 };
@@ -33,20 +31,6 @@ const PLATFORM_FEATURES = [
 ];
 
 const COURSES = [
-  {
-    id: 'devops-loop',
-    icon: '🔄',
-    title: 'DevOps Loop',
-    subtitle: 'End-to-End DevOps Lifecycle',
-    desc: 'The complete IBM DevOps Loop — Plan, Control, Build, Deploy, Test, and Measure. Hands-on CI/CD using JPetStore as the reference application.',
-    topics: ['DevOps Plan', 'DevOps Control', 'DevOps Build', 'DevOps Deploy', 'DevOps Test', 'DevOps Measure'],
-    color: '#f97316',
-    status: 'live',
-    category: 'technology',
-    route: '/devops-loop',
-    badge: '18 Quests',
-    totalQuests: 18,
-  },
   {
     id: 'ai-quest',
     icon: '🤖',
@@ -64,11 +48,11 @@ const COURSES = [
 ];
 
 const statusPriority = (status) => status === 'live' ? 0 : 1;
-const categoryPriority = (category) => ({ process: 0, product: 1, technology: 2 }[category] ?? 2);
-const normalizeCourseCategory = (category) => ['process', 'product', 'technology'].includes(String(category || '').toLowerCase())
+const categoryPriority = (category) => ({ product: 1, technology: 2 }[category] ?? 2);
+const normalizeCourseCategory = (category) => ['product', 'technology'].includes(String(category || '').toLowerCase())
   ? String(category).toLowerCase()
   : 'technology';
-const HARD_CODED_SLUGS = new Set(COURSES.map(course => course.id));
+const HARD_CODED_SLUGS = new Set(['ai-quest']);
 
 // Moderators can be assigned to specific courses without having global admin
 // access. This sheet gives them a direct jump to the course editor for only the
@@ -377,10 +361,13 @@ export default function CourseSelect() {
   const [courseQuestMap, setCourseQuestMap] = useState({});
   const [courseFilter, setCourseFilter] = useState('all');
   const [courseSearch, setCourseSearch] = useState('');
+  const [processSearch, setProcessSearch] = useState('');
   const [dragOverId, setDragOverId] = useState(null);
   const [dragId, setDragId] = useState(null);
   const [sessionInvalid, setSessionInvalid] = useState(false);
   const [processDocs, setProcessDocs] = useState([]);
+  const [learningPaths, setLearningPaths] = useState([]);
+  const [pathQuestMap, setPathQuestMap] = useState({});
 
   const profileRef = useRef(null);
   const filterRef = useRef(null);
@@ -400,6 +387,12 @@ export default function CourseSelect() {
     api.get('/courses-api/process-docs').then(data => {
       if (Array.isArray(data)) setProcessDocs(data);
     }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.get('/learning-paths').then(data => {
+      setLearningPaths(Array.isArray(data) ? data : []);
+    }).catch(() => setLearningPaths([]));
   }, []);
 
   useEffect(() => {
@@ -441,7 +434,10 @@ export default function CourseSelect() {
     return score;
   };
 
-  const matchesFilter = (category) => courseFilter === 'all' || normalizeCourseCategory(category) === courseFilter;
+  // Process is a dedicated library view, never a course-card category.
+  const matchesFilter = (category) => courseFilter !== 'process'
+    && normalizeCourseCategory(category) !== 'process'
+    && (courseFilter === 'all' || normalizeCourseCategory(category) === courseFilter);
   const activeFilter = COURSE_FILTERS.find(filter => filter.id === courseFilter) || COURSE_FILTERS[0];
   const dbCourseMap = Object.fromEntries((storeDbCourses || []).map(course => [course.slug, course]));
 
@@ -480,6 +476,27 @@ export default function CourseSelect() {
 
   const allCourses = useMemo(() => [...normalizedHardcodedCourses, ...normalizedDbCourses], [normalizedHardcodedCourses, normalizedDbCourses]);
 
+  useEffect(() => {
+    if (!learningPaths.length || !allCourses.length) return;
+    const neededCourses = new Map();
+    learningPaths.forEach(path => (path.items || []).forEach(item => {
+      const course = allCourses.find(candidate => {
+        const key = candidate.slug || candidate.id;
+        return (item.type === 'course' && (key === item.refId || candidate.id === item.refId))
+          || (item.type === 'module' && (candidate.weeks || []).some(week => (week.modules || []).some(module => module.id === item.refId)))
+          || (item.type === 'scenario' && (candidate.weeks || []).some(week => week.id === item.refId));
+      });
+      if (course) neededCourses.set(course.id, course);
+    }));
+    neededCourses.forEach(course => {
+      const key = course.slug || course.id;
+      if (pathQuestMap[key]) return;
+      api.get(`/courses-api/${course.id}/quests`).then(data => {
+        setPathQuestMap(previous => ({ ...previous, [key]: Array.isArray(data) ? data : [] }));
+      }).catch(() => setPathQuestMap(previous => ({ ...previous, [key]: [] })));
+    });
+  }, [allCourses, learningPaths, pathQuestMap]);
+
   const visibleCourses = useMemo(() => allCourses
     .map(course => ({ ...course, searchScore: scoreSearch(course) }))
     .filter(course => course.searchScore > 0
@@ -490,6 +507,12 @@ export default function CourseSelect() {
       || b.searchScore - a.searchScore
       || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
       || a.title.localeCompare(b.title)), [allCourses, courseSearch, courseFilter, isAdmin]);
+
+  const visibleProcessDocs = useMemo(() => {
+    const query = processSearch.trim().toLowerCase();
+    if (!query) return processDocs;
+    return processDocs.filter(doc => `${doc.title || ''} ${doc.description || ''} ${doc.tags || ''}`.toLowerCase().includes(query));
+  }, [processDocs, processSearch]);
 
   const moderatedCourses = useMemo(() => allCourses
     .filter(course => course.canEdit)
@@ -519,13 +542,13 @@ export default function CourseSelect() {
       const progressMap = courseKey === 'ai-quest'
         ? (completedQuests || {})
         : courseKey === 'devops-loop'
-        ? (devopsCompletedQuests || {})
+        ? { ...(devopsCompletedQuests || {}), ...(courseCompletedQuests?.[courseKey] || {}) }
         : (courseCompletedQuests?.[courseKey] || {});
       const completed = Object.keys(progressMap || {}).length;
       const completionTimes = Object.values(progressMap || {}).map(item => item?.completedAt || 0);
       const latest = completionTimes.length ? Math.max(...completionTimes) : 0;
       const total = course.totalQuests || null;
-      const percentage = total ? Math.round((completed / total) * 100) : null;
+      const percentage = total ? Math.min(100, Math.round((completed / total) * 100)) : null;
       const stage = total && completed >= total ? 'Completed' : 'In Progress';
       const progressText = total
         ? `${completed} / ${total} quests done · ${percentage}% complete`
@@ -541,13 +564,38 @@ export default function CourseSelect() {
   }, [allCourses, completedQuests, devopsCompletedQuests, courseCompletedQuests]);
 
   const currentLearning = myLearning[0] || null;
-  const totalVisibleCount = visibleCourses.length;
+  const pathLearning = useMemo(() => learningPaths.map(path => {
+    const items = (path.items || []).filter(item => item.type !== 'section');
+    const isQuestComplete = (questId) => Boolean(completedQuests?.[questId] || devopsCompletedQuests?.[questId])
+      || Object.values(courseCompletedQuests || {}).some(progress => Boolean(progress?.[questId]));
+    const isItemComplete = (item) => {
+      if (item.type === 'quest') return isQuestComplete(item.refId);
+      const relatedQuests = item.type === 'module'
+        ? Object.values(pathQuestMap).flat().filter(quest => quest.moduleId === item.refId)
+        : item.type === 'scenario'
+          ? (() => {
+              const week = allCourses.flatMap(course => course.weeks || []).find(candidate => candidate.id === item.refId);
+              const moduleIds = new Set((week?.modules || []).map(module => module.id));
+              return Object.values(pathQuestMap).flat().filter(quest => moduleIds.has(quest.moduleId));
+            })()
+          : item.type === 'course'
+            ? pathQuestMap[item.refId] || pathQuestMap[allCourses.find(course => course.id === item.refId)?.slug] || []
+            : [];
+      return relatedQuests.length > 0 && relatedQuests.every(quest => isQuestComplete(quest.id));
+    };
+    const completed = items.filter(isItemComplete).length;
+    const total = items.length;
+    const percentage = total ? Math.round((completed / total) * 100) : 0;
+    return { ...path, completed, total, percentage };
+  }), [allCourses, completedQuests, courseCompletedQuests, devopsCompletedQuests, learningPaths, pathQuestMap]);
+  const totalVisibleCount = courseFilter === 'process' ? visibleProcessDocs.length : visibleCourses.length;
 
   // Resume logic is intentionally course-aware because AI Quest, DevOps Loop,
   // and database courses store progress in different structures and route to
   // different entry pages when the learner continues from the hub.
   const getResumeTarget = (course) => {
     const courseKey = course.slug || course.id;
+    if (course.source === 'db' || courseKey === 'devops-loop') return `/c/${courseKey}/session/learn`;
     const progressMap = course.progressMap || {};
     const completedIds = Object.keys(progressMap);
     const latestEntry = completedIds
@@ -562,8 +610,6 @@ export default function CourseSelect() {
 
     const orderedQuests = courseKey === 'ai-quest'
       ? QUESTS
-      : courseKey === 'devops-loop'
-      ? DEVOPS_QUESTS
       : (courseQuestMap[courseKey] || []);
 
     if (!orderedQuests.length) {
@@ -583,7 +629,6 @@ export default function CourseSelect() {
     }
 
     if (courseKey === 'ai-quest') return `/quest/${nextQuest.id}`;
-    if (courseKey === 'devops-loop') return `/devops-loop/quest/${nextQuest.id}`;
     return `/c/${course.slug}/learn/${nextQuest.id}`;
   };
 
@@ -677,7 +722,7 @@ export default function CourseSelect() {
                   style={{ background: isLight ? '#ffffff' : 'rgba(8,18,32,0.97)', border: isLight ? '1px solid rgba(100,116,139,0.2)' : '1px solid rgba(255,255,255,0.1)', boxShadow: isLight ? '0 8px 32px rgba(0,0,0,0.14)' : '0 16px 48px rgba(0,0,0,0.4)', backdropFilter: 'blur(16px)' }}>
                   <div className="px-4 py-3 border-b" style={{ borderColor: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.07)' }}>
                     <p className={`text-xs font-black tracking-widest uppercase ${isLight ? 'text-slate-800' : 'text-white'}`}>My Learning</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Only your recent in-progress and completed tracks.</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Your courses and saved learning paths.</p>
                   </div>
                   <div className="py-2 max-h-[60vh] overflow-y-auto">
                     {currentLearning ? (
@@ -687,12 +732,12 @@ export default function CourseSelect() {
                         <p className="text-[11px] mt-1" style={{ color: currentLearning.color || currentLearning.accentColor || '#06b6d4' }}>{currentLearning.stage}</p>
                         <p className="text-[11px] text-slate-500 mt-1">{currentLearning.progressText}</p>
                       </button>
-                    ) : (
+                    ) : pathLearning.length === 0 ? (
                       <div className="mx-4 mb-3 rounded-2xl p-4" style={{ background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.18)' : '1px solid rgba(255,255,255,0.05)' }}>
                         <p className={`text-sm font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>No learning progress yet</p>
                         <p className="text-[11px] text-slate-500 mt-1">Start a course and your recent progress will appear here.</p>
                       </div>
-                    )}
+                    ) : null}
                     <div className="px-4 pb-2 space-y-2">
                       {myLearning.map(course => (
                         <button key={course.slug || course.id} onClick={() => { setMyLearningOpen(false); openLearning(course); }} className="w-full rounded-xl px-3 py-2.5 text-left transition-all hover:opacity-90" style={{ background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.18)' : '1px solid rgba(255,255,255,0.05)' }}>
@@ -708,6 +753,25 @@ export default function CourseSelect() {
                         </button>
                       ))}
                     </div>
+                    {pathLearning.length > 0 && <div className="px-4 pt-2 pb-2">
+                      <p className={`mb-2 text-[10px] font-black tracking-widest uppercase ${isLight ? 'text-slate-600' : 'text-slate-500'}`}>My Paths</p>
+                      <div className="space-y-2">
+                        {pathLearning.map(path => (
+                          <button key={path.id} onClick={() => { setMyLearningOpen(false); navigate(`/my-paths/${path.id}/edit`); }}
+                            className="w-full rounded-xl px-3 py-2.5 text-left transition-all hover:opacity-90"
+                            style={{ background: isLight ? '#f8fafc' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.18)' : '1px solid rgba(255,255,255,0.05)' }}>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className={`min-w-0 truncate text-xs font-semibold ${isLight ? 'text-slate-900' : 'text-white'}`}>{path.title}</span>
+                              <span className="shrink-0 text-[10px] font-bold text-slate-500">{path.percentage}%</span>
+                            </div>
+                            <div className={`mt-2 h-1.5 overflow-hidden rounded-full ${isLight ? 'bg-slate-200' : 'bg-white/10'}`}>
+                              <div className="h-full rounded-full transition-all" style={{ width: `${path.percentage}%`, background: '#06b6d4' }} />
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-slate-500">{path.completed} of {path.total} items complete</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>}
                   </div>
                 </div>
               )}
@@ -799,7 +863,7 @@ export default function CourseSelect() {
               <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
                 <div>
                   <p className={`font-orbitron text-xl font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}></p>
-                  <p className="text-xs text-slate-500">{totalVisibleCount + (courseFilter === 'process' || courseFilter === 'all' ? processDocs.length : 0)} result{(totalVisibleCount + (courseFilter === 'process' || courseFilter === 'all' ? processDocs.length : 0)) !== 1 ? 's' : ''} · {activeFilter.description}</p>
+                  <p className="text-xs text-slate-500">{totalVisibleCount} result{totalVisibleCount !== 1 ? 's' : ''} · {activeFilter.description}</p>
                 </div>
               </div>
 
@@ -839,7 +903,7 @@ export default function CourseSelect() {
               </div>
             </div>
 
-            {(courseFilter === 'all' || courseFilter === 'process') && processDocs.length > 0 && (
+            {courseFilter === 'process' && (
               <div className="mt-10">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.28)' }}>
@@ -854,8 +918,16 @@ export default function CourseSelect() {
                     <span>Open folder</span> <ExternalLink size={12} />
                   </a>
                 </div>
+                <div className="relative max-w-2xl mb-5">
+                  <Search size={15} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${isLight ? 'text-slate-400' : 'text-slate-500'}`} />
+                  <input value={processSearch} onChange={event => setProcessSearch(event.target.value)}
+                    placeholder="Search process documents..."
+                    className={`w-full rounded-xl py-3 pl-10 pr-10 text-sm outline-none ${isLight ? 'text-slate-900 placeholder:text-slate-500' : 'text-slate-200 placeholder:text-slate-500'}`}
+                    style={{ background: isLight ? '#ffffff' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.28)' : '1px solid rgba(255,255,255,0.1)' }} />
+                  {processSearch && <button onClick={() => setProcessSearch('')} aria-label="Clear process search" className={`absolute right-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-500 hover:text-slate-200'}`}>✕</button>}
+                </div>
                 <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {processDocs.map(doc => (
+                  {visibleProcessDocs.map(doc => (
                     <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer"
                       className={`flex items-start gap-4 rounded-2xl p-5 border transition-all hover:opacity-90 active:scale-[0.99] no-underline ${isLight ? 'bg-white/85' : 'bg-white/[0.02]'}`}
                       style={{ borderColor: isLight ? 'rgba(249,115,22,0.28)' : 'rgba(249,115,22,0.22)' }}>
@@ -876,6 +948,7 @@ export default function CourseSelect() {
                     </a>
                   ))}
                 </div>
+                {visibleProcessDocs.length === 0 && <p className="py-10 text-center text-sm text-slate-500">No process documents match your search.</p>}
               </div>
             )}
           </div>

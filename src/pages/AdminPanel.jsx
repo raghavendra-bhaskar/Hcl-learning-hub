@@ -558,13 +558,12 @@ function LocalUsersTab() {
 
 // ── Courses tab ──────────────────────────────────────────────────────────────
 const ACCENT_COLORS_PREVIEW = { '#06b6d4':'Cyan','#f97316':'Orange','#7c3aed':'Violet','#10b981':'Emerald','#f59e0b':'Amber','#f43f5e':'Rose','#3b82f6':'Blue','#6366f1':'Indigo' };
+// Process documents are administered in their own library, so course metadata only offers these categories.
 const COURSE_CATEGORIES = [
-  { id: 'process', label: 'Process' },
   { id: 'product', label: 'Product' },
   { id: 'technology', label: 'Technology' },
 ];
 const COURSE_CATEGORY_STYLES = {
-  process: { color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.24)' },
   product: { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.24)' },
   technology: { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.24)' },
 };

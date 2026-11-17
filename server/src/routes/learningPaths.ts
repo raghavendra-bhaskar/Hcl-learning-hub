@@ -14,7 +14,7 @@ learningPathsRouter.get('/', async (req: any, res) => {
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   const paths = await (prisma as any).learningPath.findMany({
     where: { userId },
-    include: { _count: { select: { items: true } } },
+    include: { ...pathItemInclude, _count: { select: { items: true } } },
     orderBy: { updatedAt: 'desc' },
   });
   res.json(paths);

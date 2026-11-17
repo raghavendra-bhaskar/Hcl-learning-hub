@@ -2,6 +2,8 @@
 
 This deployment path uses `k3s` plus the manifests in `k8s/`.
 
+For CA-signed certificate issuance, `hcl-hub-tls` Secret rotation, Traefik Ingress configuration, and the difference between the installer-generated Ingress and `k8s/6-ingress.yaml`, see the repository [TLS Certificate Runbook](../TLS_CERTIFICATE_RUNBOOK.md).
+
 ## Current workload model
 
 | Workload | Kubernetes type | Scalable to 3 right now? | Notes |

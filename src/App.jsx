@@ -14,13 +14,6 @@ import Leaderboard from './pages/Leaderboard.jsx';
 import AvatarEditor from './pages/AvatarEditor.jsx';
 import SolutionCenter from './pages/SolutionCenter.jsx';
 import AIQuestCoursePathPage from './pages/AIQuestCoursePathPage.jsx';
-import DevOpsHome from './pages/DevOpsHome.jsx';
-import DevOpsCoursePathPage from './pages/DevOpsCoursePathPage.jsx';
-import DevOpsPaths from './pages/DevOpsPaths.jsx';
-import DevOpsQuestDetail from './pages/DevOpsQuestDetail.jsx';
-import DevOpsQuiz from './pages/DevOpsQuiz.jsx';
-import DevOpsResults from './pages/DevOpsResults.jsx';
-import DevOpsSolutionCenter from './pages/DevOpsSolutionCenter.jsx';
 import LoginPage, { getAuth } from './pages/LoginPage.jsx';
 import LoginCallback from './pages/LoginCallback.jsx';
 import CourseSelect from './pages/CourseSelect.jsx';
@@ -31,6 +24,7 @@ import CoursePathPage from './pages/CoursePathPage.jsx';
 import CourseQuestsPage from './pages/CourseQuestsPage.jsx';
 import CourseQuizPage from './pages/CourseQuizPage.jsx';
 import CourseLearnPage from './pages/CourseLearnPage.jsx';
+import CourseSessionPage from './pages/CourseSessionPage.jsx';
 import CourseEditor from './pages/CourseEditor.jsx';
 import LearningPathsPage from './pages/LearningPathsPage.jsx';
 import PathEditorPage from './pages/PathEditorPage.jsx';
@@ -161,16 +155,17 @@ function AppShell() {
           <Route path="/c/:slug/quests"             element={<AuthGuard><CourseQuestsPage /></AuthGuard>} />
           <Route path="/c/:slug/quiz/:questId"      element={<AuthGuard><CourseQuizPage /></AuthGuard>} />
           <Route path="/c/:slug/learn/:questId"     element={<AuthGuard><CourseLearnPage /></AuthGuard>} />
+          <Route path="/c/:slug/session/:mode"      element={<AuthGuard><CourseSessionPage /></AuthGuard>} />
           <Route path="/admin/courses/:slug/edit"   element={<AuthGuard><CourseEditor /></AuthGuard>} />
           <Route path="/my-paths"            element={<AuthGuard><LearningPathsPage /></AuthGuard>} />
           <Route path="/my-paths/:id/edit"   element={<AuthGuard><PathEditorPage /></AuthGuard>} />
-          <Route path="/devops-loop"                          element={<AuthGuard><DevOpsHome /></AuthGuard>} />
-          <Route path="/devops-loop/learning-path"            element={<AuthGuard><DevOpsCoursePathPage /></AuthGuard>} />
-          <Route path="/devops-loop/paths"                    element={<AuthGuard><DevOpsPaths /></AuthGuard>} />
-          <Route path="/devops-loop/quest/:questId"           element={<AuthGuard><DevOpsQuestDetail /></AuthGuard>} />
-          <Route path="/devops-loop/quiz/:questId"            element={<AuthGuard><DevOpsQuiz /></AuthGuard>} />
-          <Route path="/devops-loop/results/:questId"         element={<AuthGuard><DevOpsResults /></AuthGuard>} />
-          <Route path="/devops-loop/solution/:questId"        element={<AuthGuard><DevOpsSolutionCenter /></AuthGuard>} />
+          <Route path="/devops-loop" element={<Navigate to="/c/devops-loop" replace />} />
+          <Route path="/devops-loop/learning-path" element={<Navigate to="/c/devops-loop/learning-path" replace />} />
+          <Route path="/devops-loop/paths" element={<Navigate to="/c/devops-loop/quests" replace />} />
+          <Route path="/devops-loop/quest/:questId" element={<Navigate to="/c/devops-loop/quests" replace />} />
+          <Route path="/devops-loop/quiz/:questId" element={<Navigate to="/c/devops-loop/quests" replace />} />
+          <Route path="/devops-loop/results/:questId" element={<Navigate to="/c/devops-loop/quests" replace />} />
+          <Route path="/devops-loop/solution/:questId" element={<Navigate to="/c/devops-loop/quests" replace />} />
         </Routes>
       </div>
     </div>

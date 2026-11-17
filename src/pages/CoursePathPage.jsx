@@ -267,7 +267,7 @@ export default function CoursePathPage({ forcedSlug, backPath, backLabel }) {
         }}
       >
         <button
-          onClick={() => navigate('/courses')}
+          onClick={() => navigate(-1)}
           className={`flex items-center gap-2 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
         >
           <ArrowLeft size={14} /> Back

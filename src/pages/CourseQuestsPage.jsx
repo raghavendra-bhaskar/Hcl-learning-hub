@@ -170,8 +170,8 @@ export default function CourseQuestsPage() {
     ...(unassigned.length > 0 ? [{ module: null, quests: unassigned }] : []),
   ];
 
-  // If no grouping — flat list in one group
-  const useFlat = grouped.length === 0;
+  // DB course ordering is global, so keep its quest list flat after reorders.
+  const useFlat = slug !== 'ai-quest' || grouped.length === 0;
   const flatGroups = useFlat
     ? [{ module: { title: `${course.title} Quests`, icon: course.emoji || '🎯', color: accent }, quests }]
     : allGroups;
@@ -202,7 +202,7 @@ export default function CourseQuestsPage() {
       <header className="sticky top-0 z-40 backdrop-blur-md border-b"
         style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate('/courses')}
+          <button onClick={() => navigate(-1)}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <ArrowLeft size={14} /> Back
           </button>
@@ -318,13 +318,25 @@ export default function CourseQuestsPage() {
 
         {/* Start button */}
         {quests.length > 0 && (
-          <div className="flex justify-center pb-4">
-            <button onClick={() => navigate(`/c/${slug}/quiz/${quests[0].id}`)}
+          <div className="flex flex-wrap justify-center gap-3 pb-4">
+            {slug !== 'ai-quest' && <>
+              {/* Use the same action order and emphasis as the course home page. */}
+              <button onClick={() => navigate(`/c/${slug}/session/practice`)}
+                className="flex items-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm border transition-all"
+                style={{ color: accent, borderColor: `${accent}55`, background: `${accent}10` }}>
+                <Target size={16} /> Practice All Quests <ChevronRight size={16} />
+              </button>
+              <button onClick={() => navigate(`/c/${slug}/session/learn`)}
+                className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-sm text-white transition-all hover:brightness-110 active:scale-95"
+                style={{ background: `linear-gradient(135deg,${accent},${accent}cc)`, boxShadow: `0 8px 32px ${accent}40` }}>
+                <BookOpen size={16} /> Start Learning
+              </button>
+            </>}
+            {slug === 'ai-quest' && <button onClick={() => navigate(`/c/${slug}/quiz/${quests[0].id}`)}
               className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-bold text-white hover:opacity-90 transition-all active:scale-95"
               style={{ background: `linear-gradient(135deg,${accent},${accent}cc)`, boxShadow: `0 8px 32px ${accent}40` }}>
-              <Target size={18} /> Start from Quest 1
-              <ChevronRight size={18} />
-            </button>
+              <Target size={18} /> Start from Quest 1 <ChevronRight size={18} />
+            </button>}
           </div>
         )}
       </div>

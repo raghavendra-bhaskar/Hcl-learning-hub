@@ -192,7 +192,7 @@ export default function DevOpsHome() {
               </div>
               <div className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all group-hover:gap-3"
                 style={{ background: isLight ? '#c2410c' : 'rgba(249,115,22,0.15)', border: `1px solid ${isLight ? '#c2410c' : 'rgba(249,115,22,0.35)'}`, color: isLight ? '#ffffff' : '#fb923c' }}>
-                Start Path <ChevronRight size={14} className="transition-transform group-hover:translate-x-1" />
+                View Path <ChevronRight size={14} className="transition-transform group-hover:translate-x-1" />
               </div>
             </div>
           </button>

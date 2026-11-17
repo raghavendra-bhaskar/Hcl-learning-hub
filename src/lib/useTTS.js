@@ -22,7 +22,7 @@ export function useTTS() {
     setWordIdx(-1);
   }, []);
 
-  const speak = useCallback((text) => {
+  const speak = useCallback((text, options = {}) => {
     if (!SUPPORTED || !text) return;
     window.speechSynthesis.cancel();
 
@@ -35,7 +35,12 @@ export function useTTS() {
     uttRef.current = utter;
 
     utter.onstart = () => { setSpeaking(true); setPaused(false); };
-    utter.onend   = () => { setSpeaking(false); setPaused(false); setWordIdx(-1); };
+    utter.onend   = () => {
+      setSpeaking(false);
+      setPaused(false);
+      setWordIdx(-1);
+      options.onEnd?.();
+    };
     utter.onerror = (e) => { if (e.error !== 'interrupted') { setSpeaking(false); setPaused(false); } };
     utter.onboundary = (e) => {
       if (e.name !== 'word') return;

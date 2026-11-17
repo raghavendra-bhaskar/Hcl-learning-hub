@@ -4,21 +4,22 @@
 # OR for bare-metal / k3s (Traefik is bundled):
 #   k3s ships with Traefik by default — this manifest works without changes.
 #
-# Replace hcl-learning-hub.hcl-software.com with your actual hostname or IP.
-# For IP-only access (no DNS), use an IngressClass with hostPort or NodePort Service instead.
+# This sample is configured for the HCL Software Learning Hub VM.
+# Create the hcl-hub-tls Secret in this namespace before applying this Ingress.
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: hcl-learning-hub
   namespace: hcl-learning-hub
-  annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
 spec:
-  ingressClassName: nginx        # change to "traefik" if using k3s default Traefik
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - hclswl2learninghub.prod.hclpnp.com
+      secretName: hcl-hub-tls
   rules:
-    - host: hcl-learning-hub.hcl-software.com   # ← replace with your hostname
+    - host: hclswl2learninghub.prod.hclpnp.com
       http:
         paths:
           - path: /

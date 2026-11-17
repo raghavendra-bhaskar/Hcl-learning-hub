@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use this guide to connect Visual Studio Code to the HCL Learning Hub running on a VM and manage courses from an MCP-capable client.
+Use this guide to connect Visual Studio Code to the HCL Learning Hub running on a VM and manage courses, inspect the separate Process library, and review personal learning paths from an MCP-capable client.
 
 The workspace MCP configuration launches a local stdio bridge that calls the VM's authenticated `/api` endpoints.
 
@@ -12,28 +12,30 @@ The separate remote HTTP MCP endpoint and browser-based OAuth flow are not imple
 
 ## What the MCP connection is intended to support
 
-Available tools list and read courses, topics, quests, moderators, and course learners; preview an AI-generated course plan; create courses; and add or update weeks, modules, topics, resources, and quests. Delete operations and moderator assignments are not exposed through MCP. The Learning Hub API continues to enforce administrator or course-moderator permissions.
+Available tools list and read courses, topics, quests, moderators, course learners, Process documents, and the signed-in user's saved learning paths; preview an AI-generated course plan; create courses; and add or update weeks, modules, topics, resources, and quests. Process documents are managed separately from course categories. Delete operations and moderator assignments are not exposed through MCP. The Learning Hub API continues to enforce administrator or course-moderator permissions.
 
 ## How the connection works
 
 1. `.vscode/mcp.json` starts `scripts/mcp-course-server.mjs` in a local Node.js process, points it to `http://127.0.0.1:4000`, and prompts for local-account credentials. VS Code exchanges newline-delimited JSON-RPC messages with this process over stdio. Credentials are passed in environment variables, not saved in the config file.
 2. The bridge validates the URL. For a VM HTTPS site, it appends `/api` and nginx forwards the request to Express; for the direct local backend at `http://127.0.0.1:4000`, it uses the URL without `/api`. On the first data request it posts credentials to `/auth/local/login` (or `/api/auth/local/login` through nginx) and holds the resulting bearer token in process memory; it retries login once when a request returns 401. This keeps credentials out of tool arguments, but users must use a local Learning Hub account, not Okta SSO.
 3. The VM's nginx proxy forwards `/api/` to the Express backend. `server/src/index.ts` mounts `/courses-api` behind `authenticate`; `server/src/middleware/auth.ts` validates the token and resolves the user. `server/src/routes/courses.ts` reads and changes courses via Prisma/PostgreSQL and checks administrator or assigned-moderator permissions for edits. MCP does not bypass these checks.
-4. `list_courses` returns course metadata and moderator IDs; `get_course` returns weeks, modules, topics, resources, and a quest count. `list_topics` extracts topics from that course tree; `list_quests` fetches the separate quest route using a course ID. `list_moderators` fetches names and emails and requires an administrator account.
+4. `list_courses` returns course metadata and moderator IDs; `get_course` returns weeks, modules, topics, resources, and a quest count. Course categories are `product` or `technology`; Process content is not a course category. `list_process_documents` reads the separate Process library and optionally filters title, description, and tags. `list_learning_paths` returns the authenticated user's saved paths and ordered items. `list_topics` extracts topics from a course tree; `list_quests` fetches the separate quest route using a course ID. `list_moderators` fetches names and emails and requires an administrator account.
 5. `list_course_learners` reads `/manager/all-learners` and returns only learners assigned to or active in the requested course (excluding administrator accounts). Certification status `assigned` is reported as `opted` with 0% completion; started and completed learners retain the API's percentage, calculated from completed quests relative to total course quests. The API restricts results to the current manager's team, while administrators can see all learners. Restart the MCP server after updating its code.
 
 | Requested operation | Current MCP capability | Existing backend support |
 | --- | --- | --- |
 | List courses, topics, quests, moderators | `list_courses`, `list_topics`, `list_quests`, `list_moderators` | Yes; moderator names require ADMIN |
+| Search the separate Process library | `list_process_documents` with optional `query` | Authenticated read-only `/courses-api/process-docs`; Process documents are managed in Administration, not as courses |
+| List the signed-in user's learning paths and items | `list_learning_paths` | Authenticated `/learning-paths`; only paths owned by the account are returned |
 | List opted and active course learners | `list_course_learners` | MANAGER (own team) or ADMIN; based on certifications and quest progress |
-| Add courses | `create_course` | ADMIN only |
+| Add courses | `create_course` | ADMIN only; category is `product` or `technology` |
 | Modify courses | `update_course` | ADMIN or assigned moderator; AI course builder exists separately in the admin UI |
 | Add or modify weeks, modules, topics, quests, resources | `create_*`, `update_*` | ADMIN or assigned moderator |
 | Delete courses, weeks, modules, topics, quests, resources | Not exposed through MCP | Yes; deleting a course creates a database backup first |
 | Add, remove, or replace course moderators | Not exposed through MCP | `GET/PUT /courses-api/:slug/moderators`, ADMIN only; updates replace the whole ID list |
 | AI-assisted course editing | `preview_course_builder` generates a reviewable plan from `courseId`, `outline`, and optional `resourceUrls`; it does not save content | Admin-only `POST /ai/course-builder`; review generated topics and verify links before applying them through course editing tools |
 
-The bridge could also expose filtered course search, course summaries, or resource inventories. Keep read-only tools separate from mutations, require explicit confirmation for deletes and moderator changes, and audit privileged requests before opening the MCP endpoint to a network.
+The learner UI now labels course actions `View Path`, `Practice All Quests`, and primary `Start Learning`; MCP is for inspecting and administering course data, not for launching browser sessions. Keep read-only tools separate from mutations, require explicit confirmation for deletes and moderator changes, and audit privileged requests before opening the MCP endpoint to a network.
 
 ## Prerequisites
 

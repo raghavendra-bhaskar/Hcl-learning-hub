@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, X, Zap, Trophy } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Check, X, Zap, Trophy, Volume2, Pause, Square } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAppStore } from '../App.jsx';
+import { useTTS } from '../lib/useTTS.js';
 import AvatarDisplay from '../components/AvatarDisplay.jsx';
 import AITutor from '../components/AITutor.jsx';
 
@@ -27,11 +28,12 @@ function cleanDisplayTitle(value, fallback = '') {
 }
 
 // Shared quiz page for database-backed course quests.
-export default function CourseQuizPage() {
+export default function CourseQuizPage({ embedded = false, onSwitchToLearn }) {
   const { slug, questId } = useParams();
   const navigate  = useNavigate();
   const { theme, playerName, avatar, completeCourseQuest } = useAppStore();
   const isLight = theme === 'light';
+  const { speak, cancel, toggle, speaking, paused, rate, changeRate, supported } = useTTS();
 
   const [course, setCourse]     = useState(null);
   const [quest, setQuest]       = useState(null);
@@ -41,6 +43,7 @@ export default function CourseQuizPage() {
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [xpAwarded, setXpAwarded] = useState(0);
+  const [autoSpeak, setAutoSpeak] = useState(() => slug !== 'ai-quest');
 
   useEffect(() => {
     setSelected(null);
@@ -62,6 +65,22 @@ export default function CourseQuizPage() {
     })();
   }, [slug, questId]);
 
+  const speechText = quest
+    ? submitted ? String(quest.explanation || '')
+      : [
+          "Let's review the scenario.",
+          quest.scenario,
+          'Then select the correct option below.',
+          ...OPT_KEYS.map(letter => `Option ${letter}: ${quest[OPT_FIELDS[letter]] || ''}`),
+        ].filter(Boolean).join(' ')
+    : '';
+
+  useEffect(() => {
+    if (slug === 'ai-quest' || !supported || !autoSpeak || !speechText) return undefined;
+    speak(speechText);
+    return cancel;
+  }, [autoSpeak, cancel, slug, speechText, speak, supported]);
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin" />
@@ -81,9 +100,6 @@ export default function CourseQuizPage() {
   const isCorrect   = submitted && selected === quest.correct;
   const isWrong     = submitted && selected !== quest.correct;
   const questIndex  = allQuests.findIndex(q => q.id === questId);
-  const prevQuest   = questIndex > 0 ? allQuests[questIndex - 1] : null;
-  const nextQuest   = questIndex >= 0 && questIndex < allQuests.length - 1 ? allQuests[questIndex + 1] : null;
-  const isLast      = questIndex === allQuests.length - 1;
   const displayQuestTitle = cleanDisplayTitle(quest.title, quest.title || `Quest ${questIndex + 1}`);
 
   const handleSubmit = () => {
@@ -109,12 +125,33 @@ export default function CourseQuizPage() {
     return { background: isLight ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.02)', border: isLight ? '2px solid rgba(100,116,139,0.14)' : '2px solid rgba(255,255,255,0.05)', color: isLight ? '#475569' : '#475569' };
   };
 
+  const voiceControls = slug !== 'ai-quest' && supported && (
+    <div className="mx-auto mt-4 flex max-w-6xl flex-wrap items-center gap-2 px-4">
+      <button type="button" onClick={() => speak(speechText)} disabled={!speechText} title="Play voice" className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40"><Volume2 size={14} /> Play voice</button>
+      <button type="button" onClick={toggle} disabled={!speaking} title={paused ? 'Resume voice' : 'Pause voice'} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40"><Pause size={13} /> {paused ? 'Resume' : 'Pause'}</button>
+      <button type="button" onClick={cancel} disabled={!speaking && !paused} title="Stop voice" className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs disabled:opacity-40"><Square size={13} /> Stop</button>
+      <label className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-2 py-2 text-xs">Speed
+        <select value={rate} onChange={event => changeRate(Number(event.target.value))} aria-label="Voice speed" className="bg-transparent">
+          {[0.75, 0.9, 1, 1.15, 1.3, 1.5].map(speed => <option key={speed} value={speed}>{speed.toFixed(2).replace(/0$/, '')}x</option>)}
+        </select>
+      </label>
+      <label className="inline-flex items-center gap-2 px-1 text-xs text-slate-400"><input type="checkbox" checked={autoSpeak} onChange={event => setAutoSpeak(event.target.checked)} /> Auto-play step audio</label>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen pb-24" style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
+    <div className={`min-h-screen pb-24 ${embedded ? 'w-full' : ''}`} style={{ background: isLight ? 'linear-gradient(160deg, #f0f9ff 0%, #f8fafc 60%, #eef2ff 100%)' : undefined }}>
       {/* Header with the course title plus direct actions for Course Home and Quests. */}
-      <header className="sticky top-0 z-40 backdrop-blur-md border-b" style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
+      {embedded ? (
+        <div className="max-w-6xl mx-auto px-4 pt-5">
+          <div className="inline-flex rounded-xl overflow-hidden border border-white/10">
+            <button onClick={onSwitchToLearn} className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white">📖 Learn</button>
+            <span className="px-4 py-2 text-xs font-bold text-cyan-300 bg-cyan-500/15">🎯 Practice</span>
+          </div>
+        </div>
+      ) : <header className="sticky top-0 z-40 backdrop-blur-md border-b" style={{ background: isLight ? 'rgba(248,250,252,0.94)' : 'rgba(3,10,20,0.88)', borderColor: isLight ? 'rgba(71,85,105,0.18)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate('/courses')}
+          <button onClick={() => navigate(-1)}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <ArrowLeft size={14} /> Back
           </button>
@@ -139,7 +176,8 @@ export default function CourseQuizPage() {
             </span>
           </div>
         </div>
-      </header>
+      </header>}
+      {voiceControls}
 
       {/* Progress bar */}
       <div className="w-full h-1" style={{ background: isLight ? 'rgba(148,163,184,0.18)' : 'rgba(255,255,255,0.05)' }}>
@@ -149,7 +187,7 @@ export default function CourseQuizPage() {
 
       <div className="max-w-6xl mx-auto px-4 pt-10">
         <AITutor key={slug} courseSlug={slug} />
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <div className="mx-auto grid max-w-4xl gap-6">
           <div className="min-w-0">
             <div className="mb-2">
               <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: accent }}>
@@ -181,21 +219,15 @@ export default function CourseQuizPage() {
                       {letter}
                     </span>
                     <span className="flex-1 text-sm leading-relaxed">{quest[OPT_FIELDS[letter]]}</span>
-                    {submitted && letter === quest.correct && (
-                      <Check size={18} className="text-emerald-400 flex-shrink-0" />
-                    )}
-                    {submitted && letter === selected && letter !== quest.correct && (
-                      <X size={18} className="text-red-400 flex-shrink-0" />
-                    )}
+                    {submitted && letter === quest.correct && <Check size={18} className="text-emerald-400 flex-shrink-0" />}
+                    {submitted && letter === selected && letter !== quest.correct && <X size={18} className="text-red-400 flex-shrink-0" />}
                   </div>
                 </button>
               ))}
             </div>
 
             {!submitted ? (
-              <button
-                onClick={handleSubmit}
-                disabled={!selected}
+              <button onClick={handleSubmit} disabled={!selected}
                 className="w-full py-4 rounded-2xl font-bold text-lg text-white disabled:opacity-40 transition-all active:scale-[0.99]"
                 style={accentBtn}>
                 Submit Answer
@@ -206,99 +238,24 @@ export default function CourseQuizPage() {
                   <div className="flex items-center gap-3 mb-3">
                     {isCorrect
                       ? <><Check size={20} className="text-emerald-400" /><span className="font-bold text-emerald-400 text-lg">Correct!</span></>
-                      : <><X size={20} className="text-red-400" /><span className="font-bold text-red-400 text-lg">Incorrect</span></>
-                    }
-                    {isCorrect && (
-                      <span className="ml-auto flex items-center gap-1.5 text-sm font-bold text-amber-400">
-                        <Zap size={14} /> +{xpAwarded} XP
-                      </span>
-                    )}
-                    {isWrong && (
-                      <span className={`ml-auto text-sm ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>
-                        Correct: Option {quest.correct}
-                      </span>
-                    )}
+                      : <><X size={20} className="text-red-400" /><span className="font-bold text-red-400 text-lg">Incorrect</span></>}
+                    {isCorrect && <span className="ml-auto flex items-center gap-1.5 text-sm font-bold text-amber-400"><Zap size={14} /> +{xpAwarded} XP</span>}
+                    {isWrong && <span className={`ml-auto text-sm ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>Correct: Option {quest.correct}</span>}
                   </div>
-                  <div>
-                    <p className={`text-[11px] font-bold uppercase tracking-widest mb-1.5 ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>Expert Explanation</p>
-                    <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{quest.explanation}</p>
-                  </div>
+                  <p className={`text-[11px] font-bold uppercase tracking-widest mb-1.5 ${isLight ? 'text-slate-700' : 'text-slate-500'}`}>Expert Explanation</p>
+                  <p className={`text-sm leading-relaxed ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>{quest.explanation}</p>
                 </div>
-
-                {playerName && (
-                  <div className="flex items-center gap-3 glass-card rounded-xl p-4" style={isLight ? { background: 'rgba(255,255,255,0.82)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
-                    {avatar && <AvatarDisplay avatar={avatar} size="sm" />}
-                    <div className="flex-1">
-                      <p className={`text-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>
-                        {isCorrect
-                          ? `Mission accomplished, ${playerName}! +${xpAwarded} XP added to your score.`
-                          : `Don't give up, ${playerName}! Review the explanation and try the next quest.`}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <button onClick={() => navigate(`/c/${slug}/quests`)}
-                    className={`flex-1 py-3.5 rounded-xl font-bold text-sm glass-card transition-all ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                    style={isLight ? { background: 'rgba(255,255,255,0.82)', border: '1px solid rgba(100,116,139,0.14)' } : undefined}>
-                    ← All Quests
-                  </button>
-                  {nextQuest ? (
-                    <button onClick={() => navigate(`/c/${slug}/quiz/${nextQuest.id}`)}
-                      className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95"
-                      style={accentBtn}>
-                      Next Quest <ChevronRight size={16} />
-                    </button>
-                  ) : (
-                    <button onClick={() => navigate(`/c/${slug}`)}
-                      className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95"
-                      style={accentBtn}>
-                      <Trophy size={16} /> Mission Complete!
-                    </button>
-                  )}
-                </div>
+                {playerName && <div className="flex items-center gap-3 glass-card rounded-xl p-4">
+                  {avatar && <AvatarDisplay avatar={avatar} size="sm" />}
+                  <p className={`flex-1 text-xs ${isLight ? 'text-slate-700' : 'text-slate-400'}`}>{isCorrect ? `Mission accomplished, ${playerName}! +${xpAwarded} XP added to your score.` : `Don't give up, ${playerName}! Review the explanation and try the next quest.`}</p>
+                </div>}
+                <button onClick={() => navigate(`/c/${slug}/quests`)} className="w-full py-3.5 rounded-xl font-bold text-sm text-white" style={accentBtn}>
+                  <Trophy size={16} className="inline mr-2" />Return to Quests
+                </button>
               </div>
             )}
           </div>
 
-          <aside className="xl:sticky xl:top-[5.75rem] flex flex-col gap-4">
-            <div className="rounded-2xl p-4"
-              style={{ background: isLight ? 'rgba(255,255,255,0.86)' : 'rgba(255,255,255,0.03)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : `1px solid ${accent}20` }}>
-              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: accent }}>
-                🎯 Practice Outline
-              </span>
-              <h2 className={`text-base font-bold mt-1 leading-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>{course.title}</h2>
-              <div className="mt-4 space-y-1.5 max-h-[50vh] overflow-y-auto pr-1">
-                {allQuests.map((item, index) => {
-                  const active = item.id === questId;
-                  const itemTitle = cleanDisplayTitle(item.title, item.title || `Quest ${index + 1}`);
-                  return (
-                    <button key={item.id} onClick={() => navigate(`/c/${slug}/quiz/${item.id}`)}
-                      className={`w-full text-left rounded-xl px-3 py-2.5 text-xs transition-all ${active ? 'font-bold' : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-500 hover:text-slate-300'}`}
-                      style={active
-                        ? { background: accent + '18', border: `1px solid ${accent}30`, fontWeight: 700, color: isLight ? '#0f172a' : '#fff' }
-                        : { background: isLight ? 'rgba(248,250,252,0.92)' : 'rgba(255,255,255,0.02)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid transparent' }}>
-                      <span className="text-[10px] font-bold uppercase tracking-widest block mb-0.5 opacity-60">Quest {index + 1}</span>
-                      <span className="line-clamp-2 leading-snug">{itemTitle}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button onClick={() => prevQuest && navigate(`/c/${slug}/quiz/${prevQuest.id}`)} disabled={!prevQuest}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40 ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                  style={{ background: isLight ? 'rgba(241,245,249,0.9)' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
-                  <ChevronLeft size={14} className="inline-block mr-1" /> Prev
-                </button>
-                <button onClick={() => nextQuest && navigate(`/c/${slug}/quiz/${nextQuest.id}`)} disabled={!nextQuest}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-40 ${isLight ? 'text-slate-700 hover:text-slate-900' : 'text-slate-300 hover:text-white'}`}
-                  style={{ background: isLight ? 'rgba(241,245,249,0.9)' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.14)' : '1px solid rgba(255,255,255,0.08)' }}>
-                  Next <ChevronRight size={14} className="inline-block ml-1" />
-                </button>
-              </div>
-            </div>
-          </aside>
         </div>
       </div>
     </div>

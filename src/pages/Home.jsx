@@ -181,7 +181,7 @@ export default function Home() {
                 style={isLight
                   ? { background: '#0891b2', border: '1px solid #0891b2', color: '#ffffff' }
                   : { background: 'rgba(6,182,212,0.15)', border: '1px solid rgba(6,182,212,0.35)', color: '#22d3ee' }}>
-                Start Path <ChevronRight size={14} className="transition-transform group-hover:translate-x-1" />
+                View Path <ChevronRight size={14} className="transition-transform group-hover:translate-x-1" />
               </div>
             </div>
           </button>

@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { canEmbedResource, getEmbedUrl, isNativeVideoResource, resolvePlayableUrl } from '../lib/learningResourceEmbeds.js';
 import { useAppStore } from '../App.jsx';
 import { useTTS } from '../lib/useTTS.js';
+import CourseQuizPage from './CourseQuizPage.jsx';
 
 // This is the shared "Learn" page for database-backed courses. Any generated
 // or admin-authored course quest can route here to show scenario context,
@@ -61,6 +62,16 @@ function normalizeResourceEntry(resource, index) {
   };
 }
 
+function uniqueByText(items, getText) {
+  const seen = new Set();
+  return items.filter(item => {
+    const key = String(getText(item) || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // The route is intentionally defensive because generated quest payloads may not
 // always have a perfect shape. The normalization helpers above protect the page
 // from blank screens when course content is incomplete or inconsistently stored.
@@ -77,6 +88,7 @@ export default function CourseLearnPage() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [slide, setSlide]       = useState(0);
+  const [mode, setMode]         = useState('learn');
   const [activeResource, setActiveResource] = useState(null);
   const [autoSpeak, setAutoSpeak] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -85,6 +97,7 @@ export default function CourseLearnPage() {
 
   useEffect(() => {
     setSlide(0);
+    setMode('learn');
     setActiveResource(null);
     (async () => {
       setLoading(true);
@@ -129,19 +142,22 @@ export default function CourseLearnPage() {
 
   // Prefer inline quest content first, then fall back to the linked module content.
   const hasInlineTopics = inlineTopics.length > 0;
-  const topics = (hasInlineTopics ? inlineTopics : (module?.topics || []).map(normalizeTopicEntry))
-    .filter(topic => topic.content);
+  const topics = uniqueByText(
+    (hasInlineTopics ? inlineTopics : (module?.topics || []).map(normalizeTopicEntry)).filter(topic => topic.content),
+    topic => topic.content,
+  );
   const resources = ((Array.isArray(quest?.learnResources) && quest.learnResources.length > 0)
     ? quest.learnResources
     : (module?.resources || []))
     .map(normalizeResourceEntry)
     .filter(resource => resource.label || resource.url);
+  const uniqueResources = uniqueByText(resources, resource => resource.url || `${resource.type}:${resource.label}`);
 
   // Build the linear slide deck used by the left navigator and the main content panel.
-  const slides = [
+  const slides = uniqueByText([
     { type: 'scenario', content: String(quest?.scenario || 'No scenario available yet.'), label: 'Scenario' },
     ...topics.map((t, i) => ({ type: 'topic', content: t.content, label: `Step ${i + 1}`, id: t.id })),
-  ];
+  ], slide => slide.content);
   const totalSlides = slides.length;
   const current     = slides[slide] || slides[0];
   const currentSpeechText = String(current?.content || '').trim();
@@ -149,10 +165,10 @@ export default function CourseLearnPage() {
   const nextSlide = slide < totalSlides - 1 ? slides[slide + 1] : null;
 
   // Resolve resources per step; if generated content has no explicit order, keep resources visible instead of blanking the page.
-  const hasOrderedResources = resources.some(resource => resource.order !== null);
+  const hasOrderedResources = uniqueResources.some(resource => resource.order !== null);
   const slideResources = slide === 0
-    ? resources.filter(resource => !hasOrderedResources || resource.order === 0)
-    : resources.filter(resource => !hasOrderedResources || resource.order === slide - 1);
+    ? uniqueResources.filter(resource => !hasOrderedResources || resource.order === 0)
+    : uniqueResources.filter(resource => !hasOrderedResources || resource.order === slide - 1);
   const firstEmbeddableResource = slideResources.find(r => canEmbedResource(r)) || null;
   const frameResource = slideResources.find(r => r.id === activeResource?.id)
     || firstEmbeddableResource
@@ -203,13 +219,17 @@ export default function CourseLearnPage() {
     </div>
   );
 
+  if (mode === 'practice') {
+    return <CourseQuizPage embedded onSwitchToLearn={() => setMode('learn')} />;
+  }
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: isLight ? 'linear-gradient(160deg, #f8fafc 0%, #f1f5f9 55%, #eef2ff 100%)' : undefined }}>
       {/* Header with consistent course title and direct actions for Course Home and Quests. */}
       <header className="sticky top-0 z-40 backdrop-blur-md border-b border-white/5 flex-shrink-0"
         style={{ background: isLight ? 'rgba(248,250,252,0.96)' : 'rgba(3,10,20,0.92)', borderColor: isLight ? 'rgba(100,116,139,0.16)' : 'rgba(255,255,255,0.05)' }}>
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate('/courses')}
+          <button onClick={() => navigate(-1)}
             className={`flex items-center gap-1.5 text-xs transition-colors ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}>
             <ArrowLeft size={14} /> Back
           </button>
@@ -226,7 +246,7 @@ export default function CourseLearnPage() {
               style={{ borderColor: isLight ? 'rgba(148,163,184,0.22)' : 'rgba(255,255,255,0.08)' }}>
               Quests
             </button>
-            <button onClick={() => navigate(`/c/${slug}/quiz/${questId}`)}
+            <button onClick={() => setMode('practice')}
               className="flex items-center gap-2 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
               style={accentBtn}>
               <Target size={13} /> Skip to Quiz

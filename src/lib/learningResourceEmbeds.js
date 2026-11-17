@@ -92,7 +92,10 @@ export function getEmbedUrl(resourceOrParts, options = {}) {
     if (playlistId) return `https://www.youtube.com/embed/videoseries?list=${playlistId}&autoplay=${autoplay}`;
   }
 
-  if (isGoogleDriveUrl(url)) return getGoogleDrivePreviewUrl(url);
+  if (isGoogleDriveUrl(url)) {
+    const previewUrl = getGoogleDrivePreviewUrl(url);
+    return previewUrl && options.autoplay ? `${previewUrl}?autoplay=1` : previewUrl;
+  }
   if (isDirectVideoUrl(url)) return url;
 
   return null;

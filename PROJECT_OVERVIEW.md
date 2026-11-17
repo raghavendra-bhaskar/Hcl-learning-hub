@@ -23,7 +23,7 @@ It is modelled after the  Cloud Quest style of gamification — with a Solution 
 | AI features | `server/src/routes/ai.ts`, `server/src/lib/aiKnowledge.ts`, `server/src/lib/ollama.ts` | Validates AI requests, retrieves relevant course context, and calls the configured model for tutoring or reviewable course generation. |
 | Data and schema | `server/prisma/schema.prisma`, `server/prisma/migrations/`, `server/src/lib/prisma.ts` | Defines persistent users, courses, quests, and progress; migrations evolve PostgreSQL consistently across deployments. |
 | VS Code MCP bridge | `.vscode/mcp.json`, `scripts/mcp-course-server.mjs`, `MCP_CONNECTION_GUIDE.md` | Translates MCP tool calls into authenticated course API requests. Its detailed call flow, available tools, and troubleshooting are in the connection guide. |
-| Hosting and deployment | `nginx.conf`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Serves the built SPA, proxies `/api/` to Express, and packages the frontend/backend for VM deployment. A working HTTPS ingress is required for remote MCP calls. |
+| Hosting and deployment | `nginx.conf`, `Dockerfile`, `docker-compose.yml`, `deploy/` | Serves the built SPA, proxies `/api/` to Express, and packages the frontend/backend for VM deployment. CA issuance and TLS deployment across k3s, containers, proxies, and localhost are documented in `TLS_CERTIFICATE_RUNBOOK.md`. A working HTTPS ingress is required for remote MCP calls. |
 
 VidFlow is an external Streamlit app configured in Administration > Integrations. The saved URL is used both for the browser launch link and for the backend `/_stcore/health` probe; save URL edits before checking status. Match its scheme to the endpoint actually serving that address: local VidFlow defaults to HTTPS on port 8501 with its configured certificate; an HTTP-only VM listener needs an `http://` URL, while a TLS-terminating reverse proxy uses its public `https://` URL. An HTTPS request sent to an HTTP listener returns `EPROTO` (wrong version number). The status API now also checks whether the HTTPS variant of an HTTP URL is reachable, and reports that result in the admin panel so operators can confirm secure reachability before switching URLs. A production Learning Hub should expose VidFlow through a properly certified HTTPS reverse proxy rather than linking users to a plain HTTP listener. Updating the URL here does not deploy or reconfigure either service on the VM.
 
@@ -47,6 +47,12 @@ VidFlow is an external Streamlit app configured in Administration > Integrations
 
 ### Course Presentation Updates
 
+- DevOps Loop uses the database-backed course pages and editor; AI Quest remains on its existing hardcoded learner flow. Exact duplicate DB quest content and repeated Learn slides are filtered from course views.
+- Database course Learn and Practice modes toggle without leaving the quest route. Back controls return one browser-history step, and quest editing opens on Learn by default.
+- DB courses can launch continuous Learn and quiz-only Practice sessions; the right curriculum lists every quest, and skipped or incorrectly answered quizzes remain incomplete. Course progress reaches 100% only when all tracked quests are complete, and My Learning resumes DB courses in continuous learning. Native and YouTube video durations are measured during playback; Drive preview durations can be entered in seconds in the quest editor because the embedded player does not expose duration metadata. Video lengths and the active step key persist for resume.
+- Continuous session surfaces, including quiz feedback, navigation, and the curriculum, adapt their foreground and panel colors in light mode. Continuous Practice provides browser speech playback, pause/resume, stop, speed selection, and enabled auto-play for each practice step. Course pages label the roadmap action `View Path`; `Practice All Quests` precedes the highlighted `Start Learning` action.
+- The Course Hub's Process filter opens the Admin-managed process-document library with its own search. Process is not a course category; legacy Process-tagged course values normalize to Technology, and Process documents remain separate from All Categories.
+- My Learning includes saved personal paths with completion percentages based on their selected quests, modules, scenarios, or courses. The `/learning-paths` list response includes ordered path items so the hub can calculate that progress from correct quest completions.
 - Course hero headings use smaller responsive typography across the Course Hub, AI Quest, DevOps Loop, and database-backed course pages.
 - Course landing pages keep the hero focused on overview content; standalone hero XP panels were removed.
 - AI Quest header navigation now keeps only `Course Hub` and `Quests`, while level progress remains available in header-based experiences such as path pages.
@@ -62,7 +68,7 @@ VidFlow is an external Streamlit app configured in Administration > Integrations
 ### Local AI Tutor and Help
 
 - **Provider administration:** Administration > Integrations > Ollama configures one shared Ollama endpoint and chat model, stored atomically as `ai.provider` in the existing Setting table. AI starts disabled. Before selecting a model, administrators are directed to the [HCL AI Tools approval list](https://sites.google.com/hcl.software/productsecurity/ai-portal/ai-tools); examples such as Qwen and Llama are only valid when the specific variant is approved. Model discovery reads installed `/api/tags` models and marks `/api/ps` models currently running. A saved-provider chat panel supports model comparison.
-- **VS Code course MCP bridge:** `.vscode/mcp.json` starts `scripts/mcp-course-server.mjs` as a local newline-delimited JSON stdio server. It authenticates to the local Express API on port 4000 or the VM's HTTPS API using prompted local-account credentials, and exposes course, topic, quest, moderator, and permission-scoped learner listing plus course and curriculum create/update tools. `preview_course_builder` calls the admin-only AI builder with an outline and optional resource URLs but does not persist its preview. See `MCP_CONNECTION_GUIDE.md` for the request flow, permissions, and capability matrix. The API enforces admin/moderator permissions; destructive delete tools, moderator edits, browser SSO for MCP, and a remote `/mcp` listener are not exposed.
+- **VS Code course MCP bridge:** `.vscode/mcp.json` starts `scripts/mcp-course-server.mjs` as a local newline-delimited JSON stdio server. It authenticates to the local Express API on port 4000 or the VM's HTTPS API using prompted local-account credentials, and exposes course, topic, quest, moderator, permission-scoped learner listing, Process-library search, personal learning-path listing, and course/curriculum create/update tools. Course categories are limited to Product and Technology; Process documents are managed separately. `preview_course_builder` calls the admin-only AI builder with an outline and optional resource URLs but does not persist its preview. See `MCP_CONNECTION_GUIDE.md` for the request flow, permissions, and capability matrix. The API enforces admin/moderator permissions; destructive delete tools, moderator edits, browser SSO for MCP, and a remote `/mcp` listener are not exposed.
 - **Full course builder:** Administration > Course Editor > Build full course accepts a course outline and uses the configured model to generate a reviewable learning map, Mermaid course-flow diagram, progressive weeks/modules, small topic learn content, one scenario quiz quest per topic, and candidate web resources. Resource discovery uses public web search before the model call; it does not use the learner RAG corpus. The admin must review technical accuracy, licensing, and links before clicking Create Full Course Content. Generated data is persisted through the existing CourseWeek, CourseModule, CourseTopic, CourseResource, and CourseQuest APIs.
 - **Learner experience:** `src/components/AITutor.jsx` supplies course-scoped tutoring in dynamic course quests and all three quiz implementations, plus Hub-wide AI Help in the Help Session modal. Pace selection, recent conversation, source references, errors, and loading states are included. Chats remain in component memory only.
 - **API:** Authenticated `/ai/status` and `/ai/chat`; admin-only `GET/PUT /ai/config` and `POST /ai/models`. `server/src/routes/ai.ts` validates requests and applies per-process concurrency/throttling. Learners cannot select endpoints or override models. Generic settings routes exclude/reserve `ai.*`.
@@ -145,15 +151,14 @@ VidFlow is an external Streamlit app configured in Administration > Integrations
   - Maintain course structure/content and quest content for those assigned courses.
   - Does not replace the core platform role; moderator access is additive and scoped.
 
-### Course categories
+### Course categories and Process library
 
 | Category | Definition | Typical use |
 |---|---|---|
 | `technology` | Technical platforms, engineering topics, tools, architecture, or implementation content | AI, DevOps, cloud, APIs, observability, Kubernetes |
-| `process` | Workflow, governance, support practice, delivery model, or operational method content | support flow, change management, release operations, service process |
 | `product` | Product-centric capability, feature, or business-usage learning | HCL product enablement, product walkthroughs, product specialization |
 
-Runtime normalization defaults unknown or missing categories to `technology`.
+Process documents have their own Administration library and are not categorized as courses. Legacy course records marked `process` normalize to `technology`; course create/update APIs accept only `product` and `technology`. Runtime normalization defaults unknown or missing categories to `technology`.
 
 ### Backend Technology Stack (`server/`)
 | Technology | Details |
@@ -498,14 +503,16 @@ AI-Quest/
 /leaderboard                        → Leaderboard
 /learning-path                      → LearningPath (4-week curriculum)
 
-── DevOps Loop ───────────────────────────────────────────────────
-/devops-loop                        → DevOpsHome (module landing)
-/devops-loop/paths                  → DevOpsPaths (6 paths, 21 quest cards)
-/devops-loop/quest/:questId         → DevOpsQuestDetail (preview + Lab Launch)
-/devops-loop/solution/:questId      → DevOpsSolutionCenter (full-screen Learn)
-/devops-loop/quiz/:questId          → DevOpsQuiz
-/devops-loop/results/:questId       → DevOpsResults (score, XP, badge, CNAPP cert/lab handoff)
-/devops-loop/learning-path          → DevOpsLearningPath (4-week curriculum)
+── DevOps Loop (database-backed) ────────────────────────────────
+/c/devops-loop                      → CoursePage (DB course overview)
+/c/devops-loop/learning-path        → CoursePathPage (DB weeks and modules)
+/c/devops-loop/quests               → CourseQuestsPage (DB quests)
+/c/devops-loop/learn/:questId       → CourseLearnPage (DB slides/resources, inline Practice toggle)
+/c/devops-loop/quiz/:questId        → CourseQuizPage (DB quiz and progress)
+/devops-loop/*                      → Redirects to the corresponding DB course page
+
+── Other database-backed courses ────────────────────────────────
+/c/:slug                            → Shared course overview, learning path, quest, learn, and quiz routes
 ```
 
 ### Global State (`useStore.js`)

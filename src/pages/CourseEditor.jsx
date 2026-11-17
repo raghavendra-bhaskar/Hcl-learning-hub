@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
-  ArrowLeft, Plus, Trash2, ChevronDown, Edit2, Check, X,
+  ArrowLeft, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X,
   Save, ExternalLink, GripVertical, Pencil, Copy,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { getAuth } from './LoginPage.jsx';
-import { validateEmbeddableVideoResource } from '../lib/learningResourceEmbeds.js';
+import { canEmbedResource, validateEmbeddableVideoResource } from '../lib/learningResourceEmbeds.js';
 import { useAppStore } from '../App.jsx';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1332,7 +1332,7 @@ const CORRECT_OPTIONS = ['A', 'B', 'C', 'D'];
 const QUEST_RESOURCE_TYPES = [
   { id:'youtube', label:'YouTube', icon:'▶' },
   { id:'playlist', label:'Playlist', icon:'▶' },
-  { id:'video',   label:'Video (MP4)', icon:'🎬' },
+  { id:'video',   label:'Video / Drive', icon:'🎬' },
   { id:'udemy',   label:'Udemy', icon:'🎓' },
   { id:'oreilly', label:"O'Reilly", icon:'📕' },
   { id:'ibm',     label:'IBM Docs', icon:'📘' },
@@ -1340,11 +1340,35 @@ const QUEST_RESOURCE_TYPES = [
   { id:'link',    label:'Link', icon:'🔗' },
 ];
 const EMPTY_QUEST = { title:'', scenario:'', optionA:'', optionB:'', optionC:'', optionD:'', correct:'A', explanation:'', xp:10, moduleId:'', learnTopics:[], learnResources:[], solutionRequest:'' };
+const DEFAULT_STEP_VIDEO_URL = 'https://drive.google.com/file/d/1-ms4MaOTQun3OpJz6R6jdXg36pgmhyLx/view?usp=vids_web';
+const DEFAULT_STEP_VIDEO_DURATION_SECONDS = 981;
 
 function uid() { return Math.random().toString(36).slice(2); }
 
-function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
-  const [activeTab, setActiveTab] = useState('quiz');
+function makeStepVideoPlaceholder(stepIndex) {
+  return {
+    _id: `placeholder-video-${stepIndex}`,
+    type: 'youtube',
+    label: `Placeholder video · Step ${stepIndex + 1}`,
+    url: DEFAULT_STEP_VIDEO_URL,
+    durationSeconds: DEFAULT_STEP_VIDEO_DURATION_SECONDS,
+    stepIndex,
+    isPlaceholder: true,
+  };
+}
+
+function uniqueEntriesByText(entries, getText) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const key = String(getText(entry) || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function QuestForm({ initialData, courseId, order = 0, weeks = [], onSave, onCancel }) {
+  const [activeTab, setActiveTab] = useState('learn');
   const { theme } = useAppStore();
   const isLight = theme === 'light';
 
@@ -1353,27 +1377,72 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
     ? (initialData.learnTopics.find(t => t.isSolutionRequest)?.content || '')
     : '';
   const initTopics = Array.isArray(initialData?.learnTopics)
-    ? initialData.learnTopics.filter(t => !t.isSolutionRequest)
+    ? uniqueEntriesByText(initialData.learnTopics
+        .map(topic => typeof topic === 'string' ? { content: topic } : topic)
+        .filter(topic => !topic.isSolutionRequest), topic => topic.content)
     : [];
+  const storedResources = Array.isArray(initialData?.learnResources)
+    ? uniqueEntriesByText(initialData.learnResources.map(resource => resource?.isPlaceholder
+      && resource.url === DEFAULT_STEP_VIDEO_URL && !Number(resource.durationSeconds)
+      ? { ...resource, durationSeconds: DEFAULT_STEP_VIDEO_DURATION_SECONDS }
+      : resource), resource => resource.stepIndex !== null && resource.stepIndex !== undefined
+      ? `${resource.url}:step:${resource.stepIndex}`
+      : resource.url || `${resource.type}:${resource.label}`)
+    : [];
+  const initResources = (() => {
+    const resources = [...storedResources];
+    const stepCount = initTopics.length + 1;
+    const assignedSteps = new Set(resources
+      .filter(canEmbedResource)
+      .filter(resource => resource.stepIndex !== null && resource.stepIndex !== undefined && Number.isInteger(Number(resource.stepIndex)))
+      .map(resource => Number(resource.stepIndex)));
+    const legacyVideoCount = resources.filter(resource => canEmbedResource(resource)
+      && (resource.stepIndex === null || resource.stepIndex === undefined || !Number.isInteger(Number(resource.stepIndex)))).length;
+    const legacyStartStep = initTopics.length > 0 ? 1 : 0;
+    for (let videoIndex = 0; videoIndex < legacyVideoCount; videoIndex += 1) assignedSteps.add(legacyStartStep + videoIndex);
+    for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+      if (!assignedSteps.has(stepIndex)) resources.push(makeStepVideoPlaceholder(stepIndex));
+    }
+    return resources;
+  })();
 
   const [q, setQ] = useState(() => ({
     ...EMPTY_QUEST,
     ...(initialData || {}),
     solutionRequest: initSR,
     learnTopics:     initTopics,
-    learnResources:  Array.isArray(initialData?.learnResources) ? initialData.learnResources : [],
+    learnResources:  initResources,
   }));
   const [saving, setSaving] = useState(false);
 
   const f = (field) => (e) => setQ(p => ({ ...p, [field]: e.target.value }));
 
   // ── Learn tab helpers ──────────────────────────────────────────────────────
-  const addTopic = () => setQ(p => ({ ...p, learnTopics: [...p.learnTopics, { _id: uid(), content: '' }] }));
+  const addTopic = () => setQ(p => {
+    const stepIndex = p.learnTopics.length + 1;
+    const hasVideo = p.learnResources.some(resource => canEmbedResource(resource) && Number(resource.stepIndex) === stepIndex);
+    return {
+      ...p,
+      learnTopics: [...p.learnTopics, { _id: uid(), content: '' }],
+      learnResources: hasVideo ? p.learnResources : [...p.learnResources, makeStepVideoPlaceholder(stepIndex)],
+    };
+  });
   const updateTopic = (idx, val) => setQ(p => { const t = [...p.learnTopics]; t[idx] = { ...t[idx], content: val }; return { ...p, learnTopics: t }; });
-  const deleteTopic = (idx) => setQ(p => ({ ...p, learnTopics: p.learnTopics.filter((_, i) => i !== idx) }));
+  const deleteTopic = (idx) => setQ(p => {
+    const removedStepIndex = idx + 1;
+    return {
+      ...p,
+      learnTopics: p.learnTopics.filter((_, i) => i !== idx),
+      learnResources: p.learnResources
+        .filter(resource => Number(resource.stepIndex) !== removedStepIndex)
+        .map(resource => Number(resource.stepIndex) > removedStepIndex
+          ? { ...resource, stepIndex: Number(resource.stepIndex) - 1 }
+          : resource),
+    };
+  });
 
   const addResource = () => setQ(p => ({ ...p, learnResources: [...p.learnResources, { _id: uid(), type: 'link', label: '', url: '' }] }));
-  const updateResource = (idx, key, val) => setQ(p => { const r = [...p.learnResources]; r[idx] = { ...r[idx], [key]: val }; return { ...p, learnResources: r }; });
+  const updateResource = (idx, key, val) => setQ(p => { const r = [...p.learnResources]; r[idx] = { ...r[idx], [key]: val, ...(key === 'url' ? { durationSeconds: 0 } : {}) }; return { ...p, learnResources: r }; });
   const deleteResource = (idx) => setQ(p => ({ ...p, learnResources: p.learnResources.filter((_, i) => i !== idx) }));
 
   // Auto-find YouTube videos for a given title query
@@ -1404,11 +1473,16 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
         xp:             Number(q.xp) || 10,
         moduleId:       q.moduleId || null,
         learnTopics:    [...srEntry, ...q.learnTopics.map(({ content }, i) => ({ content, order: i }))],
-        learnResources: q.learnResources.map(({ type, label, url }, i) => ({ type, label, url, order: i })),
+        learnResources: q.learnResources.map(({ type, label, url, stepIndex, isPlaceholder, durationSeconds }, i) => ({
+          type, label, url, order: i,
+          ...(stepIndex !== null && stepIndex !== undefined && Number.isInteger(Number(stepIndex)) ? { stepIndex: Number(stepIndex) } : {}),
+          ...(Number.isFinite(Number(durationSeconds)) && Number(durationSeconds) > 0 ? { durationSeconds: Number(durationSeconds) } : {}),
+          ...(isPlaceholder ? { isPlaceholder: true } : {}),
+        })),
       };
       const result = q.id
         ? await api.put(`/courses-api/quests/${q.id}`, payload)
-        : await api.post(`/courses-api/${courseId}/quests`, { ...payload, order: 0 });
+        : await api.post(`/courses-api/${courseId}/quests`, { ...payload, order });
       onSave(result);
     } catch (e) { alert(e?.message || 'Save failed'); }
     finally { setSaving(false); }
@@ -1482,7 +1556,7 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
             <div className="flex items-center justify-between mb-2">
               <div>
                 <p className={`text-xs font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>Resources</p>
-                <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>Only direct playable YouTube, playlist, Google Drive file, or MP4/WebM video URLs are accepted for inline embeds.</p>
+                <p className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>YouTube and direct video lengths are measured during playback. Enter duration in seconds for Google Drive previews.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => autoFindVideos(q.title || 'this topic')}
@@ -1510,6 +1584,10 @@ function QuestForm({ initialData, courseId, weeks = [], onSave, onCancel }) {
                     className="w-28 rounded-lg px-2 py-1.5 text-xs focus:outline-none flex-shrink-0" style={inputStyle} />
                   <input value={r.url} onChange={e => updateResource(i, 'url', e.target.value)} placeholder="https://..."
                     className="flex-1 rounded-lg px-2 py-1.5 text-xs font-mono focus:outline-none" style={inputStyle} />
+                  {(r.isPlaceholder || canEmbedResource(r)) && <input type="number" min="1" value={r.durationSeconds || ''}
+                    onChange={e => updateResource(i, 'durationSeconds', e.target.value ? Number(e.target.value) : 0)}
+                    placeholder="sec" title="Video duration in seconds" aria-label={`Video duration in seconds for ${r.label || `resource ${i + 1}`}`}
+                    className="w-16 rounded-lg px-2 py-1.5 text-xs focus:outline-none" style={inputStyle} />}
                   <button onClick={() => deleteResource(i)} className="text-slate-700 hover:text-red-400 flex-shrink-0"><Trash2 size={13} /></button>
                 </div>
               ))}
@@ -1577,6 +1655,7 @@ function QuestEditorPanel({ course, weeks, accent }) {
   const [loading, setLoading] = useState(true);
   const [addingQuest, setAddingQuest] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [reordering, setReordering] = useState(false);
 
   useEffect(() => {
     if (!course?.id) return;
@@ -1589,6 +1668,18 @@ function QuestEditorPanel({ course, weeks, accent }) {
 
   const addQuest = (q) => { setQuests(p => [...p, q]); setAddingQuest(false); };
   const updateQuest = (updated) => { setQuests(p => p.map(q => q.id === updated.id ? updated : q)); setEditingId(null); };
+  const moveQuest = async (index, direction) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= quests.length || reordering) return;
+    const nextQuests = [...quests];
+    [nextQuests[index], nextQuests[targetIndex]] = [nextQuests[targetIndex], nextQuests[index]];
+    setReordering(true);
+    try {
+      const saved = await api.put(`/courses-api/${course.id}/quests/order`, { questIds: nextQuests.map(quest => quest.id) });
+      setQuests(Array.isArray(saved) ? saved : nextQuests);
+    } catch (e) { alert(e?.message || 'Could not reorder quests'); }
+    finally { setReordering(false); }
+  };
   const deleteQuest = async (id) => {
     if (!confirm('Delete this quest?')) return;
     try { await api.delete(`/courses-api/quests/${id}`); setQuests(p => p.filter(q => q.id !== id)); }
@@ -1621,7 +1712,7 @@ function QuestEditorPanel({ course, weeks, accent }) {
 
       {addingQuest && (
         <div className="mb-6">
-          <QuestForm courseId={course.id} weeks={weeks} onSave={addQuest} onCancel={() => setAddingQuest(false)} />
+          <QuestForm courseId={course.id} order={Math.max(-1, ...quests.map(quest => Number(quest.order ?? -1))) + 1} weeks={weeks} onSave={addQuest} onCancel={() => setAddingQuest(false)} />
         </div>
       )}
 
@@ -1653,6 +1744,12 @@ function QuestEditorPanel({ course, weeks, accent }) {
                     )}
                     <span className={`text-[10px] ${isLight ? 'text-slate-600' : 'text-slate-600'}`}>✓ {q.correct} · {q.xp} XP</span>
                   </div>
+                  {course.slug !== 'ai-quest' && <div className="flex flex-shrink-0 items-center gap-1">
+                    <button type="button" onClick={() => moveQuest(i, -1)} disabled={i === 0 || reordering} title="Move quest up" aria-label={`Move ${q.title} up`}
+                      className="rounded p-1 text-slate-500 hover:text-cyan-400 disabled:opacity-30"><ChevronUp size={14} /></button>
+                    <button type="button" onClick={() => moveQuest(i, 1)} disabled={i === quests.length - 1 || reordering} title="Move quest down" aria-label={`Move ${q.title} down`}
+                      className="rounded p-1 text-slate-500 hover:text-cyan-400 disabled:opacity-30"><ChevronDown size={14} /></button>
+                  </div>}
                   <button onClick={() => setEditingId(q.id)} className={`flex-shrink-0 ml-2 ${isLight ? 'text-slate-500 hover:text-slate-900' : 'text-slate-600 hover:text-slate-300'}`}><Edit2 size={13} /></button>
                   <button onClick={() => deleteQuest(q.id)} className="text-slate-700 hover:text-red-400 flex-shrink-0"><Trash2 size={13} /></button>
                 </div>

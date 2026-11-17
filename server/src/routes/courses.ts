@@ -6,14 +6,79 @@ import { createDatabaseBackup } from '../lib/dbBackup.js';
 import { requireRole } from '../middleware/requireRole.js';
 
 export const coursesRouter = Router();
+const DEFAULT_STEP_VIDEO_URL = 'https://drive.google.com/file/d/1-ms4MaOTQun3OpJz6R6jdXg36pgmhyLx/view?usp=vids_web';
+
+function isPlayableCourseVideo(resource: any) {
+  const url = String(resource?.url || '').trim();
+  return /(?:youtube\.com|youtu\.be|drive\.google\.com\/file\/d\/)|\.(?:mp4|webm|ogg)(?:$|\?)/i.test(url);
+}
+
+function withStepVideoPlaceholders(learnTopics: any, learnResources: any) {
+  const resources = Array.isArray(learnResources) ? [...learnResources] : [];
+  const topics = Array.isArray(learnTopics)
+    ? learnTopics.filter((topic: any) => !topic?.isSolutionRequest && String(typeof topic === 'string' ? topic : topic?.content ?? topic?.text ?? '').trim())
+    : [];
+  const stepCount = topics.length + 1;
+  const playable = resources.filter(isPlayableCourseVideo);
+  const assignedSteps = new Set<number>();
+  playable.forEach((resource: any) => {
+    const stepIndex = Number(resource.stepIndex);
+    if (resource.stepIndex !== null && resource.stepIndex !== undefined && Number.isInteger(stepIndex) && stepIndex >= 0) assignedSteps.add(stepIndex);
+  });
+  const legacyVideos = playable.filter((resource: any) => resource.stepIndex === null || resource.stepIndex === undefined || !Number.isInteger(Number(resource.stepIndex)));
+  const firstTopicStep = topics.length ? 1 : 0;
+  legacyVideos.forEach((_resource: any, index: number) => assignedSteps.add(firstTopicStep + index));
+  for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+    if (assignedSteps.has(stepIndex)) continue;
+    resources.push({
+      type: 'youtube',
+      label: `Placeholder video · Step ${stepIndex + 1}`,
+      url: DEFAULT_STEP_VIDEO_URL,
+      durationSeconds: 981,
+      order: resources.length,
+      stepIndex,
+      isPlaceholder: true,
+    });
+  }
+  return resources;
+}
 
 const moderatorSettingKey = (slug: string) => `course.moderators.${slug}`;
 const categorySettingKey = (courseId: string) => `course.category.${courseId}`;
 
 function normalizeCourseCategory(category?: string | null) {
-  return category === 'process' || category === 'product' || category === 'technology'
-    ? category
-    : 'technology';
+  // Process documents have their own model and library; map legacy course values to Technology.
+  return category === 'product' ? 'product' : 'technology';
+}
+
+function uniqueCourseQuests(quests: any[]) {
+  const seen = new Set<string>();
+  return quests.filter((quest: any) => {
+    const normalizeText = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const key = JSON.stringify({
+      title: normalizeText(quest.title),
+      scenario: normalizeText(quest.scenario),
+      optionA: normalizeText(quest.optionA),
+      optionB: normalizeText(quest.optionB),
+      optionC: normalizeText(quest.optionC),
+      optionD: normalizeText(quest.optionD),
+      correct: normalizeText(quest.correct),
+      explanation: normalizeText(quest.explanation),
+      learnTopics: Array.isArray(quest.learnTopics)
+        ? quest.learnTopics.map((topic: any) => typeof topic === 'string'
+          ? normalizeText(topic)
+          : { content: normalizeText(topic?.content ?? topic?.text ?? topic?.body), isSolutionRequest: Boolean(topic?.isSolutionRequest) })
+        : quest.learnTopics ?? null,
+      learnResources: Array.isArray(quest.learnResources)
+        ? quest.learnResources.map((resource: any) => typeof resource === 'string'
+          ? normalizeText(resource)
+          : { type: normalizeText(resource?.type), label: normalizeText(resource?.label ?? resource?.title), url: normalizeText(resource?.url) })
+        : quest.learnResources ?? null,
+    });
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseModeratorIds(value?: string | null): string[] {
@@ -293,7 +358,7 @@ const courseSchema = z.object({
   emoji:           z.string().optional(),
   accentColor:     z.string().optional(),
   status:          z.enum(['live', 'coming-soon']).optional(),
-  category:        z.enum(['process', 'product', 'technology']).optional(),
+  category:        z.enum(['product', 'technology']).optional(),
   order:           z.number().optional(),
   instructorName:  z.string().optional(),
   instructorEmail: z.string().optional(),
@@ -538,9 +603,44 @@ coursesRouter.delete('/resources/:id', async (req, res) => {
 coursesRouter.get('/:courseId/quests', async (req, res) => {
   const quests = await (prisma as any).courseQuest.findMany({
     where: { courseId: req.params.courseId },
-    orderBy: { order: 'asc' },
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
   });
-  res.json(quests);
+  res.json(uniqueCourseQuests(quests));
+});
+
+// Reorder quests for a course and normalize order values after each move.
+coursesRouter.put('/:courseId/quests/order', async (req, res) => {
+  const courseSlug = await getCourseSlugById(req.params.courseId);
+  if (courseSlug === 'ai-quest') return res.status(403).json({ error: 'AI Quest uses its existing quest order' });
+  if (!(await ensureCourseEditor(req, res, courseSlug))) return;
+  const requestedIds = req.body?.questIds;
+  if (!Array.isArray(requestedIds) || requestedIds.some((id: unknown) => typeof id !== 'string') || new Set(requestedIds).size !== requestedIds.length) {
+    return res.status(400).json({ error: 'questIds must be an array of unique quest IDs' });
+  }
+
+  const currentQuests = await (prisma as any).courseQuest.findMany({
+    where: { courseId: req.params.courseId },
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true },
+  });
+  const currentIds = new Set(currentQuests.map((quest: any) => quest.id));
+  if (requestedIds.some((id: string) => !currentIds.has(id))) {
+    return res.status(400).json({ error: 'One or more quests do not belong to this course' });
+  }
+
+  const requestedSet = new Set(requestedIds as string[]);
+  const orderedIds = [
+    ...(requestedIds as string[]),
+    ...currentQuests.map((quest: any) => quest.id).filter((id: string) => !requestedSet.has(id)),
+  ];
+  await (prisma as any).$transaction(orderedIds.map((id: string, order: number) =>
+    (prisma as any).courseQuest.update({ where: { id }, data: { order } })));
+
+  const reordered = await (prisma as any).courseQuest.findMany({
+    where: { courseId: req.params.courseId },
+    orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
+  });
+  res.json(uniqueCourseQuests(reordered));
 });
 
 // GET single quest by id
@@ -567,7 +667,9 @@ coursesRouter.post('/:courseId/quests', async (req, res) => {
       xp:             Number(xp    ?? 10),
       order:          Number(order ?? 0),
       learnTopics:    learnTopics    ?? null,
-      learnResources: learnResources ?? null,
+      learnResources: moduleId && !Array.isArray(learnResources)
+        ? null
+        : withStepVideoPlaceholders(learnTopics, learnResources),
     },
   });
   res.json(q);
@@ -590,7 +692,7 @@ coursesRouter.put('/quests/:id', async (req, res) => {
   if (moduleId       !== undefined) data.moduleId       = moduleId || null;
   if (order          !== undefined) data.order          = Number(order);
   if (learnTopics    !== undefined) data.learnTopics    = learnTopics    ?? null;
-  if (learnResources !== undefined) data.learnResources = learnResources ?? null;
+  if (learnResources !== undefined) data.learnResources = withStepVideoPlaceholders(learnTopics, learnResources);
   const q = await (prisma as any).courseQuest.update({ where: { id: req.params.id }, data });
   res.json(q);
 });

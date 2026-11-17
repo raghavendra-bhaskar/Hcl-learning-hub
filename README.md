@@ -9,6 +9,10 @@ The **HCL Software Learning Hub** is a scenario-based, gamified training platfor
 - API server: `4000`
 - Shared DB-backed course system for AI Quest, DevOps Loop, and custom courses
 
+## TLS certificates
+
+For CSR generation, CA portal submission, chain validation, Kubernetes/Traefik Secrets, Docker/Podman nginx, Compose, on-premises proxies, and localhost development, follow the [TLS Certificate Runbook](TLS_CERTIFICATE_RUNBOOK.md).
+
 ## Roles and access model
 
 The Learning Hub uses a mix of **platform roles** and **course-scoped editing permissions**.
@@ -58,15 +62,18 @@ The Learning Hub uses a mix of **platform roles** and **course-scoped editing pe
 
 ## Course categories
 
-Database-backed courses use three normalized category values:
+Database-backed courses use two normalized category values:
 
 | Category | What it means | Typical examples |
 |---|---|---|
 | `technology` | Technical product, platform, engineering, tooling, or architecture content | AI, DevOps, Kubernetes, cloud platforms, APIs, observability |
-| `process` | Workflow, governance, delivery method, operating model, or support-process learning | incident management, release flow, change process, service operations |
 | `product` | Product-specific enablement focused on features, capabilities, workflows, and business usage | HCL product training, product walkthroughs, product specialist tracks |
 
-If no category is provided, the runtime defaults the course category to `technology`.
+Process documents are managed in their own Administration library and are not course-category entries. Legacy courses marked `process` are normalized to `technology`; new course writes accept only `product` or `technology`. If no category is provided, the runtime defaults to `technology`.
+
+## Course entry actions
+
+Course home pages present `View Path` for the course roadmap. The quest-page controls place `Practice All Quests` before the emphasized `Start Learning` action; `Start Learning` opens the continuous learning session.
 
 ## Minimum system requirements
 

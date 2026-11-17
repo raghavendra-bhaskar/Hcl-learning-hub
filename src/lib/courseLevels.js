@@ -83,7 +83,7 @@ function buildDynamicTitles(course) {
     process: ['🧩', '🗺️', '🔄', '📈', '🏅', '🧠', '👑'],
     technology: ['🧪', '🔧', '⚡', '💻', '🛰️', '💎', '👑'],
   };
-  const effectiveCategory = category === 'product' || category === 'process' ? category : 'technology';
+  const effectiveCategory = category === 'product' ? category : 'technology';
   return titlesByCategory[effectiveCategory].map((entry, index) => ({
     title: entry,
     icon: iconsByCategory[effectiveCategory][index],

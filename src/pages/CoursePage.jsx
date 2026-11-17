@@ -257,7 +257,7 @@ export default function CoursePage() {
                 </span>
                 <div className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
                   style={isLight ? { background: accent, color: '#ffffff', border: `1px solid ${accent}` } : { ...accentBg, color: accent }}>
-                  Start Path <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                  View Path <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
             </div>
@@ -265,7 +265,7 @@ export default function CoursePage() {
         </div>
 
         <div className="max-w-6xl mx-auto mt-14">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8">
+          <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 mb-8">
             <div>
               <h2 className={`font-orbitron text-xl md:text-2xl font-bold ${isLight ? 'text-slate-900' : 'text-slate-200'}`}>
                 {course.title} Quests
@@ -276,6 +276,21 @@ export default function CoursePage() {
                   : 'Quests are being prepared for this course.'}
               </p>
             </div>
+            {slug !== 'ai-quest' && questCount > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {/* Keep practice secondary; Start Learning is the primary entry into the course. */}
+                <button onClick={() => navigate(`/c/${slug}/session/practice`)}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-colors"
+                  style={{ color: accent, borderColor: `${accent}55`, background: `${accent}10` }}>
+                  <Target size={14} /> Practice All Quests
+                </button>
+                <button onClick={() => navigate(`/c/${slug}/session/learn`)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:brightness-110 active:scale-[0.98]"
+                  style={{ background: accent, boxShadow: `0 6px 20px ${accent}45` }}>
+                  <BookOpen size={14} /> Start Learning
+                </button>
+              </div>
+            )}
           </div>
 
           {questCount === 0 ? (

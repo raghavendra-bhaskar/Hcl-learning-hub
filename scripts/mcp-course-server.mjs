@@ -6,7 +6,7 @@ const courseFields = {
   emoji: { type: 'string' },
   accentColor: { type: 'string' },
   status: { type: 'string', enum: ['live', 'coming-soon'] },
-  category: { type: 'string', enum: ['process', 'product', 'technology'] },
+  category: { type: 'string', enum: ['product', 'technology'] },
   order: { type: 'number' },
   instructorName: { type: 'string' },
   instructorEmail: { type: 'string' },
@@ -44,6 +44,10 @@ function defineTool(name, description, properties, required = []) {
 
 const tools = [
   defineTool('list_courses', 'List courses on the configured Learning Hub VM.', {}),
+  defineTool('list_process_documents', 'Search the separately managed Process library. Process documents are not course categories.', {
+    query: { type: 'string', description: 'Optional case-insensitive search across title, description, and tags.' },
+  }),
+  defineTool('list_learning_paths', "List the signed-in user's saved learning paths and ordered course, module, quest, and scenario items.", {}),
   defineTool('get_course', 'Get a course and its weeks, modules, topics, resources, and quest count.', {
     slug: { type: 'string', description: 'Course slug, for example ai-quest.' },
   }, ['slug']),
@@ -235,6 +239,17 @@ async function callTool(name, input = {}) {
   switch (name) {
     case 'list_courses':
       return apiRequest('GET', '/courses-api/');
+    case 'list_process_documents': {
+      // Keep Process-library discovery separate from the course catalog and its categories.
+      const documents = await apiRequest('GET', '/courses-api/process-docs');
+      const query = String(input.query || '').trim().toLowerCase();
+      return query
+        ? documents.filter(document => `${document.title || ''} ${document.description || ''} ${document.tags || ''}`.toLowerCase().includes(query))
+        : documents;
+    }
+    case 'list_learning_paths':
+      // The API scopes this list and its items to the authenticated MCP account.
+      return apiRequest('GET', '/learning-paths');
     case 'get_course':
       requireFields(input, ['slug']);
       return apiRequest('GET', `/courses-api/${encodeURIComponent(input.slug)}`);
