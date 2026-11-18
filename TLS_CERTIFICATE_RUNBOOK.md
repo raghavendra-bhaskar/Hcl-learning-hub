@@ -89,6 +89,14 @@ openssl pkey -in hub-server.key -pubout -outform DER | openssl dgst -sha256
 
 For multiple intermediates, concatenate them into a temporary `intermediates.crt` in issuer order and use that file with `-untrusted`.
 
+#### Existing production VM files (`~/tls-work`)
+
+The VM's CA-issued leaf is `hcl-hub-cert.crt`, its bundle is `hcl-hub-cert.p7b`, and its matching private key is `hub-server.key`. The issued SANs cover `hclswl2learninghub.prod.hclpnp.com`, `hclswl2learninghub`, and `10.115.54.50`. The checked-in Ingress routes both DNS names; the short URL works only when the client's DNS resolves it to the VM.
+
+The `.p7b` is a certificate bundle, not a private key. Convert it to PEM (add `-inform DER` if the bundle is DER-encoded), inspect each certificate's subject/issuer, and assemble `hcl-hub-fullchain.crt` as the leaf followed by intermediate(s) in issuer order. Do not duplicate the leaf if it is present in the bundle and normally omit the root certificate. Keep `hub-server.key` unchanged; no certificates are imported into that key file. The detailed commands for inspecting and assembling this VM's bundle are in [the Kubernetes Operations Guide](k8s/README.md#ca-signed-tls-certificate-on-the-production-vm).
+
+Update the existing Kubernetes Secret `hcl-hub-tls` in namespace `hcl-learning-hub`; this is the Secret referenced by the repository Ingress. The alternate name `hcl-hub-ca-tls` from Gemini's example will not be used unless the Ingress is changed to reference it.
+
 ## 4. Install by deployment type
 
 ### Kubernetes / k3s using the repository installer
@@ -151,7 +159,7 @@ kubectl apply -f 6-ingress.yaml
 kubectl get ingress hcl-learning-hub -n hcl-learning-hub
 ```
 
-Use `ingressClassName: nginx` only if an ingress-nginx controller is installed and is the controller intended for this Ingress. Do not select Traefik or nginx by guesswork; check with `kubectl get ingressclass` and the cluster administrator. The NodePort fallback in `k8s/6-ingress.yaml` is HTTP and bypasses Ingress TLS.
+Use `ingressClassName: nginx` only if an ingress-nginx controller is installed and is the controller intended for this Ingress. Do not select Traefik or nginx by guesswork; check with `kubectl get ingressclass` and the cluster administrator. The production `k8s/6-ingress.yaml` exposes the app through Ingress; it intentionally does not create an HTTP NodePort bypass.
 
 When switching the sample manifest to Traefik, remove its `nginx.ingress.kubernetes.io/*` annotations; they are nginx-specific and are not needed for this basic Traefik route.
 

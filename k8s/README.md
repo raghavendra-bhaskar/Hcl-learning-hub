@@ -150,6 +150,101 @@ What Kubernetes sync does:
 
 If you already have a working Kubernetes install, `bash deploy/sync.sh` is the normal way to apply code changes. You should not need to run the manual `podman build` and `ctr images import` commands yourself unless you are doing emergency recovery.
 
+## CA-signed TLS certificate on the production VM
+
+The production certificate files are in `~/tls-work`:
+
+- `hcl-hub-cert.crt` is the CA-issued leaf/server certificate.
+- `hcl-hub-cert.p7b` is a PKCS#7 certificate bundle. It may contain the intermediate and root certificates; inspect it before assembling the server chain.
+- `hub-server.key` is the private key matching the CSR. Keep it on the VM, do not upload it to the CA, and do not commit it.
+- `hub-server.csr` was submitted to the CA; it is not installed into Kubernetes.
+
+The certificate's SANs include `hclswl2learninghub.prod.hclpnp.com`, `hclswl2learninghub`, and `10.115.54.50`. The Ingress supports both DNS names. The short landing URL `https://hclswl2learninghub/` works only for clients whose DNS/search domain resolves that short name to this VM. Use the FQDN if it does not resolve.
+
+### Build the full chain
+
+The private key is not a place to import or append certificates. Keep `hub-server.key` unchanged. Kubernetes receives the certificate chain in `tls.crt` and the private key separately in `tls.key`.
+
+Convert the PKCS#7 bundle to PEM. If the first command reports a PEM/ASN.1 format error, retry with `-inform DER`:
+
+```bash
+cd ~/tls-work
+openssl pkcs7 -print_certs -in hcl-hub-cert.p7b -out p7b-certs.pem
+# For a DER-encoded .p7b instead:
+# openssl pkcs7 -inform DER -print_certs -in hcl-hub-cert.p7b -out p7b-certs.pem
+```
+
+Split the PEM blocks so each certificate can be identified. The printed subjects and issuers show the chain order; the leaf certificate's issuer is `HCLPNP-ICA`. Do not assume the bundle order or include a root certificate in the server chain.
+
+```bash
+awk '/-----BEGIN CERTIFICATE-----/ { n++; f=sprintf("p7b-cert-%02d.pem", n) } f { print > f } /-----END CERTIFICATE-----/ { close(f); f="" }' p7b-certs.pem
+for cert in p7b-cert-*.pem; do
+   echo "=== $cert ==="
+   openssl x509 -in "$cert" -noout -subject -issuer -fingerprint -sha256
+done
+openssl x509 -in hcl-hub-cert.crt -noout -subject -issuer -fingerprint -sha256 -ext subjectAltName
+```
+
+Use the CA-issued leaf first, followed by each intermediate in issuer order (the issuer of one certificate must match the subject of the next). Do not duplicate the leaf if it is also present in the PKCS#7 bundle, and normally omit the self-signed root. Replace the example intermediate filename below with the actual intermediate file(s) identified above:
+
+```bash
+cat hcl-hub-cert.crt p7b-cert-02.pem > hcl-hub-fullchain.crt
+```
+
+Verify the server certificate matches the private key: these two SHA-256 digests must be identical.
+
+```bash
+openssl x509 -in hcl-hub-cert.crt -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum
+openssl pkey -in hub-server.key -pubout -outform DER | sha256sum
+openssl x509 -in hcl-hub-cert.crt -noout -checkhost hclswl2learninghub.prod.hclpnp.com
+```
+
+If the CA supplied a separate root certificate, validate the chain before installing it:
+
+```bash
+openssl verify -CAfile hcl-root-ca.crt -untrusted hcl-intermediates.crt hcl-hub-cert.crt
+```
+
+Here `hcl-intermediates.crt` contains only the intermediate certificate(s), not the leaf or root. A successful result is `hcl-hub-cert.crt: OK`. Clients must trust the organization's root CA; the Ingress should serve the leaf and intermediate(s), not the root.
+
+For example, if `p7b-cert-02.pem` is the intermediate that issued the leaf, create the intermediate-only file and server chain like this (include additional intermediate files in issuer order if present):
+
+```bash
+cat p7b-cert-02.pem > hcl-intermediates.crt
+cat hcl-hub-cert.crt p7b-cert-02.pem > hcl-hub-fullchain.crt
+```
+
+### Update the Kubernetes Secret
+
+The repository Ingress uses Secret **`hcl-hub-tls`** in namespace **`hcl-learning-hub`**. Do not use the Gemini example name `hcl-hub-ca-tls` unless you also change every Ingress `spec.tls[].secretName` to match. Do not delete a currently referenced Secret before replacing it; that can interrupt HTTPS. Apply the new data to the existing Secret instead:
+
+```bash
+cd ~/software/hcl-learning-hub
+kubectl create secret tls hcl-hub-tls \
+   --namespace hcl-learning-hub \
+   --cert="$HOME/tls-work/hcl-hub-fullchain.crt" \
+   --key="$HOME/tls-work/hub-server.key" \
+   --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f k8s/6-ingress.yaml
+kubectl get secret hcl-hub-tls -n hcl-learning-hub
+kubectl describe ingress hcl-learning-hub -n hcl-learning-hub
+```
+
+Traefik watches the Secret and normally reloads the certificate without restarting the web or API deployments. Verify both supported names from a client that trusts the HCLPNP root CA:
+
+```bash
+openssl s_client -connect hclswl2learninghub.prod.hclpnp.com:443 -servername hclswl2learninghub.prod.hclpnp.com -showcerts </dev/null
+curl -Iv https://hclswl2learninghub.prod.hclpnp.com/
+curl -Iv https://hclswl2learninghub/
+```
+
+### Will an application upgrade replace this certificate?
+
+No, not when you use the normal `bash deploy/upgrade.sh` or `bash deploy/sync.sh` flow. It pulls code, rebuilds/imports images, and restarts the API/web deployments; it does not recreate the TLS Secret. Traefik continues using the certificate in `hcl-hub-tls`.
+
+A full reinstall with `bash deploy/install.sh --mode kubernetes` is different: `deploy/install-kubernetes.sh` currently generates a self-signed certificate and applies it to `hcl-hub-tls`, replacing the CA-signed certificate. After a full reinstall, reapply the CA Secret using the command above. The same applies if you rerun the installer for a host/DNS change. A code sync or image rollout does not require certificate reinstallation.
+
 ## Change DNS / hostname and keep existing data
 
 If the DNS name changes and you want the existing deployment/data to keep working, rerun the Kubernetes installer with the new host name:
