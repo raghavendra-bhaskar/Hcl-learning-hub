@@ -6,7 +6,7 @@
   "scripts": {
     "test:ai": "node --import tsx --test tests/ai.test.ts tests/aiRoutes.test.ts",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"const fs = require('node:fs'); fs.mkdirSync('dist/seed', { recursive: true }); fs.copyFileSync('src/seed/processDocuments.json', 'dist/seed/processDocuments.json')\"",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

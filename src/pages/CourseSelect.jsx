@@ -509,10 +509,47 @@ export default function CourseSelect() {
       || a.title.localeCompare(b.title)), [allCourses, courseSearch, courseFilter, isAdmin]);
 
   const visibleProcessDocs = useMemo(() => {
-    const query = processSearch.trim().toLowerCase();
+    const normalize = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const query = normalize(processSearch).replace(/[^a-z0-9]+/g, ' ').trim();
     if (!query) return processDocs;
-    return processDocs.filter(doc => `${doc.title || ''} ${doc.description || ''} ${doc.tags || ''}`.toLowerCase().includes(query));
+
+    const ignoredTerms = new Set(['a', 'an', 'about', 'can', 'details', 'do', 'for', 'give', 'how', 'i', 'in', 'is', 'me', 'of', 'please', 'show', 'tell', 'the', 'to', 'what', 'where', 'with', 'you']);
+    const terms = [...new Set(query.split(/\s+/).filter(term => term.length > 1 && !ignoredTerms.has(term)))];
+    if (!terms.length) return processDocs;
+
+    return processDocs
+      .map(doc => {
+        const title = normalize(doc.title);
+        const description = normalize(doc.description);
+        const tags = normalize(doc.tags);
+        const details = normalize(doc.knowledgeText);
+        const allText = `${title} ${description} ${tags} ${details}`;
+        const matchedTerms = terms.filter(term => allText.includes(term));
+        if (!matchedTerms.length) return null;
+
+        const score = matchedTerms.reduce((total, term) => total
+          + (title.includes(term) ? 8 : 0)
+          + (tags.includes(term) ? 5 : 0)
+          + (description.includes(term) ? 3 : 0)
+          + (details.includes(term) ? 2 : 0), 0)
+          + (matchedTerms.length === terms.length ? 6 : 0)
+          + (title.includes(query) ? 12 : 0);
+        return { ...doc, searchScore: score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.searchScore - a.searchScore || (a.order ?? 0) - (b.order ?? 0) || a.title.localeCompare(b.title));
   }, [processDocs, processSearch]);
+
+  const processGroups = useMemo(() => {
+    const toolApplications = visibleProcessDocs.filter(doc =>
+      (doc.tags || '').split(',').some(tag => tag.trim().toLowerCase() === 'tools / application'));
+    const otherDocuments = visibleProcessDocs.filter(doc =>
+      !(doc.tags || '').split(',').some(tag => tag.trim().toLowerCase() === 'tools / application'));
+    return [
+      { title: 'Tools / Application', documents: toolApplications },
+      { title: 'Process Documents', documents: otherDocuments },
+    ].filter(group => group.documents.length > 0);
+  }, [visibleProcessDocs]);
 
   const moderatedCourses = useMemo(() => allCourses
     .filter(course => course.canEdit)
@@ -926,26 +963,44 @@ export default function CourseSelect() {
                     style={{ background: isLight ? '#ffffff' : 'rgba(255,255,255,0.04)', border: isLight ? '1px solid rgba(100,116,139,0.28)' : '1px solid rgba(255,255,255,0.1)' }} />
                   {processSearch && <button onClick={() => setProcessSearch('')} aria-label="Clear process search" className={`absolute right-3 top-1/2 -translate-y-1/2 ${isLight ? 'text-slate-400 hover:text-slate-700' : 'text-slate-500 hover:text-slate-200'}`}>✕</button>}
                 </div>
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {visibleProcessDocs.map(doc => (
-                    <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer"
-                      className={`flex items-start gap-4 rounded-2xl p-5 border transition-all hover:opacity-90 active:scale-[0.99] no-underline ${isLight ? 'bg-white/85' : 'bg-white/[0.02]'}`}
-                      style={{ borderColor: isLight ? 'rgba(249,115,22,0.28)' : 'rgba(249,115,22,0.22)' }}>
-                      <span className="text-2xl leading-none mt-0.5 flex-shrink-0">{doc.icon || '📋'}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>{doc.title}</p>
-                        {doc.description && <p className={`text-[11px] mt-1.5 leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{doc.description}</p>}
-                        {doc.tags && (
-                          <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316' }}>Process</span>
-                            {doc.tags.split(',').filter(Boolean).map(tag => (
-                              <span key={tag.trim()} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isLight ? 'text-slate-500 border-slate-200' : 'text-slate-500 border-white/10'}`}>{tag.trim()}</span>
-                            ))}
-                          </div>
-                        )}
+                <div className="space-y-8">
+                  {processGroups.map(group => (
+                    <section key={group.title}>
+                      <h2 className={`font-orbitron text-base font-bold mb-3 ${isLight ? 'text-slate-900' : 'text-white'}`}>{group.title}</h2>
+                      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {group.documents.map(doc => (
+                          <a key={doc.id} href={doc.url} target="_blank" rel="noopener noreferrer"
+                            className={`flex items-start gap-4 rounded-2xl p-5 border transition-all hover:opacity-90 active:scale-[0.99] no-underline ${isLight ? 'bg-white/85' : 'bg-white/[0.02]'}`}
+                            style={{ borderColor: isLight ? 'rgba(249,115,22,0.28)' : 'rgba(249,115,22,0.22)' }}>
+                            <span className="text-2xl leading-none mt-0.5 flex-shrink-0">{doc.icon || '📋'}</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className={`text-sm font-bold leading-snug ${isLight ? 'text-slate-900' : 'text-white'}`}>{doc.title}</p>
+                                {doc.isArchived && <span className="rounded border border-amber-400/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">Archived</span>}
+                                {doc.isRestricted && isAdmin && <span className="rounded border border-red-400/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-red-700 dark:text-red-300">Admin only</span>}
+                                {(doc.tags || '').split(',').some(tag => tag.trim().toLowerCase() === 'needs review') && <span className="rounded border border-sky-400/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-sky-700 dark:text-sky-300">Needs review</span>}
+                              </div>
+                              {doc.description && <p className={`text-[11px] mt-1.5 leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{doc.description}</p>}
+                              {processSearch.trim() && doc.knowledgeText && (
+                                <div className={`mt-2 rounded-lg px-3 py-2 text-[11px] leading-relaxed ${isLight ? 'bg-orange-50 text-slate-700' : 'bg-white/[0.04] text-slate-300'}`}>
+                                  <span className="font-bold">{doc.knowledgeText.startsWith('No app-specific guide') ? 'Documentation status: ' : 'Source details: '}</span>
+                                  {doc.knowledgeText}
+                                </div>
+                              )}
+                              {doc.tags && (
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.3)', color: '#f97316' }}>Process</span>
+                                  {doc.tags.split(',').filter(tag => tag.trim().toLowerCase() !== 'tools / application').filter(Boolean).map(tag => (
+                                    <span key={tag.trim()} className={`text-[10px] px-1.5 py-0.5 rounded-full border ${isLight ? 'text-slate-500 border-slate-200' : 'text-slate-500 border-white/10'}`}>{tag.trim()}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <ExternalLink size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                          </a>
+                        ))}
                       </div>
-                      <ExternalLink size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
-                    </a>
+                    </section>
                   ))}
                 </div>
                 {visibleProcessDocs.length === 0 && <p className="py-10 text-center text-sm text-slate-500">No process documents match your search.</p>}

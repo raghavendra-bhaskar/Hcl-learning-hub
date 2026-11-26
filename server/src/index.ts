@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import bcrypt from 'bcryptjs';
+import { readFileSync } from 'node:fs';
 import { env } from './env.js';
 import { authenticate } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
@@ -18,6 +19,9 @@ import { learningPathsRouter } from './routes/learningPaths.js';
 import { prisma } from './lib/prisma.js';
 import { PLATFORM_LEARNING_PATHS } from './seed/platformLearningPaths.js';
 import { getPlatformCourseQuests } from './seed/platformCourseQuests.js';
+import { PROCESS_APPLICATIONS } from './seed/processApplications.js';
+
+const PROCESS_DOCUMENTS = JSON.parse(readFileSync(new URL('./seed/processDocuments.json', import.meta.url), 'utf8'));
 
 // ── Platform course seed (runs once on startup) ───────────────────────────────
 const SEED_COURSES = [
@@ -195,6 +199,30 @@ async function seedPlatformCourses() {
   }
 }
 
+async function seedProcessApplications() {
+  try {
+    const result = await (prisma as any).processDocument.createMany({
+      data: PROCESS_APPLICATIONS,
+      skipDuplicates: true,
+    });
+    if (result.count) console.log(`[seed] created ${result.count} Tools / Application entries`);
+  } catch (error) {
+    console.error('[seed] seedProcessApplications error:', error);
+  }
+}
+
+async function seedProcessDocuments() {
+  try {
+    const result = await (prisma as any).processDocument.createMany({
+      data: PROCESS_DOCUMENTS,
+      skipDuplicates: true,
+    });
+    if (result.count) console.log(`[seed] created ${result.count} source Process documents`);
+  } catch (error) {
+    console.error('[seed] seedProcessDocuments error:', error);
+  }
+}
+
 const app = express();
 
 app.use(helmet());
@@ -225,6 +253,8 @@ const server = app.listen(env.port, () => {
   console.log(`[server] local admin: ${env.enableLocalAdmin ? 'ENABLED' : 'disabled'}`);
   ensureLocalAdmin().catch((error) => console.error('[seed] ensureLocalAdmin error:', error));
   seedPlatformCourses();
+  seedProcessApplications();
+  seedProcessDocuments();
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => { // port conflict guard

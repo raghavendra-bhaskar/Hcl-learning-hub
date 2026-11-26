@@ -707,8 +707,9 @@ coursesRouter.delete('/quests/:id', async (req, res) => {
 // ── Process Documents (public — any authenticated user) ───────────────────────
 coursesRouter.get('/process-docs', async (_req, res) => {
   const docs = await (prisma as any).processDocument.findMany({
+    where: { isRestricted: _req.user?.role === 'ADMIN' ? undefined : false },
     orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-    select: { id: true, title: true, description: true, url: true, icon: true, tags: true, order: true },
+    select: { id: true, title: true, description: true, url: true, icon: true, tags: true, knowledgeText: true, order: true, isArchived: true, isRestricted: true },
   });
   res.json(docs);
 });

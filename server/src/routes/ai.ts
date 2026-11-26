@@ -976,16 +976,19 @@ aiRouter.post('/chat', handle(async (req, res) => {
       // Process / policy documents knowledge — loaded dynamically from the ProcessDocument
       // table so admins can manage the AI knowledge base without code changes.
       const processDocuments = await (prisma as any).processDocument.findMany({
+        where: { isRestricted: false, isArchived: false },
         orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
         select: { id: true, title: true, description: true, url: true, tags: true, knowledgeText: true },
       });
+      const reviewedProcessDocuments = processDocuments.filter((doc: any) =>
+        !(doc.tags || '').split(',').some((tag: string) => tag.trim().toLowerCase() === 'needs review'));
       corpus.push({
         id: 'proc-documents-folder',
         title: 'HCL Process Documents',
         url: 'https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA',
-        text: `HCL team process documents are stored in a shared Google Drive folder: https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA. There are ${processDocuments.length} process document${processDocuments.length !== 1 ? 's' : ''} in the knowledge base: ${processDocuments.map((d: any) => d.title).join(', ')}.`,
+        text: `HCL team process documents are stored in a shared Google Drive folder: https://drive.google.com/drive/folders/0APzJPw6PlX9RUk9PVA. There are ${reviewedProcessDocuments.length} reviewed process document${reviewedProcessDocuments.length !== 1 ? 's' : ''} in the knowledge base: ${reviewedProcessDocuments.map((d: any) => d.title).join(', ')}.`,
       });
-      for (const doc of processDocuments) {
+      for (const doc of reviewedProcessDocuments) {
         const textParts: string[] = [`Process document: ${doc.title}.`];
         if (doc.description) textParts.push(doc.description);
         if (doc.tags) textParts.push(`Tags: ${doc.tags}.`);
