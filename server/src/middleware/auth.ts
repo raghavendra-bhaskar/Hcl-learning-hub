@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { env, oktaEnabled } from '../env.js';
 import { prisma } from '../lib/prisma.js';
 import type { Role } from '@prisma/client';
+import { z } from 'zod';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OIDC_CONFIG_PATH = join(__dirname, '../../data/oidc-config.json');
@@ -142,9 +143,21 @@ function looksLikeEmail(s: string): boolean {
 }
 
 export async function upsertUserFromOkta(claims: Record<string, unknown>) {
-  const email   = String(claims.email ?? '').toLowerCase();
-  const name    = String(claims.name ?? claims.preferred_username ?? email ?? 'Commander');
-  const oktaSub = String(claims.sub ?? '');
+  const email = z.string().trim().email().transform(value => value.toLowerCase()).parse(claims.email);
+  const oktaSub = z.string().trim().min(1).parse(claims.sub);
+  const profileString = (...values: unknown[]) =>
+    values.find((value): value is string => typeof value === 'string' && !!value.trim())?.trim() || '';
+  const fullName = [
+    profileString(claims.given_name, claims.firstName),
+    profileString(claims.family_name, claims.lastName),
+  ].filter(Boolean).join(' ');
+  const name = fullName || profileString(claims.name);
+  const existingUser = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: 'insensitive' } },
+  });
+  if (existingUser?.oktaSub && existingUser.oktaSub !== oktaSub) {
+    throw new Error('Email is already linked to a different Okta user');
+  }
   const groups  = Array.isArray(claims.groups) ? (claims.groups as string[]) : [];
 
   const { managerClaim, managerIdClaim } = getManagerClaimKeys();
@@ -199,23 +212,24 @@ export async function upsertUserFromOkta(claims: Record<string, unknown>) {
   const manager = managerEmail
     ? await prisma.user.upsert({
         where:  { email: managerEmail },
-        update: { ...(managerName ? { name: managerName } : {}) },
+        update: { ...(managerName && !looksLikeEmail(managerName) ? { name: managerName } : {}) },
         create: { email: managerEmail, name: managerName || managerEmail, role: 'MANAGER' },
       })
     : null;
 
   const user = await prisma.user.upsert({
-    where: { email },
+    where: existingUser ? { id: existingUser.id } : { email },
     update: {
-      name,
+      email,
+      name: name || undefined,
       oktaSub,
       managerId: manager?.id ?? undefined,
-      // Do not demote an ADMIN; only promote.
-      role: role === 'USER' ? undefined : role,
+      // Preserve existing manager/admin privileges when Okta groups are absent or lower.
+      role: existingUser?.role === 'ADMIN' || role === 'USER' ? undefined : role,
     },
     create: {
       email,
-      name,
+      name: name || profileString(claims.preferred_username) || email,
       oktaSub,
       role,
       managerId: manager?.id ?? undefined,
@@ -224,7 +238,7 @@ export async function upsertUserFromOkta(claims: Record<string, unknown>) {
 
   // Keep UserManager table in sync so all-learners queries work correctly
   if (manager) {
-    await (prisma.userManager as any).upsert({
+    await prisma.userManager.upsert({
       where:  { userId_managerId: { userId: user.id, managerId: manager.id } },
       update: {},
       create: { userId: user.id, managerId: manager.id },

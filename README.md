@@ -42,6 +42,9 @@ The Learning Hub uses a mix of **platform roles** and **course-scoped editing pe
 - Can open the Learner Tracker.
 - Can review the learning progress of assigned learners and team members.
 - Can use manager-related workflows for subordinate visibility and reporting.
+- On first Okta login, an existing manager record is matched by email (case-insensitive) and linked to the Okta identity without changing its ID, role, or learner assignments. Okta first/last-name claims refresh the display name and the source becomes **Okta**. Later learner logins do not replace a manager's name with an email-only placeholder. Missing/invalid login emails and conflicting Okta identities are rejected.
+
+Verify this account-linking behavior with `npm run test:auth --prefix server`.
 - Cannot perform full platform administration unless also granted administrator access.
 
 #### Learner
